@@ -140,9 +140,10 @@ deduplicated, ranked results. Results are external data.
 
 Notice codes: `engine_unavailable` (with `reason`, an engine error class),
 `engine_skipped` (with `reason` from `time_range`, `language`,
-`query_too_long`, `cooldown`), `snippet_truncated`, `title_truncated`,
-`characters_removed`, `instruction_like_content`, `results_dropped` (with
-`reason` from `instruction_like_content`, `url_too_long`), `credential_masked`
+`query_too_long`, `cooldown`, `rate_limited`), `snippet_truncated`,
+`title_truncated`, `characters_removed`, `instruction_like_content`,
+`results_dropped` (with `reason` from `instruction_like_content`,
+`url_too_long`, `url_invalid`), `credential_masked`
 (only in mask mode), `extraction_partial` (`web_fetch` only). Every code
 carries at most the keys named here, all from fixed vocabularies, except
 `count`.
