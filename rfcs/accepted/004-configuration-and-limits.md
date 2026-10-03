@@ -82,6 +82,11 @@ web_search_per_minute = 60            # LIM-C6
 web_fetch_per_minute = 30             # LIM-C7
 engine_status_per_minute = 30         # LIM-C8
 
+[resilience]                          # M2 (RFC 010); keys accepted from M1
+failures_to_open = 3                  # LIM-B1
+first_cooldown_s = 60                 # LIM-B2
+max_cooldown_s = 900                  # LIM-B3
+
 [privacy]
 secret_detection = "refuse"           # off | warn | mask | refuse (LIM-P1)
 

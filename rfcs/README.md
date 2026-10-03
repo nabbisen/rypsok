@@ -25,8 +25,9 @@ naming, and numbering rules are defined in
   `ROADMAP.md`; the owner may object to any RFC before its handoff is
   taken up.
 - An RFC may amend the baseline specifications in `docs/src/maintainers/`
-  under a section "Amendment to the baseline"; the amendment is applied to
-  the document in the same commit.
+  under a section "Amendment to the baseline", or an earlier accepted RFC
+  under "Amendment to RFC NNN"; the amendment is applied to the document
+  in the same commit.
 - Handoff order within M1 follows the dependency lines in each handoff:
   003 and 004 first (independent), then 005, 006, 008, 009 (independent of
   each other), then 007, whose wiring PR joins them and whose measurements
@@ -49,6 +50,7 @@ _None yet._
 | 007 | [Aggregation](./accepted/007-aggregation.md) | M1 | [handoffs/007-aggregation](./handoffs/007-aggregation/README.md) |
 | 008 | [URL comparison keys, deduplication, rank fusion](./accepted/008-urls-dedup-ranking.md) | M1 | [handoffs/008-urls-dedup-ranking](./handoffs/008-urls-dedup-ranking/README.md) |
 | 009 | [Query privacy and logging](./accepted/009-privacy-and-logging.md) | M1 | [handoffs/009-privacy-and-logging](./handoffs/009-privacy-and-logging/README.md) |
+| 010 | [Health, circuit breaking, provider limits, `engine_status`](./accepted/010-health-and-circuit.md) | M2 | [handoffs/010-health-and-circuit](./handoffs/010-health-and-circuit/README.md) |
 
 ## Implemented
 
