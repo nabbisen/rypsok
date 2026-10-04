@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Dependency rule of REQ-ARCH-005 (RFC 001): the core crate depends on no
+# MCP SDK or transport library. Fails when such a crate appears in the
+# normal dependency tree of rypsok-core.
+#
+# Usage: tools/check-core-dependencies        (from anywhere in the repository)
+set -eu
+cd "$(dirname "$0")/.."
+
+# Crate names that must never appear. Extend when a new protocol SDK or
+# server framework exists; names are matched as whole crate names.
+forbidden='^(rmcp|rmcp-macros|mcp-core|mcp-sdk|mcp-protocol|axum|axum-core|hyper-util|actix-web|warp|rocket|tide|poem|salvo)$'
+
+tree="$(cargo tree -p rypsok-core -e normal --prefix none --no-dedupe --all-features)"
+offenders="$(printf '%s\n' "$tree" | awk '{print $1}' | sort -u | grep -E "$forbidden" || true)"
+
+if [ -n "$offenders" ]; then
+  printf 'check-core-dependencies: FAIL — rypsok-core depends on protocol or server crates:\n%s\n' "$offenders" >&2
+  exit 1
+fi
+printf 'check-core-dependencies: OK — rypsok-core has no protocol dependency\n'
