@@ -1,0 +1,24 @@
+[package]
+name = "rypsok"
+description = "Headless meta-search service for AI agents, served over the Model Context Protocol"
+readme = "../../README.md"
+keywords = ["search", "meta-search", "mcp", "agents"]
+categories = ["command-line-utilities", "web-programming"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "rypsok"
+path = "src/main.rs"
+
+[dependencies]
+rypsok-core.workspace = true
+clap.workspace = true
+rmcp.workspace = true
+
+[lints]
+workspace = true
