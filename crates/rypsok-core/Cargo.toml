@@ -1,0 +1,24 @@
+[package]
+name = "rypsok-core"
+description = "Core library of rypsok, a headless meta-search service for AI agents: models, pipelines, drivers and policies, free of any protocol dependency"
+readme = "README.md"
+keywords = ["search", "meta-search", "mcp", "agents"]
+categories = ["web-programming"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = ["engine-wikipedia", "engine-brave"]
+## The Wikipedia driver (keyless).
+engine-wikipedia = []
+## The Brave Search driver (keyed).
+engine-brave = []
+
+[dependencies]
+
+[lints]
+workspace = true

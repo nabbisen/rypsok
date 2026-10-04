@@ -22,3 +22,10 @@ target
 
 # Private working documents (specs, rules, reviews); never committed
 .git-exclude/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
