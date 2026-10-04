@@ -29,3 +29,6 @@ target
 *.swp
 *~
 .DS_Store
+
+# mdBook output
+/docs/book/
