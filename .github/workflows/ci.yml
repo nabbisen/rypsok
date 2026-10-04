@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+  RUSTDOCFLAGS: -D warnings
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / ${{ matrix.toolchain }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        toolchain: [stable]
+        include:
+          - os: ubuntu-latest
+            toolchain: "1.88"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Lints
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test --workspace
+      - name: Documentation
+        run: cargo doc --workspace --no-deps
+
+  rules:
+    name: Dependency rule, coverage, supply chain, book
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Dependency rule (REQ-ARCH-005)
+        run: tools/check-core-dependencies
+      - name: Requirement coverage (REQ-TEST-001)
+        run: tools/check-requirements-coverage
+      - uses: taiki-e/install-action@cargo-deny
+      - name: Advisories, licenses, sources (REQ-SEC-020)
+        run: cargo deny check advisories licenses sources
+      - uses: peaceiris/actions-mdbook@v2
+        with:
+          mdbook-version: latest
+      - name: Book
+        run: mdbook build docs
