@@ -1,0 +1,32 @@
+name: Scheduled checks
+
+# Reports only; never a gate (RFC 002). Fuzz targets and live driver checks
+# arrive with milestone M1; the placeholders keep the job visible.
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+jobs:
+  fuzz:
+    name: Fuzz (report only)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fuzz targets
+        run: |
+          if [ -d fuzz ]; then
+            echo "fuzz targets present; running is wired in milestone M1"
+          else
+            echo "no fuzz targets yet"
+          fi
+
+  live-checks:
+    name: Live driver checks (report only)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Live checks
+        run: echo "live checks arrive with the drivers in milestone M1 (REQ-TEST-003)"
