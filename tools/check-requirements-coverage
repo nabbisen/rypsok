@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""Requirement coverage gate (RFC 002, REQ-TEST-001).
+
+Reads docs/src/maintainers/requirements.md, collects every requirement whose
+verification method is T and whose milestone is at or below the milestone in
+tools/CURRENT_MILESTONE, and fails when one is not named by a test function.
+A test names a requirement when its function name contains the identifier in
+lower snake case, for example `req_search_003_...` for REQ-SEARCH-003.
+Requirements of later milestones are reported, not enforced. Requirements
+whose milestone is "All" apply to every milestone that has feature code: they
+are enforced from M1 on and reported at M0, where no pipeline exists yet.
+
+Usage: tools/check-requirements-coverage [--milestone M1]
+"""
+from __future__ import annotations
+
+import argparse
+import pathlib
+import re
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+REQUIREMENTS = ROOT / "docs" / "src" / "maintainers" / "requirements.md"
+MILESTONE_FILE = ROOT / "tools" / "CURRENT_MILESTONE"
+SOURCE_DIRS = [ROOT / "crates"]
+ORDER = ["M0", "M1", "M2", "M3", "M4", "M5"]
+
+HEADING = re.compile(
+    r"^### (REQ-[A-Z]+-\d{3}) .*? — (M\d|All) · ([TIAD])\s*$", re.MULTILINE
+)
+TEST_FN = re.compile(r"\bfn\s+(req_[a-z]+_\d{3}\w*)\s*[<(]")
+
+
+def milestone_index(name: str) -> int:
+    return len(ORDER) if name == "All" else ORDER.index(name)
+
+
+def collect_requirements() -> list[tuple[str, str, str]]:
+    text = REQUIREMENTS.read_text(encoding="utf-8")
+    return [(m.group(1), m.group(2), m.group(3)) for m in HEADING.finditer(text)]
+
+
+def collect_test_names() -> set[str]:
+    names: set[str] = set()
+    for base in SOURCE_DIRS:
+        for path in base.rglob("*.rs"):
+            if "target" in path.parts:
+                continue
+            for m in TEST_FN.finditer(path.read_text(encoding="utf-8")):
+                names.add(m.group(1))
+    return names
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--milestone", help="override tools/CURRENT_MILESTONE")
+    args = parser.parse_args()
+    current = args.milestone or MILESTONE_FILE.read_text(encoding="utf-8").strip()
+    if current not in ORDER:
+        print(f"check-requirements-coverage: unknown milestone {current!r}", file=sys.stderr)
+        return 2
+    limit = ORDER.index(current)
+
+    requirements = collect_requirements()
+    if not requirements:
+        print("check-requirements-coverage: no requirement headings found", file=sys.stderr)
+        return 2
+    names = collect_test_names()
+
+    def covered(req_id: str) -> bool:
+        prefix = req_id.lower().replace("-", "_") + "_"
+        return any(n.startswith(prefix) for n in names)
+
+    missing: list[str] = []
+    enforced = 0
+    later: dict[str, tuple[int, int]] = {}
+    for req_id, milestone, method in requirements:
+        if method != "T":
+            continue
+        in_scope = (limit >= 1) if milestone == "All" else ORDER.index(milestone) <= limit
+        if in_scope:
+            enforced += 1
+            if not covered(req_id):
+                missing.append(f"{req_id} ({milestone})")
+        else:
+            key = "All (from M1)" if milestone == "All" else milestone
+            done, total = later.get(key, (0, 0))
+            later[key] = (done + covered(req_id), total + 1)
+
+    print(f"check-requirements-coverage: milestone {current}: {enforced - len(missing)}/{enforced} T requirements named by a test")
+    for m in sorted(later):
+        done, total = later[m]
+        print(f"  later {m}: {done}/{total} already named (not enforced)")
+    if missing:
+        print("check-requirements-coverage: FAIL — no test names:", file=sys.stderr)
+        for item in missing:
+            print(f"  {item}", file=sys.stderr)
+        return 1
+    print("check-requirements-coverage: OK")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
