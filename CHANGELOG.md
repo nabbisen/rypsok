@@ -10,7 +10,7 @@ is announced here.
 
 ## [Unreleased]
 
-## [0.1.0] — Search kernel (milestone M1)
+## [0.1.0] — 2026-10-20 — Search kernel (milestone M1)
 
 ### Added
 
@@ -51,3 +51,6 @@ is announced here.
 Search deadline 2500 ms, engine timeout 2000 ms, reserve 200 ms, up to 8
 engines per request, 10 results per engine, snippets 300 and titles 150
 characters, query 400 characters, 60 `web_search` calls per minute.
+
+[Unreleased]: https://github.com/nabbisen/rypsok/compare/0.1.0...HEAD
+[0.1.0]: https://github.com/nabbisen/rypsok/releases/tag/0.1.0
