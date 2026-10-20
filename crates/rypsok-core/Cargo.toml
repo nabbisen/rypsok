@@ -36,6 +36,7 @@ reqwest.workspace = true
 rustls.workspace = true
 async-trait.workspace = true
 url.workspace = true
+regex.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

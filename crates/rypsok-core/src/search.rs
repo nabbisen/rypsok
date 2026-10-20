@@ -6,6 +6,9 @@
 //! This module holds request validation (REQ-SEARCH-006); the pipeline
 //! stages arrive with their RFCs.
 
+pub mod normalize;
+pub mod rank;
+
 use std::collections::BTreeSet;
 
 use crate::model::{Category, Language, SearchRequest, TimeRange, ToolError};

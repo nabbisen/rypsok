@@ -1398,6 +1398,7 @@ dependencies = [
  "governor",
  "html-escape",
  "proptest",
+ "regex",
  "reqwest",
  "rustls",
  "schemars",
