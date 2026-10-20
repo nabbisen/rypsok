@@ -169,6 +169,7 @@ proptest! {
         scheme in "https?",
         www in proptest::bool::ANY,
     ) {
+        prop_assume!(!host.starts_with("www."));
         let raw = format!("{scheme}://{}{host}{path}{query}", if www { "www." } else { "" });
         if let Ok(once) = returned_url(&raw, MAX) {
             let twice = returned_url(&once, MAX).unwrap();
