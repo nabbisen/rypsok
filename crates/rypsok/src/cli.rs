@@ -1,22 +1,27 @@
 //! The command line: `serve`, `check` and `--version`, with the exit codes
 //! of REQ-OPS-001: 0 on success, 1 on a configuration error, 2 on a usage
-//! error.
-//!
-//! Until milestone M1 delivers the configuration and the stdio adapter, the
-//! commands report that they are not implemented and exit with code 2.
+//! error (RFC 004). Nothing is ever written to standard output by the
+//! command line (REQ-MCP-002); diagnostics go to standard error.
 
 use std::ffi::OsString;
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
+use std::time::Duration;
 
 use clap::{Parser, Subcommand, ValueEnum};
+use rypsok_core::config::{Config, ConfigError, ConfigSource};
+use rypsok_core::limits::defaults::SHUTDOWN_MAX_MS;
+use rypsok_core::{CancellationToken, Rypsok, telemetry};
+
+use crate::mcp::{Adapter, stdio};
 
 /// Exit code of a successful run.
 pub const EXIT_SUCCESS: u8 = 0;
 /// Exit code of a configuration error.
-#[allow(dead_code, reason = "configuration loading arrives in milestone M1")]
 pub const EXIT_CONFIGURATION: u8 = 1;
-/// Exit code of a usage error, and of a command that is not implemented yet.
+/// Exit code of a usage error.
 pub const EXIT_USAGE: u8 = 2;
 
 /// Top-level command line.
@@ -29,7 +34,7 @@ pub const EXIT_USAGE: u8 = 2;
 struct Cli {
     /// Path of the configuration file; `RYPSOK_CONFIG` is used when absent.
     #[arg(long, global = true, value_name = "PATH")]
-    config: Option<std::path::PathBuf>,
+    config: Option<PathBuf>,
 
     #[command(subcommand)]
     command: Command,
@@ -81,23 +86,193 @@ where
         }
     };
     match cli.command {
-        Command::Serve { transport } => {
-            not_implemented(&format!("serve --transport {transport:?}"))
+        Command::Serve {
+            transport: Transport::Http,
+        } => {
+            diagnostic("rypsok: `serve --transport http` is not available in this release");
+            ExitCode::from(EXIT_USAGE)
         }
-        Command::Check => not_implemented("check"),
+        Command::Serve {
+            transport: Transport::Stdio,
+        } => serve(cli.config.as_deref()),
+        Command::Check => check(cli.config.as_deref()),
     }
 }
 
-/// Reports a command that a later milestone delivers.
-fn not_implemented(what: &str) -> ExitCode {
+/// Writes one line to standard error. A failed write changes nothing.
+fn diagnostic(line: &str) {
     let mut stderr = std::io::stderr().lock();
-    // Diagnostics go to standard error; standard output is reserved for the
-    // protocol (REQ-MCP-002). A failed write to stderr changes nothing.
-    let _ = writeln!(
-        stderr,
-        "rypsok: `{what}` is not implemented until milestone M1"
-    );
-    ExitCode::from(EXIT_USAGE)
+    let _ = writeln!(stderr, "{line}");
+}
+
+fn report(error: &ConfigError) -> ExitCode {
+    for problem in &error.problems {
+        diagnostic(&format!("rypsok: configuration: {problem}"));
+    }
+    ExitCode::from(EXIT_CONFIGURATION)
+}
+
+fn describe(source: &ConfigSource) -> String {
+    match source {
+        ConfigSource::Flag(p) => format!("--config {}", p.display()),
+        ConfigSource::Env(p) => format!("RYPSOK_CONFIG {}", p.display()),
+        ConfigSource::Defaults => "defaults (no file)".to_owned(),
+    }
+}
+
+/// `rypsok check`: validate the configuration and report the effective
+/// settings on standard error (REQ-CFG-005).
+fn check(flag: Option<&std::path::Path>) -> ExitCode {
+    let (config, source) = match Config::locate(flag) {
+        Ok(found) => found,
+        Err(error) => return report(&error),
+    };
+    if let Err(error) = config.validate() {
+        return report(&error);
+    }
+    let limits = config.limits();
+    diagnostic(&format!(
+        "rypsok: configuration from {} is valid",
+        describe(&source)
+    ));
+    diagnostic(&format!(
+        "rypsok: search: query_max_chars={} max_results={} (1..={}) deadline_ms={} engine_timeout_ms={} reserve_ms={} engines_per_request={} languages={} region={}",
+        limits.query_max_chars,
+        limits.max_results,
+        limits.max_results_ceiling,
+        limits.search_deadline_ms,
+        limits.engine_timeout_ms,
+        limits.search_reserve_ms,
+        limits.engines_per_request,
+        config
+            .search
+            .languages
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(","),
+        config.search.region,
+    ));
+    diagnostic(&format!(
+        "rypsok: tool rate limits per minute: web_search={} web_fetch={} engine_status={}; engine_status enabled={}; structured_content={}",
+        limits.web_search_per_minute,
+        limits.web_fetch_per_minute,
+        limits.engine_status_per_minute,
+        config.status.enabled,
+        config.service.structured_content,
+    ));
+    for (id, table) in &config.engines {
+        let credential = match table.secret_source() {
+            None => "no credential needed".to_owned(),
+            Some(source) => match source.resolve() {
+                Ok((_, warning)) => warning.map_or("credential found".to_owned(), |w| {
+                    format!("credential found; {w}")
+                }),
+                Err(error) => format!("inactive: {error}"),
+            },
+        };
+        diagnostic(&format!(
+            "rypsok: engine {id}: type={} enabled={} categories={} preference={} {credential}",
+            table.kind,
+            table.enabled,
+            table
+                .categories
+                .iter()
+                .map(|c| c.as_str())
+                .collect::<Vec<_>>()
+                .join(","),
+            table.preference,
+        ));
+    }
+    let categories = config
+        .served_categories()
+        .iter()
+        .map(|c| c.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
+    diagnostic(&format!(
+        "rypsok: categories served: {}",
+        if categories.is_empty() {
+            "none"
+        } else {
+            &categories
+        }
+    ));
+    ExitCode::from(EXIT_SUCCESS)
+}
+
+/// `rypsok serve --transport stdio`: validate, build the service, serve
+/// until end of input or a signal, exit within LIM-O1 (REQ-OPS-002).
+fn serve(flag: Option<&std::path::Path>) -> ExitCode {
+    let (config, source) = match Config::locate(flag) {
+        Ok(found) => found,
+        Err(error) => return report(&error),
+    };
+    if let Err(error) = config.validate() {
+        return report(&error);
+    }
+    telemetry::init(config.logging.level);
+    tracing::info!(event = "start", version = env!("CARGO_PKG_VERSION"), configuration = %describe(&source), "rypsok starting");
+    if config.logging.log_queries {
+        tracing::warn!(
+            event = "log_queries",
+            "logging.log_queries is on: query text appears in debug events"
+        );
+    }
+    let service = match Rypsok::new(config) {
+        Ok(service) => Arc::new(service),
+        Err(error) => return report(&error),
+    };
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            diagnostic(&format!("rypsok: cannot start the runtime: {error}"));
+            return ExitCode::from(EXIT_CONFIGURATION);
+        }
+    };
+    let shutdown = CancellationToken::new();
+    let outcome = runtime.block_on(async {
+        let signals = shutdown.clone();
+        tokio::spawn(async move {
+            wait_for_signal().await;
+            tracing::info!(event = "signal", "shutdown requested");
+            signals.cancel();
+        });
+        stdio::serve(Adapter::new(service), shutdown).await
+    });
+    // Everything still running is aborted with the runtime, within LIM-O1.
+    runtime.shutdown_timeout(Duration::from_millis(u64::from(SHUTDOWN_MAX_MS)));
+    match outcome {
+        Ok(()) => ExitCode::from(EXIT_SUCCESS),
+        Err(error) => {
+            tracing::error!(event = "serve_failed", error = %error, "serve ended with an error");
+            ExitCode::from(EXIT_CONFIGURATION)
+        }
+    }
+}
+
+#[cfg(unix)]
+async fn wait_for_signal() {
+    use tokio::signal::unix::{SignalKind, signal};
+    let mut term = match signal(SignalKind::terminate()) {
+        Ok(term) => term,
+        Err(_) => {
+            let _ = tokio::signal::ctrl_c().await;
+            return;
+        }
+    };
+    tokio::select! {
+        _ = term.recv() => {}
+        _ = tokio::signal::ctrl_c() => {}
+    }
+}
+
+#[cfg(not(unix))]
+async fn wait_for_signal() {
+    let _ = tokio::signal::ctrl_c().await;
 }
 
 #[cfg(test)]

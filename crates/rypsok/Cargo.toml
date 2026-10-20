@@ -19,6 +19,14 @@ path = "src/main.rs"
 rypsok-core.workspace = true
 clap.workspace = true
 rmcp.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+governor.workspace = true
+thiserror.workspace = true
+serde.workspace = true
 
 [lints]
 workspace = true
