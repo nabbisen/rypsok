@@ -173,13 +173,8 @@ fn req_err_004_messages_are_bounded_templates() {
 /// REQ-CTX-001: `date` and `engines` are absent, not null, when not supplied.
 #[test]
 fn req_ctx_001_optional_result_fields_are_absent() {
-    let result = SearchResult {
-        title: "t".into(),
-        url: "https://a/".into(),
-        snippet: "s".into(),
-        date: None,
-        engines: None,
-    };
+    let (result, _) =
+        crate::boundary::make_result("t", "s", "https://a/".into(), None, None, 150, 300);
     let value = serde_json::to_value(&result).unwrap();
     assert_eq!(
         value,

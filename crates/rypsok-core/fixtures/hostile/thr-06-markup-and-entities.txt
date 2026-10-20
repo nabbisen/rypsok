@@ -1,0 +1,1 @@
+<script>alert(1)</script><b>bold</b> &lt;not a tag&gt; <span class="searchmatch">match</span> &#x202E;reversed

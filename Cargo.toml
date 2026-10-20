@@ -24,6 +24,10 @@ tokio-util = "0.7"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["json", "fmt", "std", "time"] }
 governor = { version = "0.10", default-features = false, features = ["std"] }
+unicode-normalization = "0.1"
+unicode-general-category = "1.1"
+html-escape = "0.3"
+proptest = { version = "1.12", default-features = false, features = ["std"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -298,7 +298,18 @@ pub struct SearchResult {
     /// The engines that returned this result, when attribution is on or required.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engines: Option<Vec<EngineId>>,
+    /// Proof that the external fields passed the content boundary. The
+    /// field is crate-private, so a result is built only by
+    /// `boundary::make_result` (RFC 005).
+    #[serde(skip)]
+    #[doc(hidden)]
+    pub(crate) cleaned: Cleaned,
 }
+
+/// Marker of text that passed the content boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, schemars::JsonSchema)]
+#[doc(hidden)]
+pub struct Cleaned;
 
 /// The response of `web_search` (external design §3.1).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]

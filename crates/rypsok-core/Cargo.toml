@@ -29,6 +29,12 @@ tokio-util.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 governor.workspace = true
+unicode-normalization.workspace = true
+unicode-general-category.workspace = true
+html-escape.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
 
 [lints]
 workspace = true
