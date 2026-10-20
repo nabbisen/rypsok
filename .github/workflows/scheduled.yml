@@ -28,5 +28,10 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - name: Live checks
-        run: echo "live checks arrive with the drivers in milestone M1 (REQ-TEST-003)"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Live checks (REQ-TEST-003)
+        env:
+          BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
+          RYPSOK_LIVE_CONTACT: ${{ vars.RYPSOK_LIVE_CONTACT }}
+        run: cargo test -p rypsok --test live -- --ignored --nocapture

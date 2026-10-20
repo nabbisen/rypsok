@@ -1,0 +1,24 @@
+{
+  "type": "search",
+  "query": { "original": "rust programming", "more_results_available": true },
+  "web": {
+    "type": "search",
+    "results": [
+      {
+        "title": "Rust Programming Language",
+        "url": "https://www.rust-lang.org/?utm_source=brave",
+        "description": "A language empowering everyone to build reliable and efficient software.",
+        "page_age": "2026-08-30T12:00:00",
+        "age": "3 weeks ago",
+        "language": "en",
+        "family_friendly": true
+      },
+      {
+        "title": "Learn Rust - Rust Programming Language",
+        "url": "https://www.rust-lang.org/learn",
+        "description": "Get started with Rust. Affectionately nicknamed &quot;the book,&quot; The Rust Programming Language will give you an overview.",
+        "family_friendly": true
+      }
+    ]
+  }
+}

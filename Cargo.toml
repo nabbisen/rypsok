@@ -28,6 +28,11 @@ unicode-normalization = "0.1"
 unicode-general-category = "1.1"
 html-escape = "0.3"
 proptest = { version = "1.12", default-features = false, features = ["std"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "gzip", "http2", "query"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+async-trait = "0.1"
+url = "2.5"
+wiremock = "0.6"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

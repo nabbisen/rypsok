@@ -1,0 +1,32 @@
+{
+    "batchcomplete": "",
+    "continue": {
+        "sroffset": 2,
+        "continue": "-||"
+    },
+    "query": {
+        "searchinfo": {
+            "totalhits": 5060
+        },
+        "search": [
+            {
+                "ns": 0,
+                "title": "Rust (programming language)",
+                "pageid": 36353478,
+                "size": 96026,
+                "wordcount": 9664,
+                "snippet": "<span class=\"searchmatch\">Rust</span> is a general-purpose programming language emphasizing performance, type safety, and concurrency. It enforces memory safety&#8212;meaning that all references",
+                "timestamp": "2026-09-01T07:59:43Z"
+            },
+            {
+                "ns": 0,
+                "title": "Rust &amp; Bone",
+                "pageid": 41284488,
+                "size": 33513,
+                "wordcount": 3512,
+                "snippet": "<span class=\"searchmatch\">Rust</span> and Bone is a 2012 romantic drama film",
+                "timestamp": "2026-07-19T17:30:59Z"
+            }
+        ]
+    }
+}

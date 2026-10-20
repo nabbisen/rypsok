@@ -1,0 +1,14 @@
+{
+  "type": "news",
+  "query": { "original": "rust release" },
+  "results": [
+    {
+      "title": "Rust 1.99 released",
+      "url": "https://example.org/news/rust-1-99",
+      "description": "The Rust team announced version 1.99 today.",
+      "age": "1 day ago",
+      "page_age": "2026-10-19T09:00:00",
+      "meta_url": { "hostname": "example.org" }
+    }
+  ]
+}

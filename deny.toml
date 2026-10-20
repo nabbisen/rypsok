@@ -19,6 +19,8 @@ allow = [
   "Zlib",
   "Unicode-3.0",
   "MPL-2.0",
+  # Root certificate data of the TLS stack (webpki-roots); data, not code.
+  "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.8
 

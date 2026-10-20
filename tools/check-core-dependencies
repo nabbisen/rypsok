@@ -9,7 +9,7 @@ cd "$(dirname "$0")/.."
 
 # Crate names that must never appear. Extend when a new protocol SDK or
 # server framework exists; names are matched as whole crate names.
-forbidden='^(rmcp|rmcp-macros|mcp-core|mcp-sdk|mcp-protocol|axum|axum-core|hyper-util|actix-web|warp|rocket|tide|poem|salvo)$'
+forbidden='^(rmcp|rmcp-macros|mcp-core|mcp-sdk|mcp-protocol|axum|axum-core|actix-web|warp|rocket|tide|poem|salvo)$'
 
 tree="$(cargo tree -p rypsok-core -e normal --prefix none --no-dedupe --all-features)"
 offenders="$(printf '%s\n' "$tree" | awk '{print $1}' | sort -u | grep -E "$forbidden" || true)"

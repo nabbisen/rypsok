@@ -1,0 +1,10 @@
+{
+  "type": "ErrorResponse",
+  "error": {
+    "id": "0d4a2c2e-5b3f-4a7e-8c1d-000000000000",
+    "status": 401,
+    "code": "SUBSCRIPTION_TOKEN_INVALID",
+    "detail": "Unable to validate subscription token"
+  },
+  "time": 1760000000
+}

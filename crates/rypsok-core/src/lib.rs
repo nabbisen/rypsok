@@ -49,10 +49,11 @@ use std::collections::BTreeSet;
 pub use tokio_util::sync::CancellationToken;
 
 use config::{Config, ConfigError};
+use engine::registry::Registry;
 use limits::Limits;
 use model::{
-    EngineId, EngineState, EngineStatus, FetchRequest, FetchResponse, Outcome, SearchRequest,
-    SearchResponse, StatusResponse, ToolError,
+    EngineStatus, FetchRequest, FetchResponse, Outcome, SearchRequest, SearchResponse,
+    StatusResponse, ToolError,
 };
 use search::SearchPolicy;
 
@@ -63,7 +64,7 @@ pub struct Rypsok {
     config: Config,
     limits: Limits,
     policy: SearchPolicy,
-    engines: Vec<(EngineId, EngineState)>,
+    registry: Registry,
 }
 
 impl Rypsok {
@@ -83,36 +84,12 @@ impl Rypsok {
                 .into_iter()
                 .collect::<BTreeSet<_>>(),
         };
-        let engines = config
-            .engines
-            .iter()
-            .map(|(id, table)| {
-                let id = EngineId::new(id.as_str()).expect("validated identifier");
-                let state = if !table.enabled {
-                    EngineState::Disabled
-                } else {
-                    match table.secret_source().map(|s| s.resolve()) {
-                        None => EngineState::Closed,
-                        Some(Ok((_secret, warning))) => {
-                            if let Some(warning) = warning {
-                                tracing::warn!(event = "secret_file_permissions", engine = %id, "{warning}");
-                            }
-                            EngineState::Closed
-                        }
-                        Some(Err(error)) => {
-                            tracing::warn!(event = "engine_inactive", engine = %id, reason = %error, "engine inactive: credential not available");
-                            EngineState::Disabled
-                        }
-                    }
-                };
-                (id, state)
-            })
-            .collect();
+        let registry = Registry::build(&config, None, true);
         Ok(Rypsok {
             config,
             limits,
             policy,
-            engines,
+            registry,
         })
     }
 
@@ -129,6 +106,11 @@ impl Rypsok {
     /// The validation policy of `web_search`.
     pub fn search_policy(&self) -> &SearchPolicy {
         &self.policy
+    }
+
+    /// The engines.
+    pub fn registry(&self) -> &Registry {
+        &self.registry
     }
 
     /// `web_search`: search several engines at once and return deduplicated,
@@ -174,11 +156,12 @@ impl Rypsok {
             outcome: Outcome::Ok,
             notices: Vec::new(),
             engines: self
-                .engines
+                .registry
+                .engines()
                 .iter()
-                .map(|(id, state)| EngineStatus {
-                    id: id.clone(),
-                    state: *state,
+                .map(|e| EngineStatus {
+                    id: e.id.clone(),
+                    state: e.state(),
                     latency_ms: None,
                 })
                 .collect(),

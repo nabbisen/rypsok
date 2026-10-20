@@ -1,0 +1,7 @@
+{
+    "error": {
+        "code": "ratelimited",
+        "info": "You've exceeded your rate limit. Please wait some time and try again.",
+        "*": "See https://en.wikipedia.org/w/api.php for API usage."
+    }
+}

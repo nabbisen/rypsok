@@ -19,3 +19,6 @@
 - [Limits and defaults](./maintainers/limits-and-defaults.md)
 - [Threat register](./maintainers/threat-register.md)
 - [Glossary](./maintainers/glossary.md)
+- [Engine admission records](./maintainers/engines/README.md)
+  - [Wikipedia](./maintainers/engines/wikipedia.md)
+  - [Brave Search](./maintainers/engines/brave.md)
