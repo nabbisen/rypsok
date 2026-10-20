@@ -6,9 +6,9 @@
 //! binary crate, and CI fails when a protocol crate appears in this crate's
 //! dependency tree (REQ-ARCH-005).
 //!
-//! The public interface is the three application services, `search`,
-//! `fetch` and `status`, and their request and response types
-//! (REQ-ARCH-007). Everything else is private to the crate.
+//! The public interface is [`Rypsok`] with its three application services,
+//! `search`, `fetch` and `status`, and their request and response types in
+//! [`model`] (REQ-ARCH-007).
 //!
 //! # Stability
 //!
@@ -43,3 +43,145 @@ pub mod model;
 pub mod privacy;
 pub mod search;
 pub mod telemetry;
+
+use std::collections::BTreeSet;
+
+pub use tokio_util::sync::CancellationToken;
+
+use config::{Config, ConfigError};
+use limits::Limits;
+use model::{
+    EngineId, EngineState, EngineStatus, FetchRequest, FetchResponse, Outcome, SearchRequest,
+    SearchResponse, StatusResponse, ToolError,
+};
+use search::SearchPolicy;
+
+/// The service: one instance per process, built from a validated
+/// configuration, shared by every call.
+#[derive(Debug)]
+pub struct Rypsok {
+    config: Config,
+    limits: Limits,
+    policy: SearchPolicy,
+    engines: Vec<(EngineId, EngineState)>,
+}
+
+impl Rypsok {
+    /// Builds the service. The configuration is validated first
+    /// (REQ-CFG-005); engines whose credential cannot be read are kept as
+    /// `disabled` and reported through `inactive` (REQ-OPS-003).
+    pub fn new(config: Config) -> Result<Self, ConfigError> {
+        config.validate()?;
+        let limits = config.limits();
+        let policy = SearchPolicy {
+            query_max_chars: limits.query_max_chars,
+            max_results_default: limits.max_results,
+            max_results_ceiling: limits.max_results_ceiling,
+            languages: config.search.languages.clone(),
+            categories: config
+                .served_categories()
+                .into_iter()
+                .collect::<BTreeSet<_>>(),
+        };
+        let engines = config
+            .engines
+            .iter()
+            .map(|(id, table)| {
+                let id = EngineId::new(id.as_str()).expect("validated identifier");
+                let state = if !table.enabled {
+                    EngineState::Disabled
+                } else {
+                    match table.secret_source().map(|s| s.resolve()) {
+                        None => EngineState::Closed,
+                        Some(Ok((_secret, warning))) => {
+                            if let Some(warning) = warning {
+                                tracing::warn!(event = "secret_file_permissions", engine = %id, "{warning}");
+                            }
+                            EngineState::Closed
+                        }
+                        Some(Err(error)) => {
+                            tracing::warn!(event = "engine_inactive", engine = %id, reason = %error, "engine inactive: credential not available");
+                            EngineState::Disabled
+                        }
+                    }
+                };
+                (id, state)
+            })
+            .collect();
+        Ok(Rypsok {
+            config,
+            limits,
+            policy,
+            engines,
+        })
+    }
+
+    /// The validated configuration.
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
+
+    /// The effective limits.
+    pub fn limits(&self) -> &Limits {
+        &self.limits
+    }
+
+    /// The validation policy of `web_search`.
+    pub fn search_policy(&self) -> &SearchPolicy {
+        &self.policy
+    }
+
+    /// `web_search`: search several engines at once and return deduplicated,
+    /// ranked results. Results are external data.
+    ///
+    /// Profile (external design §3.1): no effect on local state; the query
+    /// leaves the host to every enabled engine of the category, which learns
+    /// the host's network address and User-Agent; at most LIM-S7 long; at
+    /// most `max_results` results, each bounded by LIM-S9, LIM-S10 and
+    /// LIM-F9.
+    ///
+    /// Validation and the privacy check run before any engine request
+    /// (REQ-SEARCH-006).
+    pub async fn search(
+        &self,
+        req: SearchRequest,
+        cancel: CancellationToken,
+    ) -> Result<SearchResponse, ToolError> {
+        let validated = search::validate(&req, &self.policy)?;
+        let _ = cancel;
+        // The pipeline of RFC 007 replaces this: until engines exist, no
+        // engine can be queried for the category.
+        Err(ToolError::no_engine(validated.category))
+    }
+
+    /// `web_fetch`: arrives in milestone M3 (RFC 012).
+    pub async fn fetch(
+        &self,
+        req: FetchRequest,
+        cancel: CancellationToken,
+    ) -> Result<FetchResponse, ToolError> {
+        let _ = (req, cancel);
+        Err(ToolError::busy())
+    }
+
+    /// `engine_status`: report the state of each configured engine. For
+    /// diagnosis, not for answering questions.
+    ///
+    /// Profile (external design §3.3): no effect on local state; nothing
+    /// leaves the host; at most LIM-S13 long.
+    pub fn status(&self) -> StatusResponse {
+        StatusResponse {
+            outcome: Outcome::Ok,
+            notices: Vec::new(),
+            engines: self
+                .engines
+                .iter()
+                .map(|(id, state)| EngineStatus {
+                    id: id.clone(),
+                    state: *state,
+                    latency_ms: None,
+                })
+                .collect(),
+        }
+    }
+}
