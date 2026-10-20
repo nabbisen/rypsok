@@ -76,3 +76,21 @@ async fn req_eng_010_rate_bucket_refuses_beyond_burst_before_deadline() {
         "one per six seconds at 10 per minute with a burst of one"
     );
 }
+
+/// REQ-TEST-016: the provider limit of REQ-CMP-002 is tested: a limiter at
+/// the record's rate admits the burst and then waits.
+#[tokio::test]
+async fn req_test_016_provider_rate_limit_is_enforced() {
+    let limiter = EngineLimiter::new(60, 4);
+    let mut admitted = 0;
+    for _ in 0..10 {
+        if limiter
+            .acquire(Instant::now() + Duration::from_millis(5))
+            .await
+            .is_ok()
+        {
+            admitted += 1;
+        }
+    }
+    assert_eq!(admitted, 6, "60 per minute allows a burst of 6");
+}

@@ -24,7 +24,7 @@ use crate::egress::{self, ClientError, EngineClientSettings};
 pub fn declared_keys(kind: &str) -> Option<&'static [&'static str]> {
     match kind {
         #[cfg(feature = "engine-wikipedia")]
-        "wikipedia" => Some(&[]),
+        "wikipedia" => Some(&["base_url"]),
         #[cfg(feature = "engine-brave")]
         "brave" => Some(&["api_key_env", "api_key_file", "endpoint"]),
         _ => None,
@@ -91,10 +91,21 @@ pub fn build(
     let _ = egress::ensure_crypto_provider;
     match table.kind.as_str() {
         #[cfg(feature = "engine-wikipedia")]
-        "wikipedia" => Ok(Box::new(wikipedia::Wikipedia::new(context)?)),
+        "wikipedia" => Ok(Box::new(wikipedia::Wikipedia::new(table, context)?)),
         #[cfg(feature = "engine-brave")]
         "brave" => Ok(Box::new(brave::Brave::new(table, secret, context)?)),
         _ => Err(DriverBuildError::UnknownKind),
+    }
+}
+
+/// Whether a URL points at the local host, where plain HTTP is admitted
+/// for a private mirror or a test server.
+pub fn is_loopback(url: &url::Url) -> bool {
+    match url.host() {
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        Some(url::Host::Domain(name)) => name == "localhost",
+        None => false,
     }
 }
 

@@ -41,6 +41,7 @@ regex.workspace = true
 [dev-dependencies]
 proptest.workspace = true
 wiremock.workspace = true
+flate2.workspace = true
 
 [lints]
 workspace = true

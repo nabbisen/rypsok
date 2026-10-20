@@ -8,7 +8,7 @@ use super::*;
 /// unknown type declares none.
 #[test]
 fn req_eng_002_drivers_declare_their_keys() {
-    assert_eq!(declared_keys("wikipedia"), Some(&[][..]));
+    assert_eq!(declared_keys("wikipedia"), Some(&["base_url"][..]));
     assert_eq!(
         declared_keys("brave"),
         Some(&["api_key_env", "api_key_file", "endpoint"][..])

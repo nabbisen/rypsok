@@ -9,6 +9,9 @@ use super::normalize::ComparisonKey;
 use crate::engine::RawResult;
 use crate::model::EngineId;
 
+/// Observations of one key: selection index, engine, rank.
+type Seen = Vec<(usize, EngineId, u32)>;
+
 /// The `k` of reciprocal rank fusion.
 pub const RRF_K: u64 = 60;
 /// The integer scale of one contribution.
@@ -40,34 +43,40 @@ pub struct Merged {
     pub best: Observation,
     /// The engines that returned it, in selection order.
     pub engines: Vec<EngineId>,
+    /// Every observation as engine identifier and rank, in selection order
+    /// (REQ-RANK-001).
+    pub ranks: Vec<(EngineId, u32)>,
     /// The fused score.
     pub score: u64,
 }
 
 /// Groups observations by key in selection order and keeps the best
-/// observation of each (REQ-RANK-004). Engines are listed in selection
-/// order, never arrival order (REQ-ARCH-004).
+/// observation of each (REQ-RANK-004). Engines and ranks are listed in
+/// selection order, never arrival order (REQ-ARCH-004).
 pub fn merge(observations: Vec<Observation>) -> Vec<Merged> {
     let mut order: Vec<ComparisonKey> = Vec::new();
-    let mut groups: HashMap<ComparisonKey, (Merged, Vec<(usize, EngineId)>)> = HashMap::new();
+    let mut groups: HashMap<ComparisonKey, (Merged, Seen)> = HashMap::new();
     for observation in observations {
         let contribution = RRF_SCALE / (RRF_K + u64::from(observation.rank));
-        let seen = (observation.engine_index, observation.engine.clone());
+        let seen = (
+            observation.engine_index,
+            observation.engine.clone(),
+            observation.rank,
+        );
         match groups.get_mut(&observation.key) {
             None => {
                 order.push(observation.key.clone());
                 let merged = Merged {
                     best: observation.clone(),
                     engines: Vec::new(),
+                    ranks: Vec::new(),
                     score: contribution,
                 };
                 groups.insert(observation.key, (merged, vec![seen]));
             }
-            Some((merged, engines)) => {
+            Some((merged, seen_list)) => {
                 merged.score += contribution;
-                if !engines.contains(&seen) {
-                    engines.push(seen);
-                }
+                seen_list.push(seen);
                 let better = (
                     observation.rank,
                     observation.preference,
@@ -86,9 +95,17 @@ pub fn merge(observations: Vec<Observation>) -> Vec<Merged> {
     order
         .into_iter()
         .filter_map(|key| groups.remove(&key))
-        .map(|(mut merged, mut engines)| {
-            engines.sort();
-            merged.engines = engines.into_iter().map(|(_, id)| id).collect();
+        .map(|(mut merged, mut seen_list)| {
+            seen_list.sort();
+            merged.ranks = seen_list
+                .iter()
+                .map(|(_, id, rank)| (id.clone(), *rank))
+                .collect();
+            for (_, id, _) in seen_list {
+                if !merged.engines.contains(&id) {
+                    merged.engines.push(id);
+                }
+            }
             merged
         })
         .collect()

@@ -32,17 +32,37 @@ it returns what the engines returned, cleaned and ranked, and says so.
 
 ## Quick start
 
-The first release, 0.1.0, delivers `web_search` over stdio. Until then the
-binary builds and reports what is missing:
-
 ```sh
 cargo install rypsok
-rypsok --version
-rypsok serve        # "not implemented until milestone M1"
+rypsok serve            # MCP over stdio, Wikipedia only, no file needed
 ```
 
-The configuration format and a host integration guide arrive with 0.1.0 in
-[`docs/`](docs/src/SUMMARY.md).
+Add an MCP server entry to your agent runtime, for example:
+
+```json
+{ "mcpServers": { "rypsok": { "command": "rypsok", "args": ["serve"] } } }
+```
+
+To add Brave Search, put a key in the environment and a file next to it:
+
+```toml
+# rypsok.toml
+config_version = 1
+
+[engines.brave]
+type = "brave"
+categories = ["general"]
+api_key_env = "BRAVE_API_KEY"
+```
+
+```sh
+rypsok check --config rypsok.toml   # validates and prints the effective settings
+rypsok serve --config rypsok.toml
+```
+
+See [Getting started](docs/src/getting-started.md), the
+[tools reference](docs/src/reference/tools.md) and the
+[configuration reference](docs/src/reference/configuration.md).
 
 ## Design notes
 

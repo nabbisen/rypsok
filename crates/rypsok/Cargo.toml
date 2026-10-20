@@ -28,5 +28,8 @@ governor.workspace = true
 thiserror.workspace = true
 serde.workspace = true
 
+[dev-dependencies]
+wiremock.workspace = true
+
 [lints]
 workspace = true

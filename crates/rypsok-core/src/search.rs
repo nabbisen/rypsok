@@ -7,6 +7,7 @@
 //! stages arrive with their RFCs.
 
 pub mod normalize;
+pub mod pipeline;
 pub mod rank;
 
 use std::collections::BTreeSet;

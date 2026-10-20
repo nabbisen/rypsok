@@ -218,3 +218,43 @@ proptest! {
         prop_assert_eq!(back, once.text);
     }
 }
+
+/// REQ-CTX-010: budgets count Unicode scalar values, so 150 CJK characters
+/// fit a 150-character title and 151 do not.
+#[test]
+fn req_ctx_010_budgets_count_scalar_values() {
+    let fits = "日".repeat(150);
+    assert!(!clean_text(&fits, TITLE_MAX).truncated);
+    let over = "日".repeat(151);
+    let cleaned = clean_text(&over, TITLE_MAX);
+    assert!(cleaned.truncated);
+    assert_eq!(cleaned.text.chars().count(), 150);
+    assert_eq!(cleaned.text.len(), 450, "bytes are not the unit");
+}
+
+/// REQ-CTX-007: whenever text is cut to a bound, the effects say so, and
+/// the pipeline turns them into `title_truncated` and `snippet_truncated`
+/// notices.
+#[test]
+fn req_ctx_007_truncation_is_reported() {
+    let (_, effects) = make_result(
+        &"t".repeat(200),
+        &"s".repeat(400),
+        "https://example.org/".into(),
+        None,
+        None,
+        TITLE_MAX,
+        SNIPPET_MAX,
+    );
+    assert!(effects.title_truncated && effects.snippet_truncated);
+    let (_, effects) = make_result(
+        "short",
+        "short",
+        "https://example.org/".into(),
+        None,
+        None,
+        TITLE_MAX,
+        SNIPPET_MAX,
+    );
+    assert!(!effects.title_truncated && !effects.snippet_truncated);
+}

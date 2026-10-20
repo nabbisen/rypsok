@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Cold-start measurement (REQ-PERF-005): time from process start to the
+# first web_search response against the real engines, over stdio. Needs
+# the network; run by hand and record the result in the review package.
+#
+# Usage: tools/measure-cold-start [config.toml]
+set -eu
+cd "$(dirname "$0")/.."
+cargo build --release --quiet
+config_flag=()
+if [ "${1:-}" != "" ]; then config_flag=(--config "$1"); fi
+meta='"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"measure","version":"0"},"io.modelcontextprotocol/clientCapabilities":{}}'
+request="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"web_search\",\"arguments\":{\"query\":\"Rust programming language\"},$meta}}"
+start=$(date +%s%N)
+printf '%s\n' "$request" | ./target/release/rypsok serve "${config_flag[@]}" 2>/dev/null | head -n 1 >/dev/null
+end=$(date +%s%N)
+printf 'cold start to first web_search response: %d ms\n' $(( (end - start) / 1000000 ))

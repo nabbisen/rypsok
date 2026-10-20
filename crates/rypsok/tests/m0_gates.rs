@@ -132,3 +132,48 @@ fn req_test_012_ci_workflow_lists_every_gate() {
         "the lint that forbids printing to stdout is on"
     );
 }
+
+/// REQ-RUST-002: CI builds and tests on Linux, macOS and Windows; the
+/// release job (crates.io and binaries) is where aarch64 is added.
+#[test]
+fn req_rust_002_ci_matrix_covers_three_platforms() {
+    let ci = read(".github/workflows/ci.yml");
+    for os in ["ubuntu-latest", "macos-latest", "windows-latest"] {
+        assert!(ci.contains(os), "{os}");
+    }
+    assert!(ci.contains("cargo test --workspace"));
+}
+
+/// REQ-MAIN-005: every stage is testable without the network: recorded
+/// fixtures exist for every driver, the hostile corpus exists, and the
+/// mock server is a development dependency of both crates.
+#[test]
+fn req_main_005_fixtures_and_loopback_servers_exist() {
+    for engine in ["wikipedia", "brave"] {
+        for case in [
+            "search-ok.json",
+            "search-empty.json",
+            "error-429.json",
+            "error-malformed.json",
+        ] {
+            assert!(
+                repository_root()
+                    .join("crates/rypsok-core/fixtures")
+                    .join(engine)
+                    .join(case)
+                    .is_file(),
+                "{engine}/{case}"
+            );
+        }
+    }
+    assert!(
+        repository_root()
+            .join("crates/rypsok-core/fixtures/hostile")
+            .read_dir()
+            .unwrap()
+            .count()
+            > 5
+    );
+    assert!(read("crates/rypsok-core/Cargo.toml").contains("wiremock"));
+    assert!(read("crates/rypsok/Cargo.toml").contains("wiremock"));
+}

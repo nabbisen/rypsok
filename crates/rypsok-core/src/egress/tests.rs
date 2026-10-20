@@ -105,3 +105,79 @@ async fn req_sec_010_body_read_stops_at_the_bound() {
     let mut response = client.get(server.uri()).send().await.unwrap();
     assert_eq!(read_body(&mut response, 8192).await.unwrap().len(), 4096);
 }
+
+/// REQ-SEC-013: byte limits apply to decompressed bytes as they are
+/// produced: a small gzip body that inflates beyond the bound is refused.
+#[tokio::test]
+async fn req_sec_013_limit_applies_after_decompression() {
+    use std::io::Write;
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+    encoder.write_all(&vec![b'x'; 200_000]).unwrap();
+    let compressed = encoder.finish().unwrap();
+    assert!(
+        compressed.len() < 4096,
+        "the compressed body is small: {}",
+        compressed.len()
+    );
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-encoding", "gzip")
+                .set_body_bytes(compressed),
+        )
+        .mount(&server)
+        .await;
+    let client = engine_client(&settings(false)).unwrap();
+    let mut response = client.get(server.uri()).send().await.unwrap();
+    assert_eq!(
+        read_body(&mut response, 100_000).await.unwrap_err(),
+        BodyError::TooLarge
+    );
+    let mut response = client.get(server.uri()).send().await.unwrap();
+    assert_eq!(
+        read_body(&mut response, 300_000).await.unwrap().len(),
+        200_000
+    );
+}
+
+/// REQ-SEC-005 and REQ-TEST-015: a driver's requests pass the engine
+/// profile: a redirect to another origin is not followed and the
+/// credential stays on the engine's origin.
+#[tokio::test]
+async fn req_sec_005_driver_requests_pass_the_engine_profile() {
+    let elsewhere = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
+        .mount(&elsewhere)
+        .await;
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(302).insert_header(
+            "location",
+            format!("{}/w/api.php", elsewhere.uri()).as_str(),
+        ))
+        .mount(&server)
+        .await;
+    let client = engine_client(&settings(false)).unwrap();
+    let response = client
+        .get(format!("{}/w/api.php", server.uri()))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 302);
+    assert!(
+        elsewhere.received_requests().await.unwrap().is_empty(),
+        "the other origin received nothing"
+    );
+}
+
+/// REQ-SEC-011: every engine request has a connect timeout and a total
+/// timeout from the limits.
+#[test]
+fn req_sec_011_engine_client_settings_carry_both_timeouts() {
+    let s = settings(true);
+    assert_eq!(s.connect_timeout, Duration::from_millis(1000));
+    assert_eq!(s.timeout, Duration::from_millis(2000));
+    assert!(engine_client(&s).is_ok());
+}

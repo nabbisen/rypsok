@@ -10,11 +10,42 @@ is announced here.
 
 ## [Unreleased]
 
+## [0.1.0] — Search kernel (milestone M1)
+
 ### Added
 
-- Cargo workspace with the `rypsok-core` library and the `rypsok` binary
-  (RFC 001).
-- CI gates: format, lints, tests, documentation, dependency rule,
-  requirement coverage, advisories and licenses, book build (RFC 002).
-- Command line skeleton: `serve`, `check`, `--version`; the commands arrive
-  with 0.1.0.
+- `web_search` over MCP stdio (revision 2026-07-28 with `server/discover`,
+  and the handshake-based revisions 2024-11-05 to 2025-11-25): one
+  structured response with a declared output schema, the same JSON as text,
+  outcomes `ok`, `partial`, `empty`, and tool execution errors of kinds
+  `invalid_request`, `denied`, `unavailable` (RFC 003).
+- `engine_status` reporting `disabled`, `closed`, `open`, `half_open` per
+  configured engine; the operator can remove the tool (RFC 003).
+- Engines: Wikipedia (keyless) and Brave Search (keyed; web and news
+  endpoints), each with an admission record, fixtures and a scheduled live
+  check (RFC 006). A `base_url` key lets the Wikipedia driver query a
+  private mirror.
+- Concurrent aggregation under one deadline with per-engine timeouts, early
+  completion, cancellation through `notifications/cancelled`, panic
+  isolation, and no retries (RFC 007).
+- URL normalization with tracking parameters removed, deduplication by
+  comparison key, reciprocal rank fusion in integer arithmetic (RFC 008).
+- The content boundary: markup and entities, NFC, removal of invisible and
+  control characters, bounded titles and snippets, notices for every change,
+  instruction-like content noticed or dropped (RFC 005).
+- The secret check on queries with modes `refuse` (default), `mask`, `warn`,
+  `off`; structured JSON logs on standard error that never carry a query,
+  a URL path or content; in-process counters (RFC 009).
+- Configuration in one TOML file with every default from the limits table,
+  validation that names the key, secrets by environment variable or file,
+  `rypsok check` (RFC 004).
+- Per-tool invocation rate limits; per-engine rate and in-flight limits
+  honoring `Retry-After`.
+- Workspace, CI gates, requirement coverage gate, limits consistency gate
+  (RFC 001, RFC 002).
+
+### Limits (provisional, to be confirmed by measurement)
+
+Search deadline 2500 ms, engine timeout 2000 ms, reserve 200 ms, up to 8
+engines per request, 10 results per engine, snippets 300 and titles 150
+characters, query 400 characters, 60 `web_search` calls per minute.

@@ -20,7 +20,7 @@ fn req_eng_007_selection_by_category_preference_and_limit() {
          [engines.d]\ntype = \"wikipedia\"\ncategories = [\"news\"]\n",
     );
     let registry = Registry::build(&config, None, true);
-    let ids = |engines: Vec<&Engine>| {
+    let ids = |engines: Vec<Arc<Engine>>| {
         engines
             .iter()
             .map(|e| e.id.as_str().to_owned())
@@ -71,4 +71,26 @@ fn req_eng_010_active_engine_carries_properties() {
     assert_eq!(properties.requests_per_minute, 100);
     assert_eq!(properties.max_in_flight, 1);
     assert!(!engine.limiter.is_blocked());
+}
+
+/// REQ-ENG-004: an identifier with no driver is rejected at startup, and
+/// the registry resolves the others to driver instances.
+#[test]
+fn req_eng_004_registry_rejects_unknown_driver_at_startup() {
+    let bad = Config::parse(
+        "config_version = 1\n[engines.x]\ntype = \"altavista\"\ncategories = [\"general\"]\n",
+    )
+    .unwrap();
+    assert_eq!(
+        bad.validate().unwrap_err().problems,
+        vec!["engines.x.type: no such driver"]
+    );
+    let config = config(
+        "config_version = 1\n[engines.wikipedia]\ntype = \"wikipedia\"\ncategories = [\"general\"]\n",
+    );
+    let registry = Registry::build(&config, None, true);
+    assert_eq!(
+        registry.engines()[0].driver.as_deref().map(|d| d.kind()),
+        Some("wikipedia")
+    );
 }

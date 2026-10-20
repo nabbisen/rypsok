@@ -47,20 +47,33 @@ impl Session {
             "config_version = 1\n[engines.wikipedia]\ntype = \"wikipedia\"\ncategories = [\"general\"]\n[engines.brave]\ntype = \"brave\"\ncategories = [\"general\"]\napi_key_env = \"RYPSOK_TEST_NO_SUCH_KEY\"\n",
         );
         let path = config.map(Path::to_path_buf).unwrap_or(default);
-        Self::spawn(Some(&path))
+        Self::spawn(Some(&path), &[])
     }
 
     /// Starts `rypsok serve` with no configuration at all (REQ-OPS-003).
     pub fn start_without_config() -> Self {
-        Self::spawn(None)
+        Self::spawn(None, &[])
     }
 
-    fn spawn(config: Option<&Path>) -> Self {
+    /// Starts `rypsok serve` with extra environment variables.
+    pub fn start_with_env(config: &Path, env: &[(&str, &str)]) -> Self {
+        Self::spawn(Some(config), env)
+    }
+
+    /// The process identifier.
+    pub fn pid(&self) -> u32 {
+        self.child.id()
+    }
+
+    fn spawn(config: Option<&Path>, env: &[(&str, &str)]) -> Self {
         let mut command = Command::new(env!("CARGO_BIN_EXE_rypsok"));
         command
             .arg("serve")
             .env_remove("RYPSOK_CONFIG")
             .env_remove("BRAVE_API_KEY");
+        for (name, value) in env {
+            command.env(name, value);
+        }
         if let Some(path) = config {
             command.arg("--config").arg(path);
         }
@@ -154,6 +167,33 @@ impl Session {
         response["result"].clone()
     }
 
+    /// Sends a request and returns its id without waiting.
+    pub fn send_request(&mut self, method: &str, mut params: Value) -> u64 {
+        params[META] = Self::meta();
+        let id = self.next_id;
+        self.next_id += 1;
+        self.send(json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }));
+        id
+    }
+
+    /// Whether no response for `id` arrives within `within`.
+    pub fn no_response_for(&mut self, id: u64, within: Duration) -> bool {
+        let deadline = Instant::now() + within;
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            match self.lines.recv_timeout(remaining) {
+                Ok(line) => {
+                    self.stdout_log.push(line.clone());
+                    let value: Value = serde_json::from_str(&line).unwrap_or_default();
+                    if value["id"] == json!(id) {
+                        return false;
+                    }
+                }
+                Err(_) => return true,
+            }
+        }
+    }
+
     /// A request that is expected to fail at the protocol level; returns
     /// the error object.
     pub fn request_error(&mut self, method: &str, mut params: Value) -> Value {
@@ -190,10 +230,21 @@ impl Session {
         self.send(message);
     }
 
+    /// Waits for the process without closing stdin (after a signal).
+    pub fn wait_without_closing(self, within: Duration) -> (ExitStatus, Vec<String>, String) {
+        self.wait_inner(within, false)
+    }
+
     /// Closes stdin and waits for the process; returns its status, every
     /// stdout line seen, and the whole of stderr.
-    pub fn close_and_wait(mut self, within: Duration) -> (ExitStatus, Vec<String>, String) {
-        drop(self.stdin.take());
+    pub fn close_and_wait(self, within: Duration) -> (ExitStatus, Vec<String>, String) {
+        self.wait_inner(within, true)
+    }
+
+    fn wait_inner(mut self, within: Duration, close: bool) -> (ExitStatus, Vec<String>, String) {
+        if close {
+            drop(self.stdin.take());
+        }
         let deadline = Instant::now() + within;
         let status = loop {
             if let Some(status) = self.child.try_wait().unwrap() {

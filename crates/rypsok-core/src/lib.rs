@@ -45,6 +45,7 @@ pub mod search;
 pub mod telemetry;
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 pub use tokio_util::sync::CancellationToken;
 
@@ -56,6 +57,8 @@ use model::{
     StatusResponse, ToolError,
 };
 use search::SearchPolicy;
+use search::pipeline::Pipeline;
+use telemetry::Counters;
 
 /// The service: one instance per process, built from a validated
 /// configuration, shared by every call.
@@ -65,6 +68,8 @@ pub struct Rypsok {
     limits: Limits,
     policy: SearchPolicy,
     registry: Registry,
+    counters: Counters,
+    outbound: Arc<tokio::sync::Semaphore>,
 }
 
 impl Rypsok {
@@ -72,6 +77,15 @@ impl Rypsok {
     /// (REQ-CFG-005); engines whose credential cannot be read are kept as
     /// `disabled` and reported through `inactive` (REQ-OPS-003).
     pub fn new(config: Config) -> Result<Self, ConfigError> {
+        config.validate()?;
+        let registry = Registry::build(&config, None, true);
+        Self::from_parts(config, registry)
+    }
+
+    /// Builds the service around engines built elsewhere (a host that
+    /// embeds the core with its own drivers, or a test). The configuration
+    /// is validated first.
+    pub fn from_parts(config: Config, registry: Registry) -> Result<Self, ConfigError> {
         config.validate()?;
         let limits = config.limits();
         let policy = SearchPolicy {
@@ -84,12 +98,16 @@ impl Rypsok {
                 .into_iter()
                 .collect::<BTreeSet<_>>(),
         };
-        let registry = Registry::build(&config, None, true);
+        let outbound = Arc::new(tokio::sync::Semaphore::new(
+            limits.outbound_in_flight as usize,
+        ));
         Ok(Rypsok {
             config,
             limits,
             policy,
             registry,
+            counters: Counters::new(),
+            outbound,
         })
     }
 
@@ -129,11 +147,31 @@ impl Rypsok {
         req: SearchRequest,
         cancel: CancellationToken,
     ) -> Result<SearchResponse, ToolError> {
-        let validated = search::validate(&req, &self.policy)?;
-        let _ = cancel;
-        // The pipeline of RFC 007 replaces this: until engines exist, no
-        // engine can be queried for the category.
-        Err(ToolError::no_engine(validated.category))
+        let validated = match search::validate(&req, &self.policy) {
+            Ok(validated) => validated,
+            Err(error) => {
+                self.counters.refused("web_search", "invalid_request");
+                return Err(error);
+            }
+        };
+        let pipeline = Pipeline {
+            registry: &self.registry,
+            limits: &self.limits,
+            policy: &self.policy,
+            region: &self.config.search.region,
+            safe_search: self.config.search.safe_search,
+            secret_detection: self.config.privacy.secret_detection,
+            drop_flagged: self.config.search.drop_flagged_results,
+            engine_attribution: self.config.search.engine_attribution,
+            outbound: Arc::clone(&self.outbound),
+            counters: &self.counters,
+        };
+        search::pipeline::run(&pipeline, validated, cancel).await
+    }
+
+    /// The counters.
+    pub fn counters(&self) -> &Counters {
+        &self.counters
     }
 
     /// `web_fetch`: arrives in milestone M3 (RFC 012).

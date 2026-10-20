@@ -286,3 +286,314 @@ fn req_ops_003_zero_configuration_run() {
         "{stderr}"
     );
 }
+
+mod end_to_end {
+    //! The whole pipeline through the binary against a loopback engine
+    //! (REQ-TEST-004 with RFC 007): the response has the shape of external
+    //! design §3.1.
+
+    use super::*;
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn fixture(name: &str) -> Vec<u8> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../rypsok-core/fixtures/wikipedia")
+            .join(name);
+        std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+    }
+
+    /// REQ-MCP-011 and REQ-CTX-002: a real `web_search` over stdio against
+    /// a loopback engine returns `ok` with cleaned, bounded results and
+    /// the same JSON as text; a second engine that fails yields `partial`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn req_test_004_web_search_end_to_end_over_stdio() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/w/api.php"))
+            .and(query_param("srsearch", "rust language"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(fixture("search-ok.json")))
+            .mount(&server)
+            .await;
+        let broken = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&broken)
+            .await;
+        let config = config_file(&format!(
+            "config_version = 1\n[search]\nengine_attribution = true\n[engines.wiki]\ntype = \"wikipedia\"\ncategories = [\"general\"]\npreference = 10\nbase_url = \"{}/\"\n[engines.mirror]\ntype = \"wikipedia\"\ncategories = [\"general\"]\npreference = 20\nbase_url = \"{}/\"\n",
+            server.uri(),
+            broken.uri()
+        ));
+        let (result, stderr) = tokio::task::spawn_blocking(move || {
+            let mut s = Session::start(Some(&config));
+            s.discover();
+            let result = s.request("tools/call", json!({ "name": "web_search", "arguments": { "query": "rust language", "max_results": 3 } }));
+            let (_, _, stderr) = s.close_and_wait(std::time::Duration::from_millis(3000));
+            (result, stderr)
+        })
+        .await
+        .unwrap();
+        assert_eq!(result["isError"], false, "{result}");
+        let response = &result["structuredContent"];
+        assert_eq!(response["outcome"], "partial");
+        let results = response["results"].as_array().unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0]["title"], "Rust (programming language)");
+        assert_eq!(
+            results[0]["url"],
+            format!("{}/wiki/Rust_(programming_language)", server.uri())
+        );
+        assert!(
+            !results[0]["snippet"].as_str().unwrap().contains('<'),
+            "markup removed by the boundary"
+        );
+        assert_eq!(results[0]["date"], "2026-09-01");
+        assert_eq!(results[0]["engines"], json!(["wiki"]));
+        assert_eq!(results[1]["title"], "Rust & Bone", "entities decoded");
+        let notices = response["notices"].as_array().unwrap();
+        assert!(
+            notices.iter().any(|n| n["code"] == "engine_unavailable"
+                && n["engine"] == "mirror"
+                && n["reason"] == "request_failure"),
+            "{notices:?}"
+        );
+        let text: Value =
+            serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(&text, response);
+        assert!(
+            stderr.contains("\"event\":\"call\"") && stderr.contains("\"outcome\":\"partial\""),
+            "{stderr}"
+        );
+        assert!(
+            !stderr.contains("rust language"),
+            "the query never reaches the log (REQ-PRIV-004)"
+        );
+    }
+}
+
+/// REQ-MCP-001: the tools are exposed through the Model Context Protocol:
+/// a JSON-RPC `tools/list` over stdio names them.
+#[test]
+fn req_mcp_001_tools_are_exposed_over_mcp() {
+    let mut s = Session::start(None);
+    s.discover();
+    let list = s.request("tools/list", json!({}));
+    assert!(tool_names(&list).contains(&"web_search".to_owned()));
+    s.finish();
+}
+
+/// REQ-CTX-003: the text form of a response is the JSON serialization of
+/// the structured response.
+#[test]
+fn req_ctx_003_text_form_is_the_json_serialization() {
+    let mut s = Session::start(None);
+    s.discover();
+    let result = s.request(
+        "tools/call",
+        json!({ "name": "engine_status", "arguments": {} }),
+    );
+    let text = result["content"][0]["text"].as_str().unwrap();
+    assert_eq!(result["content"][0]["type"], "text");
+    let parsed: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(parsed, result["structuredContent"]);
+    assert_eq!(
+        text,
+        result["structuredContent"].to_string(),
+        "one rendering, byte for byte"
+    );
+    s.finish();
+}
+
+/// REQ-TEST-009: the protocol suite runs against the stateless revision
+/// and the handshake-based revision alike: both yield the same tool list.
+#[test]
+fn req_test_009_both_revisions_serve_the_same_tools() {
+    let mut stateless = Session::start(None);
+    stateless.discover();
+    let a = stateless.request("tools/list", json!({}));
+    stateless.finish();
+    let mut legacy = Session::start(None);
+    legacy.request_raw(json!({ "method": "initialize", "params": { "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "t", "version": "1" } } }));
+    legacy.notify_raw(json!({ "method": "notifications/initialized" }));
+    let b = legacy.request_raw(json!({ "method": "tools/list" }));
+    legacy.finish();
+    assert_eq!(a["tools"], b["tools"]);
+}
+
+/// REQ-OPS-002: `SIGTERM` starts a graceful shutdown that exits within
+/// LIM-O1 with code 0.
+#[cfg(unix)]
+#[test]
+fn req_ops_002_sigterm_shuts_down_within_limit() {
+    let mut s = Session::start(None);
+    s.discover();
+    let status = std::process::Command::new("kill")
+        .arg("-TERM")
+        .arg(s.pid().to_string())
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let started = std::time::Instant::now();
+    let (exit, _, stderr) = s.wait_without_closing(std::time::Duration::from_millis(3000));
+    assert!(started.elapsed() < std::time::Duration::from_millis(3000));
+    assert!(exit.success(), "{exit:?}");
+    assert!(stderr.contains("\"event\":\"signal\""), "{stderr}");
+}
+
+/// REQ-OPS-002: end of file on stdin shuts down within LIM-O1 on every
+/// platform.
+#[cfg(not(unix))]
+#[test]
+fn req_ops_002_eof_shuts_down_within_limit() {
+    let mut s = Session::start(None);
+    s.discover();
+    let (exit, _, _) = s.close_and_wait(std::time::Duration::from_millis(3000));
+    assert!(exit.success());
+}
+
+mod end_to_end_more {
+    //! More end-to-end checks against a loopback engine.
+
+    use super::*;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn fixture(name: &str) -> Vec<u8> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../rypsok-core/fixtures/wikipedia")
+            .join(name);
+        std::fs::read(&path).unwrap()
+    }
+
+    fn config_for(server: &MockServer) -> std::path::PathBuf {
+        config_file(&format!(
+            "config_version = 1\n[engines.wiki]\ntype = \"wikipedia\"\ncategories = [\"general\"]\nbase_url = \"{}/\"\n",
+            server.uri()
+        ))
+    }
+
+    /// REQ-TEST-008 and REQ-OBS-006: at the default level neither the
+    /// query nor any content reaches the log.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn req_test_008_default_level_logs_carry_no_query_or_content() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/w/api.php"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(fixture("search-ok.json")))
+            .mount(&server)
+            .await;
+        let config = config_for(&server);
+        let stderr = tokio::task::spawn_blocking(move || {
+            let mut s = Session::start(Some(&config));
+            s.discover();
+            let result = s.request(
+                "tools/call",
+                json!({ "name": "web_search", "arguments": { "query": "zebra quokka wombat" } }),
+            );
+            assert_eq!(result["isError"], false, "{result}");
+            s.close_and_wait(std::time::Duration::from_millis(3000)).2
+        })
+        .await
+        .unwrap();
+        assert!(!stderr.contains("zebra quokka wombat"), "{stderr}");
+        assert!(
+            !stderr.contains("general-purpose programming language"),
+            "snippet text in the log: {stderr}"
+        );
+        assert!(stderr.contains("\"event\":\"call\""));
+    }
+
+    /// REQ-OBS-006: a provider error body is not logged at the default level.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn req_obs_006_provider_error_text_is_not_logged_at_info() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(503).set_body_string("UPSTREAM-SECRET-DIAGNOSTIC"))
+            .mount(&server)
+            .await;
+        let config = config_for(&server);
+        let stderr = tokio::task::spawn_blocking(move || {
+            let mut s = Session::start(Some(&config));
+            s.discover();
+            let result = s.request(
+                "tools/call",
+                json!({ "name": "web_search", "arguments": { "query": "anything" } }),
+            );
+            assert_eq!(result["isError"], true);
+            assert!(
+                !result.to_string().contains("UPSTREAM-SECRET-DIAGNOSTIC"),
+                "provider text in the response"
+            );
+            s.close_and_wait(std::time::Duration::from_millis(3000)).2
+        })
+        .await
+        .unwrap();
+        assert!(!stderr.contains("UPSTREAM-SECRET-DIAGNOSTIC"), "{stderr}");
+    }
+
+    /// REQ-TEST-015: environment proxy variables are ignored: with a dead
+    /// proxy in the environment the loopback engine is still reached.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn req_test_015_environment_proxies_are_ignored() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/w/api.php"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(fixture("search-ok.json")))
+            .mount(&server)
+            .await;
+        let config = config_for(&server);
+        let ok = tokio::task::spawn_blocking(move || {
+            let env = [
+                ("HTTP_PROXY", "http://127.0.0.1:9"),
+                ("http_proxy", "http://127.0.0.1:9"),
+                ("ALL_PROXY", "http://127.0.0.1:9"),
+            ];
+            let mut s = Session::start_with_env(&config, &env);
+            s.discover();
+            let result = s.request(
+                "tools/call",
+                json!({ "name": "web_search", "arguments": { "query": "proxy" } }),
+            );
+            s.finish();
+            result["isError"] == false
+        })
+        .await
+        .unwrap();
+        assert!(ok);
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    }
+
+    /// REQ-MCP-007: after `notifications/cancelled` no response is sent for
+    /// the call and the engine request is aborted; the next call works.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn req_mcp_007_cancellation_sends_no_response_and_aborts() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/w/api.php"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_delay(std::time::Duration::from_millis(1500))
+                    .set_body_bytes(fixture("search-ok.json")),
+            )
+            .mount(&server)
+            .await;
+        let config = config_file(&format!(
+            "config_version = 1\n[search]\ndeadline_ms = 4000\nengine_timeout_ms = 3000\n[engines.wiki]\ntype = \"wikipedia\"\ncategories = [\"general\"]\nbase_url = \"{}/\"\n",
+            server.uri()
+        ));
+        tokio::task::spawn_blocking(move || {
+            let mut s = Session::start(Some(&config));
+            s.discover();
+            let id = s.send_request("tools/call", json!({ "name": "web_search", "arguments": { "query": "slow" } }));
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            s.notify_raw(json!({ "method": "notifications/cancelled", "params": { "requestId": id, "reason": "test" } }));
+            assert!(s.no_response_for(id, std::time::Duration::from_millis(2500)), "a response arrived after cancellation");
+            let status = s.request("tools/call", json!({ "name": "engine_status", "arguments": {} }));
+            assert_eq!(status["isError"], false);
+            s.finish();
+        })
+        .await
+        .unwrap();
+    }
+}

@@ -2,7 +2,7 @@
 //! driver, limiter and admission properties (REQ-ENG-002, REQ-ENG-003,
 //! REQ-ENG-007, REQ-OPS-003).
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use super::drivers::{self, DriverContext};
@@ -40,6 +40,27 @@ impl std::fmt::Debug for Engine {
 }
 
 impl Engine {
+    /// An engine with a driver, for hosts and tests that build engines
+    /// themselves; its limiter follows the driver's properties.
+    pub fn new(
+        id: EngineId,
+        categories: Vec<Category>,
+        preference: u32,
+        driver: Box<dyn Driver>,
+    ) -> Self {
+        let properties = driver.properties();
+        let limiter = EngineLimiter::new(properties.requests_per_minute, properties.max_in_flight);
+        Engine {
+            id,
+            kind: driver.kind().to_owned(),
+            categories,
+            preference,
+            driver: Some(driver),
+            limiter,
+            state: Mutex::new(EngineState::Closed),
+        }
+    }
+
     /// The circuit state.
     pub fn state(&self) -> EngineState {
         *self.state.lock().expect("engine state lock")
@@ -59,7 +80,7 @@ impl Engine {
 /// Every configured engine, ordered by preference and then identifier.
 #[derive(Debug)]
 pub struct Registry {
-    engines: Vec<Engine>,
+    engines: Vec<Arc<Engine>>,
 }
 
 impl Registry {
@@ -77,7 +98,7 @@ impl Registry {
             https_only,
             base_override,
         };
-        let mut engines: Vec<Engine> = config
+        let engines: Vec<Engine> = config
             .engines
             .iter()
             .map(|(id, table)| {
@@ -127,26 +148,34 @@ impl Registry {
                 }
             })
             .collect();
+        Registry::from_engines(engines)
+    }
+
+    /// A registry of these engines, ordered by preference and identifier.
+    pub fn from_engines(mut engines: Vec<Engine>) -> Registry {
         engines.sort_by(|a, b| {
             a.preference
                 .cmp(&b.preference)
                 .then_with(|| a.id.cmp(&b.id))
         });
-        Registry { engines }
+        Registry {
+            engines: engines.into_iter().map(Arc::new).collect(),
+        }
     }
 
     /// Every engine in preference order.
-    pub fn engines(&self) -> &[Engine] {
+    pub fn engines(&self) -> &[Arc<Engine>] {
         &self.engines
     }
 
     /// The active engines of a category, in preference order, at most
     /// `limit` (REQ-ENG-007, LIM-S8).
-    pub fn select(&self, category: Category, limit: usize) -> Vec<&Engine> {
+    pub fn select(&self, category: Category, limit: usize) -> Vec<Arc<Engine>> {
         self.engines
             .iter()
             .filter(|e| e.is_active() && e.categories.contains(&category))
             .take(limit)
+            .cloned()
             .collect()
     }
 }

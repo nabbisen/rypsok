@@ -117,3 +117,37 @@ fn req_arch_004_fusion_is_independent_of_arrival_order() {
     };
     assert_eq!(urls(&first), urls(&second));
 }
+
+/// REQ-RANK-001: a merged result holds the returned URL, the comparison
+/// key, title, snippet, date, and every observation with its rank.
+#[test]
+fn req_rank_001_merged_result_holds_observations_with_ranks() {
+    let merged = merge(vec![
+        observe(0, "a", 10, 2, "https://example.org/x"),
+        observe(1, "b", 20, 1, "https://example.org/x"),
+    ]);
+    let x = &merged[0];
+    assert_eq!(x.best.returned_url, "https://example.org/x");
+    assert_eq!(x.best.key, comparison_key("https://example.org/x"));
+    assert_eq!(
+        x.ranks,
+        vec![
+            (EngineId::new("a").unwrap(), 2),
+            (EngineId::new("b").unwrap(), 1)
+        ]
+    );
+    assert_eq!(x.best.raw.title, "b 1");
+}
+
+/// REQ-RANK-007: after ranking the list is cut to `max_results`.
+#[test]
+fn req_rank_007_cut_to_max_results() {
+    let merged = merge(
+        (1..=7)
+            .map(|i| observe(0, "a", 10, i, &format!("https://example.org/{i}")))
+            .collect(),
+    );
+    assert_eq!(order_and_cut(merged.clone(), 3).len(), 3);
+    assert_eq!(order_and_cut(merged.clone(), 100).len(), 7);
+    assert_eq!(order_and_cut(merged, 0).len(), 0);
+}

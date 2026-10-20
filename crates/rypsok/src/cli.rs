@@ -243,8 +243,10 @@ fn serve(flag: Option<&std::path::Path>) -> ExitCode {
         });
         stdio::serve(Adapter::new(service), shutdown).await
     });
-    // Everything still running is aborted with the runtime, within LIM-O1.
-    runtime.shutdown_timeout(Duration::from_millis(u64::from(SHUTDOWN_MAX_MS)));
+    // Everything still running was cancelled through its token; the runtime
+    // is dropped without waiting for the blocking stdin reader, so that the
+    // process exits well within LIM-O1.
+    runtime.shutdown_timeout(Duration::from_millis(u64::from(SHUTDOWN_MAX_MS) / 10));
     match outcome {
         Ok(()) => ExitCode::from(EXIT_SUCCESS),
         Err(error) => {

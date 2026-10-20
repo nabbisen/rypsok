@@ -6,8 +6,11 @@ use std::time::Duration;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use std::collections::BTreeMap;
+
 use super::*;
 use crate::config::SafeSearch;
+use crate::model::Category;
 use crate::model::Language;
 
 fn fixture(name: &str) -> Vec<u8> {
@@ -26,6 +29,16 @@ fn context(server: &MockServer) -> DriverContext {
         proxy: None,
         https_only: false,
         base_override: Some(url::Url::parse(&format!("{}/", server.uri())).unwrap()),
+    }
+}
+
+fn table() -> EngineTable {
+    EngineTable {
+        kind: "wikipedia".into(),
+        enabled: true,
+        categories: vec![Category::General],
+        preference: 10,
+        keys: BTreeMap::new(),
     }
 }
 
@@ -59,7 +72,7 @@ async fn mount(server: &MockServer, status: u16, body: Vec<u8>) {
 async fn req_test_002_wikipedia_search_ok_parses_raw_results() {
     let server = MockServer::start().await;
     mount(&server, 200, fixture("search-ok.json")).await;
-    let driver = Wikipedia::new(&context(&server)).unwrap();
+    let driver = Wikipedia::new(&table(), &context(&server)).unwrap();
     let response = driver
         .search(&request(), CancellationToken::new())
         .await
@@ -89,7 +102,7 @@ async fn req_test_002_wikipedia_search_ok_parses_raw_results() {
 async fn req_test_002_wikipedia_search_empty_is_an_answer() {
     let server = MockServer::start().await;
     mount(&server, 200, fixture("search-empty.json")).await;
-    let driver = Wikipedia::new(&context(&server)).unwrap();
+    let driver = Wikipedia::new(&table(), &context(&server)).unwrap();
     assert_eq!(
         driver
             .search(&request(), CancellationToken::new())
@@ -105,7 +118,7 @@ async fn req_test_002_wikipedia_search_empty_is_an_answer() {
 #[tokio::test]
 async fn req_eng_006_wikipedia_errors_are_classified() {
     let server = MockServer::start().await;
-    let driver = Wikipedia::new(&context(&server)).unwrap();
+    let driver = Wikipedia::new(&table(), &context(&server)).unwrap();
     Mock::given(method("GET"))
         .respond_with(
             ResponseTemplate::new(429)
@@ -182,7 +195,7 @@ async fn req_eng_006_wikipedia_timeout_and_cancellation() {
         )
         .mount(&server)
         .await;
-    let driver = Wikipedia::new(&context(&server)).unwrap();
+    let driver = Wikipedia::new(&table(), &context(&server)).unwrap();
     assert_eq!(
         driver
             .search(&request(), CancellationToken::new())
@@ -203,4 +216,87 @@ async fn req_eng_006_wikipedia_timeout_and_cancellation() {
         started.elapsed() < Duration::from_millis(500),
         "cancellation aborts the request (REQ-MCP-007)"
     );
+}
+
+/// REQ-SEC-017 with RFC 006: `base_url` must be https unless loopback.
+#[test]
+fn req_sec_017_base_url_must_be_https_unless_loopback() {
+    let context = DriverContext {
+        user_agent: "rypsok/test".into(),
+        connect_timeout: Duration::from_millis(500),
+        timeout: Duration::from_millis(1000),
+        proxy: None,
+        https_only: true,
+        base_override: None,
+    };
+    let with = |base: &str| {
+        let mut keys = BTreeMap::new();
+        keys.insert("base_url".to_owned(), toml::Value::String(base.to_owned()));
+        EngineTable { keys, ..table() }
+    };
+    assert!(Wikipedia::new(&with("https://wiki.example.org/"), &context).is_ok());
+    assert!(Wikipedia::new(&with("http://127.0.0.1:8080/"), &context).is_ok());
+    assert!(Wikipedia::new(&with("http://localhost:8080/"), &context).is_ok());
+    assert!(matches!(
+        Wikipedia::new(&with("http://wiki.example.org/"), &context),
+        Err(DriverBuildError::Key(_, _))
+    ));
+    assert!(matches!(
+        Wikipedia::new(&with("not a url"), &context),
+        Err(DriverBuildError::Key(_, _))
+    ));
+}
+
+/// REQ-ENG-011 and REQ-ENG-005: the engine is asked for LIM-S3 results
+/// through its own parameter, and the driver owns the parsing.
+#[tokio::test]
+async fn req_eng_011_results_per_engine_is_requested() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/w/api.php"))
+        .and(query_param("srlimit", "10"))
+        .and(query_param("srprop", "snippet|timestamp"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(fixture("search-ok.json")))
+        .mount(&server)
+        .await;
+    let driver = Wikipedia::new(&table(), &context(&server)).unwrap();
+    assert_eq!(
+        driver
+            .search(&request(), CancellationToken::new())
+            .await
+            .unwrap()
+            .results
+            .len(),
+        2
+    );
+}
+
+/// REQ-ENG-005: a format change of the provider stays inside the driver as
+/// a classified `parse_failure`; nothing of the body leaks.
+#[tokio::test]
+async fn req_eng_005_format_drift_is_confined_to_the_driver() {
+    let server = MockServer::start().await;
+    mount(
+        &server,
+        200,
+        br#"{"query": {"pages": [{"title": "new shape"}]}}"#.to_vec(),
+    )
+    .await;
+    let driver = Wikipedia::new(&table(), &context(&server)).unwrap();
+    let response = driver
+        .search(&request(), CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(
+        response.results.is_empty(),
+        "a missing list is an empty answer"
+    );
+    mount(&server, 200, b"<html>not json</html>".to_vec()).await;
+    server.reset().await;
+    mount(&server, 200, b"<html>not json</html>".to_vec()).await;
+    let error = driver
+        .search(&request(), CancellationToken::new())
+        .await
+        .unwrap_err();
+    assert_eq!(error, EngineError::new(EngineErrorClass::ParseFailure));
 }

@@ -5,8 +5,9 @@
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::Deserialize;
 
-use super::{DriverBuildError, DriverContext, debug_provider_text, retry_after};
+use super::{DriverBuildError, DriverContext, debug_provider_text, is_loopback, retry_after};
 use crate::CancellationToken;
+use crate::config::EngineTable;
 use crate::egress::{self, BodyError};
 use crate::engine::{
     Driver, EngineError, EngineErrorClass, EngineProperties, EngineRequest, EngineResponse,
@@ -39,14 +40,35 @@ pub struct Wikipedia {
 }
 
 impl Wikipedia {
-    /// Builds the driver with its client.
-    pub fn new(context: &DriverContext) -> Result<Self, DriverBuildError> {
+    /// Builds the driver with its client. A `base_url` key replaces the
+    /// public endpoint (a private mirror or a loopback test server); plain
+    /// HTTP is admitted for a loopback base only.
+    pub fn new(table: &EngineTable, context: &DriverContext) -> Result<Self, DriverBuildError> {
+        let base_override = match (table.key_str("base_url"), &context.base_override) {
+            (Some(text), _) => {
+                let url = url::Url::parse(text).map_err(|_| {
+                    DriverBuildError::Key("base_url".into(), "must be an absolute URL".into())
+                })?;
+                if url.scheme() != "https" && !is_loopback(&url) {
+                    return Err(DriverBuildError::Key(
+                        "base_url".into(),
+                        "must be https unless it is a loopback address".into(),
+                    ));
+                }
+                Some(url)
+            }
+            (None, base) => base.clone(),
+        };
         let mut headers = HeaderMap::new();
         headers.insert("accept", HeaderValue::from_static("application/json"));
-        let client = egress::engine_client(&context.client_settings(headers))?;
+        let mut settings = context.client_settings(headers);
+        if base_override.as_ref().is_some_and(is_loopback) {
+            settings.https_only = false;
+        }
+        let client = egress::engine_client(&settings)?;
         Ok(Wikipedia {
             client,
-            base_override: context.base_override.clone(),
+            base_override,
         })
     }
 
