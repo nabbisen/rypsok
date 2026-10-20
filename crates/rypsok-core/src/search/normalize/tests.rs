@@ -178,7 +178,7 @@ proptest! {
             prop_assert!(key.as_str().starts_with("https://"));
             prop_assert!(!key.as_str().contains("utm_"));
             prop_assert!(!key.as_str().contains("www."));
-            prop_assert!(Url::parse(&once).unwrap().host_str().unwrap().trim_start_matches("www.").contains(&host));
+            prop_assert!(Url::parse(&once).unwrap().host_str().unwrap().ends_with(&host));
         }
     }
 }

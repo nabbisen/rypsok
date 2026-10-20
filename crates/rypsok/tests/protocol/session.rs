@@ -61,6 +61,7 @@ impl Session {
     }
 
     /// The process identifier.
+    #[cfg(unix)]
     pub fn pid(&self) -> u32 {
         self.child.id()
     }
@@ -231,6 +232,7 @@ impl Session {
     }
 
     /// Waits for the process without closing stdin (after a signal).
+    #[cfg(unix)]
     pub fn wait_without_closing(self, within: Duration) -> (ExitStatus, Vec<String>, String) {
         self.wait_inner(within, false)
     }
