@@ -77,7 +77,8 @@ fn strip_tracking(url: &mut Url) {
 pub struct ComparisonKey(String);
 
 impl ComparisonKey {
-    /// The key as text, for tests and logs of counts only.
+    /// The key as text, for tests only.
+    #[cfg(test)]
     pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
@@ -129,17 +130,20 @@ fn normalize_percent(path: &str) -> String {
     let mut out = String::with_capacity(path.len());
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let (Some(h), Some(l)) = (hex(bytes.get(i + 1)), hex(bytes.get(i + 2))) {
-                let value = h * 16 + l;
-                if value.is_ascii_alphanumeric() || matches!(value, b'-' | b'.' | b'_' | b'~') {
-                    out.push(value as char);
-                } else {
-                    out.push_str(&format!("%{value:02X}"));
-                }
-                i += 3;
-                continue;
+        let encoded = if bytes[i] == b'%' && i + 2 < bytes.len() {
+            hex(bytes.get(i + 1)).zip(hex(bytes.get(i + 2)))
+        } else {
+            None
+        };
+        if let Some((h, l)) = encoded {
+            let value = h * 16 + l;
+            if value.is_ascii_alphanumeric() || matches!(value, b'-' | b'.' | b'_' | b'~') {
+                out.push(value as char);
+            } else {
+                out.push_str(&format!("%{value:02X}"));
             }
+            i += 3;
+            continue;
         }
         let c = path[i..].chars().next().expect("in bounds");
         out.push(c);
