@@ -20,7 +20,7 @@ use rmcp::model::{
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData as McpError, RoleServer, ServerHandler};
 use rypsok_core::Rypsok;
-use rypsok_core::model::ToolError;
+use rypsok_core::model::{CallError, ToolError};
 use serde::Serialize;
 
 use rate::ToolLimiter;
@@ -117,7 +117,16 @@ impl ServerHandler for Adapter {
                         Err(error) => self.render_error(error),
                         Ok(req) => match self.service.search(req, context.ct.clone()).await {
                             Ok(response) => self.render_ok(&response),
-                            Err(error) => self.render_error(error),
+                            Err(CallError::Tool(error)) => self.render_error(error),
+                            // The SDK drops the response of a cancelled
+                            // request; nothing is sent (REQ-MCP-007).
+                            Err(CallError::Cancelled) => {
+                                return Err(McpError::new(
+                                    rmcp::model::ErrorCode(-32800),
+                                    "request cancelled",
+                                    None,
+                                ));
+                            }
                         },
                     }
                 }

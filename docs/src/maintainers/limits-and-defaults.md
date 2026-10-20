@@ -45,7 +45,7 @@ it.
 | ID | Parameter | Default | Range | Basis |
 |---|---|---:|---|---|
 | LIM-F1 | `max_chars` | 3000 | 500 to LIM-F2 | Draft external design §4.2 and §15; mimlys study; X-06 |
-| LIM-F2 | Ceiling of `max_chars` | 20000 | operator | M-02 |
+| LIM-F2 | Ceiling of `max_chars` | 20000 | 500–100000 | M-02 |
 | LIM-F3 | Response bytes after decompression | 5 MiB | 64 KiB–20 MiB | Study |
 | LIM-F4 | Overall deadline of a fetch | 10000 ms | 1000–30000 | — |
 | LIM-F5 | Maximum duration of a `web_fetch` call | LIM-F4 + 1000 ms | derived | X-04, R-04 |
@@ -62,14 +62,14 @@ it.
 
 | ID | Parameter | Default | Range | Basis |
 |---|---|---:|---|---|
-| LIM-C1 | Outbound requests in flight, whole process | 32 | operator | REQ-SEC-012 |
-| LIM-C2 | Requests in flight per engine | 2 | operator, lower where the provider demands it | Provider terms |
-| LIM-C3 | Fetches in flight, whole process | 4 | operator | REQ-SEC-012 |
+| LIM-C1 | Outbound requests in flight, whole process | 32 | 1–256 | REQ-SEC-012 |
+| LIM-C2 | Requests in flight per engine | 2 | 1–8, lower where the provider demands it | Provider terms |
+| LIM-C3 | Fetches in flight, whole process | 4 | 1–64 | REQ-SEC-012 |
 | LIM-C4 | Fetches in flight per host | 1 | fixed | Politeness |
-| LIM-C5 | Parsing tasks in flight | 2 | operator | R-04 |
-| LIM-C6 | `web_search` calls accepted | 60 per minute | operator | MCP: servers must rate limit tool invocations |
-| LIM-C7 | `web_fetch` calls accepted | 30 per minute | operator | Same |
-| LIM-C8 | `engine_status` calls accepted | 30 per minute | operator | Same |
+| LIM-C5 | Parsing tasks in flight | 2 | 1–16 | R-04 |
+| LIM-C6 | `web_search` calls accepted | 60 per minute | 1–6000 per minute | MCP: servers must rate limit tool invocations |
+| LIM-C7 | `web_fetch` calls accepted | 30 per minute | 1–6000 per minute | Same |
+| LIM-C8 | `engine_status` calls accepted | 30 per minute | 1–6000 per minute | Same |
 | LIM-C9 | Requests to one engine | per engine, from its admission record | operator, never above the provider's limit | REQ-CMP-002 |
 
 ## Circuit breaker

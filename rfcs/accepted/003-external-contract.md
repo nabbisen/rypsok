@@ -197,3 +197,27 @@ The profiles of external design §3 are documented in
 
 - Whether the JSON Schema of `language` should be omitted when the operator
   configured a single language. Decided here: omitted, to save budget.
+
+## Amendment to RFC 003 (2026-10-20, M1 review)
+
+- **Optional parameters are `Option` in the core.** `SearchRequest`
+  carries `category`, `max_results`, `language` and `time_range` as
+  `Option`; the core applies the configured defaults after
+  deserialization, for every host alike (REQ-CFG-003). A host never fills
+  a default itself, so two hosts cannot disagree about one.
+- **A cancelled call is reported as cancelled.** `Rypsok::search` and
+  `Rypsok::fetch` return `Result<_, CallError>` with
+  `CallError::Tool(ToolError)` (the error object to return) and
+  `CallError::Cancelled` (nothing to return, REQ-MCP-007). A cancelled
+  call is never dressed up as a `deadline`; it is counted under the outcome
+  `cancelled` and logged with one `call` event.
+- `ToolError::detail` is `Box<ErrorDetail>`; the JSON rendering and the
+  schema are unchanged.
+- `SearchResult` is sealed by a crate-private marker field (skipped by
+  serde) so that it can be built only through the content boundary; its
+  fields stay public for hosts. A `compile_fail` doc test proves it.
+- The output schemas are generated at test time with `schemars` and
+  compared with checked-in fixtures; `RYPSOK_UPDATE_FIXTURES=1` rewrites
+  them deliberately.
+- An unknown tool is the JSON-RPC error `-32602` with a fixed message that
+  does not repeat the caller's text.

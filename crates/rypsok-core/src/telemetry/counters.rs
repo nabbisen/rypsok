@@ -1,6 +1,6 @@
 //! In-process counters (REQ-OBS-003, REQ-OBS-007): calls per tool and
-//! outcome, refusals per tool and reason, engine errors per engine and
-//! class, characters removed, results dropped. Logged as one `info` event
+//! outcome, refusals per tool and reason, warnings per tool and reason,
+//! engine errors per engine and class, characters removed, results dropped. Logged as one `info` event
 //! every minute when something changed, from the call that notices the
 //! minute has passed; no background task.
 
@@ -15,6 +15,7 @@ pub const FLUSH_INTERVAL: Duration = Duration::from_secs(60);
 struct Totals {
     calls: BTreeMap<(&'static str, &'static str), u64>,
     refusals: BTreeMap<(&'static str, &'static str), u64>,
+    warnings: BTreeMap<(&'static str, &'static str), u64>,
     engine_errors: BTreeMap<(String, &'static str), u64>,
     characters_removed: u64,
     results_dropped: u64,
@@ -65,6 +66,18 @@ impl Counters {
             .or_default() += 1;
     }
 
+    /// One call proceeded with a warning (privacy mode `warn`); not a
+    /// refusal.
+    pub fn warned(&self, tool: &'static str, reason: &'static str) {
+        *self
+            .totals
+            .lock()
+            .expect("counters lock")
+            .warnings
+            .entry((tool, reason))
+            .or_default() += 1;
+    }
+
     /// One engine request failed with this class (REQ-OBS-003).
     pub fn engine_error(&self, engine: &str, class: &'static str) {
         *self
@@ -107,6 +120,18 @@ impl Counters {
             .lock()
             .expect("counters lock")
             .refusals
+            .iter()
+            .filter(|((t, r), _)| *t == tool && *r == reason)
+            .map(|(_, n)| *n)
+            .sum()
+    }
+
+    /// The total warnings of a tool with a reason.
+    pub fn warnings_of(&self, tool: &str, reason: &str) -> u64 {
+        self.totals
+            .lock()
+            .expect("counters lock")
+            .warnings
             .iter()
             .filter(|((t, r), _)| *t == tool && *r == reason)
             .map(|(_, n)| *n)
@@ -162,6 +187,7 @@ impl Counters {
             event = "counters",
             calls = %render(&totals.calls),
             refusals = %render(&totals.refusals),
+            warnings = %render(&totals.warnings),
             engine_errors = %engine_errors,
             characters_removed = totals.characters_removed,
             results_dropped = totals.results_dropped,

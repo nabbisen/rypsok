@@ -164,3 +164,10 @@ workspace.
 ## Open questions
 
 None that block M0.
+
+## Amendment to RFC 001 (2026-10-20, M1 review)
+
+- `crates/rypsok-core/README.md` exists: crates.io shows a crate's own
+  README and the workspace README belongs to the binary. One paragraph.
+- `rmcp` has been pinned since M0 as the handoff asked, before any code
+  used it.

@@ -3,6 +3,7 @@
 //! normalization, deduplication, rank fusion, the content boundary, and
 //! the response. No retries, no detached tasks, no arrival-order effects.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -19,9 +20,10 @@ use crate::engine::registry::{Engine, Registry};
 use crate::engine::{EngineErrorClass, EngineRequest, EngineResponse};
 use crate::limits::Limits;
 use crate::model::{
-    Decision, EngineId, Notice, NoticeCode, Outcome, Reason, SearchResponse, ToolError, decide,
+    CallError, Decision, EngineId, Notice, NoticeCode, Outcome, Reason, SearchResponse, ToolError,
+    decide,
 };
-use crate::privacy::{self, Verdict};
+use crate::privacy::{self, Sensitive, Verdict};
 use crate::telemetry::Counters;
 
 /// What the pipeline needs from the process.
@@ -42,6 +44,8 @@ pub struct Pipeline<'a> {
     pub drop_flagged: bool,
     /// Always carry `results[].engines`.
     pub engine_attribution: bool,
+    /// Log the query text at `debug` level (`logging.log_queries`, LIM-P3).
+    pub log_queries: bool,
     /// The process-wide outbound cap (LIM-C1).
     pub outbound: Arc<Semaphore>,
     /// The counters.
@@ -57,32 +61,32 @@ enum Ended {
 }
 
 /// Runs a validated search. The caller has cancelled when `cancel` fires;
-/// the result is then not sent and an `unavailable` error is returned so
-/// that the call ends with one outcome.
+/// nothing is returned: the call ends as [`CallError::Cancelled`]
+/// (REQ-MCP-007).
 pub async fn run(
     p: &Pipeline<'_>,
     mut search: ValidatedSearch,
     cancel: CancellationToken,
-) -> Result<SearchResponse, ToolError> {
+) -> Result<SearchResponse, CallError> {
     let start = Instant::now();
     let deadline = start + Duration::from_millis(u64::from(p.limits.search_deadline_ms));
     let fan_out_deadline = deadline - Duration::from_millis(u64::from(p.limits.search_reserve_ms));
     let mut notices: Vec<Notice> = Vec::new();
 
     // Privacy check before any engine request (REQ-SEARCH-006, REQ-PRIV-002).
-    match privacy::check(&search.query, p.secret_detection) {
+    match privacy::check(search.query.expose(), p.secret_detection) {
         Verdict::Clean => {}
         Verdict::Refuse(finding) => {
             p.counters.refused("web_search", "secret_in_query");
             tracing::warn!(event = "refused", tool = "web_search", reason = "secret_in_query", kind = ?finding.kind, "call refused");
-            return Err(ToolError::secret_in_query(finding.kind, finding.start));
+            return Err(ToolError::secret_in_query(finding.kind, finding.start).into());
         }
         Verdict::Masked { text, count } => {
             notices.push(Notice::counted(NoticeCode::CredentialMasked, count));
-            search.query = text;
+            search.query = Sensitive::new(text);
         }
         Verdict::Warned(count) => {
-            p.counters.refused("web_search", "secret_in_query_warned");
+            p.counters.warned("web_search", "secret_in_query");
             tracing::warn!(
                 event = "secret_in_query",
                 tool = "web_search",
@@ -90,6 +94,16 @@ pub async fn run(
                 "query carries what looks like a credential; proceeding (warn mode)"
             );
         }
+    }
+    if p.log_queries {
+        // The one place the query text may be logged: unlocked by the
+        // operator, at debug level only (RFC 009).
+        tracing::debug!(
+            event = "query",
+            tool = "web_search",
+            query = search.query.expose(),
+            "query text (logging.log_queries)"
+        );
     }
 
     // Selection (REQ-ENG-007).
@@ -108,7 +122,7 @@ pub async fn run(
             continue;
         };
         match properties.skip_reason(
-            &search.query,
+            search.query.expose(),
             &search.language,
             &default_language,
             search.time_range,
@@ -130,7 +144,7 @@ pub async fn run(
     }
     if queried.is_empty() {
         p.counters.call("web_search", "unavailable");
-        return Err(ToolError::no_engine(search.category));
+        return Err(ToolError::no_engine(search.category).into());
     }
 
     // Fan-out (REQ-AGG-001 to -003, REQ-AGG-006, REQ-SEC-014).
@@ -144,12 +158,15 @@ pub async fn run(
     };
     let engine_timeout = Duration::from_millis(u64::from(p.limits.engine_timeout_ms));
     let mut tasks: JoinSet<(usize, Ended)> = JoinSet::new();
+    // Task identifier → engine index, so that a panicked task is attributed
+    // to its engine (REQ-AGG-007).
+    let mut task_engines: HashMap<tokio::task::Id, usize> = HashMap::new();
     for (index, engine) in queried.iter().enumerate() {
         let engine = Arc::clone(engine);
         let request = request.clone();
         let outbound = Arc::clone(&p.outbound);
         let child = cancel.child_token();
-        tasks.spawn(async move {
+        let handle = tasks.spawn(async move {
             let Ok(_global) =
                 tokio::time::timeout_at(fan_out_deadline.into(), outbound.acquire_owned()).await
             else {
@@ -170,6 +187,7 @@ pub async fn run(
                 };
             (index, ended)
         });
+        task_engines.insert(handle.id(), index);
     }
 
     // Collection with early completion (REQ-AGG-009). Dropping the set
@@ -177,18 +195,27 @@ pub async fn run(
     let mut ended: Vec<Option<Ended>> = (0..queried.len()).map(|_| None).collect();
     loop {
         let next = tokio::select! {
-            _ = cancel.cancelled() => { drop(tasks); return Err(ToolError::deadline()); }
+            _ = cancel.cancelled() => {
+                drop(tasks);
+                return Err(cancelled(p, start));
+            }
             _ = tokio::time::sleep_until(fan_out_deadline.into()) => None,
             joined = tasks.join_next() => joined,
         };
         match next {
             Some(Ok((index, result))) => ended[index] = Some(result),
-            Some(Err(_join_error)) => {
-                // A driver panicked: isolated, classified, logged (REQ-SEC-014).
-                tracing::error!(
-                    event = "driver_panic",
-                    "an engine task panicked; classified as request_failure"
-                );
+            Some(Err(join_error)) => {
+                // A driver panicked: isolated, attributed to its engine,
+                // classified as a request failure, logged (REQ-SEC-014,
+                // REQ-AGG-007).
+                if let Some(&index) = task_engines.get(&join_error.id()) {
+                    tracing::error!(
+                        event = "driver_panic",
+                        engine = %queried[index].id,
+                        "an engine task panicked; classified as request_failure"
+                    );
+                    ended[index] = Some(Ended::Failed(EngineErrorClass::RequestFailure, None));
+                }
             }
             None => break,
         }
@@ -197,6 +224,11 @@ pub async fn run(
         }
     }
     drop(tasks);
+    // Observed between stages as well (RFC 007): an engine that ends on the
+    // same tick as the cancellation must not turn the call into an outcome.
+    if cancel.is_cancelled() {
+        return Err(cancelled(p, start));
+    }
 
     // Outcome (REQ-ERR-001, REQ-ERR-005; external design §7).
     let max_cooldown = Duration::from_secs(u64::from(p.limits.max_cooldown_s));
@@ -248,9 +280,9 @@ pub async fn run(
             "call ended"
         );
         return Err(if all_timeouts {
-            ToolError::deadline()
+            ToolError::deadline().into()
         } else {
-            ToolError::all_failed(retry_after.map(|d| d.as_millis() as u64))
+            ToolError::all_failed(retry_after.map(|d| d.as_millis() as u64)).into()
         });
     }
 
@@ -293,12 +325,12 @@ pub async fn run(
             dropped_long,
         ));
     }
-    let merged = rank::order_and_cut(
-        rank::merge(observations),
-        usize::from(search.max_results) + 8,
-    );
+    let merged = rank::order(rank::merge(observations));
 
-    // The content boundary (RFC 005) and attribution (REQ-CTX-001).
+    // The content boundary (RFC 005), attribution (REQ-CTX-001) and the cut
+    // to `max_results` (REQ-RANK-007): every candidate is available, so a
+    // dropped result never leaves a hole, and the notices describe only
+    // what is returned.
     let mut results = Vec::new();
     let (mut titles_cut, mut snippets_cut, mut removed, mut flagged, mut dropped_flagged) =
         (0u32, 0u32, 0u32, 0u32, 0u32);
@@ -383,6 +415,20 @@ pub async fn run(
         notices,
         results,
     })
+}
+
+/// The end of a cancelled call: counted, logged, nothing returned
+/// (REQ-MCP-007).
+fn cancelled(p: &Pipeline<'_>, start: Instant) -> CallError {
+    p.counters.call("web_search", "cancelled");
+    tracing::info!(
+        event = "call",
+        tool = "web_search",
+        outcome = "cancelled",
+        latency_ms = start.elapsed().as_millis() as u64,
+        "call cancelled by the caller"
+    );
+    CallError::Cancelled
 }
 
 #[cfg(test)]

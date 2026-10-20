@@ -44,5 +44,7 @@ This page is for the author of an agent runtime that embeds rypsok.
 
 `rypsok-core` is a library crate without any protocol dependency. A host
 written in Rust may call `Rypsok::search` directly with its own
-cancellation token and render the response itself. The interface is
-unstable until 1.0.0.
+cancellation token and render the response itself. A call ends with a
+response, with `CallError::Tool` (the error object to return), or with
+`CallError::Cancelled` when the host cancelled it and there is nothing to
+return. The interface is unstable until 1.0.0.

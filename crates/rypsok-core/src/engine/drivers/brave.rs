@@ -165,7 +165,7 @@ impl Driver for Brave {
     ) -> Result<EngineResponse, EngineError> {
         let count = req.max_results.clamp(1, 20).to_string();
         let mut query: Vec<(&str, &str)> = vec![
-            ("q", req.query.as_str()),
+            ("q", req.query.expose()),
             ("count", count.as_str()),
             ("search_lang", req.language.primary()),
             ("country", req.region.as_str()),

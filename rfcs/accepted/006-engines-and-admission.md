@@ -165,3 +165,25 @@ fan-out deadline). Applied with this RFC.
 - Whether `brave_news` should be a separate driver type or a mode of the
   Brave driver. Decided here: same driver, `endpoint = "web" | "news"` as
   a declared configuration key.
+
+## Amendment to RFC 006 (2026-10-20, M1 review)
+
+- **TLS.** rustls with the `ring` provider installed once at startup
+  (`rustls-no-provider`), not aws-lc-rs, so that no C or assembly
+  toolchain is needed on any CI runner. `webpki-roots` (certificate data)
+  is allowed under CDLA-Permissive-2.0 in `deny.toml`.
+- **`base_url`** is a declared key of the Wikipedia driver for a private
+  MediaWiki mirror; plain HTTP is admitted for a loopback host only. The
+  end-to-end tests use it.
+- **Limiter burst.** A per-engine bucket allows a burst of one tenth of
+  the per-minute rate, at least one. Brave is configured at 60 per minute
+  (burst 6), far below any plan; Wikipedia at 100 per minute (burst 10).
+- **Wikipedia query length, measured 2026-10-20.** The Action API refuses a
+  query above 300 characters with `cirrussearch-query-too-long`, counted
+  on its rewritten form: a single 300-character token is reported as 345,
+  a 255-character token passes, a 299-character multi-word query passes.
+  `max_query_chars = 250`, which keeps every shape of query under the
+  limit; the open question is closed.
+- Brave's `page_age` is the date; the relative `age` text is ignored.
+- Environment proxies are ignored (`system-proxy` off, `no_proxy()`);
+  `[egress].proxy` is the only proxy path.

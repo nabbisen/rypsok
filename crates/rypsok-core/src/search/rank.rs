@@ -113,9 +113,10 @@ pub fn merge(observations: Vec<Observation>) -> Vec<Merged> {
 
 /// Sorts by score descending, then best rank ascending, then the
 /// preference of the engine that gave the best rank ascending, then the
-/// comparison key ascending, and cuts to `max_results` (REQ-RANK-006,
-/// REQ-RANK-007).
-pub fn order_and_cut(mut merged: Vec<Merged>, max_results: usize) -> Vec<Merged> {
+/// comparison key ascending (REQ-RANK-006). The cut to `max_results`
+/// (REQ-RANK-007) is the pipeline's, after the content boundary, so that a
+/// dropped result never leaves a hole.
+pub fn order(mut merged: Vec<Merged>) -> Vec<Merged> {
     merged.sort_by(|a, b| {
         b.score
             .cmp(&a.score)
@@ -123,7 +124,6 @@ pub fn order_and_cut(mut merged: Vec<Merged>, max_results: usize) -> Vec<Merged>
             .then_with(|| a.best.preference.cmp(&b.best.preference))
             .then_with(|| a.best.key.cmp(&b.best.key))
     });
-    merged.truncate(max_results);
     merged
 }
 

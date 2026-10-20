@@ -30,8 +30,7 @@ is required and must be `1` (REQ-MAIN-003).
 ```toml
 config_version = 1
 
-[service]
-transport = "stdio"                   # "stdio" | "http" (http refused before M4)
+[service]                             # the transport is chosen by `serve --transport` (amendment below)
 structured_content = true             # REQ-MCP-011
 user_agent_contact = ""               # appended to the User-Agent; a URL or an address (REQ-CMP-004)
 
@@ -138,7 +137,6 @@ Every failure names the key. Rules:
 | Engine key that the driver does not declare | `engines.<id>.<key>: not a key of driver <type>` |
 | Inline secret (`api_key = …`) | `engines.<id>.api_key: give the secret by api_key_env or api_key_file` |
 | `api_key_env` unset or `api_key_file` unreadable | The engine is marked inactive with a log line; not a failure (REQ-OPS-003) |
-| `service.transport = "http"` before M4 | `service.transport: http is not available in this release` |
 | A port in `fetch.ports` not 80 or 443 and not covered by `egress.allow` | `fetch.ports: <port> needs an egress.allow rule` |
 | `logging.log_queries = true` | Accepted; `serve` logs a warning at start |
 
@@ -171,3 +169,24 @@ stdout by the command line.
 
 - Whether `preference` should be replaced by list order. Decided here:
   explicit integers, because TOML tables have no reliable order.
+
+## Amendment to RFC 004 (2026-10-20, M1 review)
+
+- **The transport is not a configuration key.** `service.transport` is
+  removed; `rypsok serve --transport stdio|http` chooses the transport on
+  the command line alone, where the launching host can see it, and
+  `[service.http] bind` stays in the file for M4. One source, no
+  precedence rule to remember. The validation row for
+  `service.transport = "http"` is gone; the usage error of `serve
+  --transport http` before M4 remains (REQ-OPS-001).
+- **Ranges of the operator keys** (written into the limits table):
+  `limits.outbound_in_flight` 1–256 (LIM-C1), `limits.per_engine_in_flight`
+  1–8 (LIM-C2), `limits.fetches_in_flight` 1–64 (LIM-C3),
+  `limits.parsing_in_flight` 1–16 (LIM-C5), the three per-minute keys
+  1–6000 (LIM-C6 to C8), `fetch.max_chars_ceiling` 500–100000 (LIM-F2).
+  Guardrails for one host serving an agent runtime, not arbitrary widths.
+- The configuration page is checked against the schema by a unit test
+  (RFC 002 amendment).
+- Keys added by other RFCs: `search.drop_flagged_results` (RFC 005),
+  `search.engine_attribution` (RFC 008), `base_url` of the Wikipedia
+  driver (RFC 006).

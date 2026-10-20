@@ -21,9 +21,11 @@ the `LIM-` identifier in the right column names the row.
 
 ## `[service]`
 
+The transport is not a setting: `rypsok serve --transport stdio|http`
+chooses it on the command line, where the launching host can see it.
+
 | Key | Default | Range | Meaning |
 |---|---|---|---|
-| `transport` | `"stdio"` | `stdio`, `http` | `http` is refused before release 0.4.0 |
 | `structured_content` | `true` | boolean | Return results as `structuredContent` plus text, or as text alone |
 | `user_agent_contact` | `""` | a URL or an address | Appended to the User-Agent so that providers can reach the operator |
 
@@ -58,7 +60,7 @@ the `LIM-` identifier in the right column names the row.
 | Key | Default | Range | Meaning |
 |---|---|---|---|
 | `max_chars` | `3000` | 500 to `max_chars_ceiling` | Default of `max_chars` (LIM-F1) |
-| `max_chars_ceiling` | `20000` | operator | Ceiling of `max_chars` (LIM-F2) |
+| `max_chars_ceiling` | `20000` | 500–100000 | Ceiling of `max_chars` (LIM-F2) |
 | `max_bytes` | `5242880` | 65536–20971520 | Response bytes after decompression (LIM-F3) |
 | `deadline_ms` | `10000` | 1000–30000 | Overall deadline of a fetch (LIM-F4) |
 | `connect_timeout_ms` | `3000` | 500–10000 | Connect timeout (LIM-F6) |
@@ -81,13 +83,13 @@ the `LIM-` identifier in the right column names the row.
 
 | Key | Default | Range | Meaning |
 |---|---|---|---|
-| `outbound_in_flight` | `32` | 1–1024 | Outbound requests in flight, whole process (LIM-C1) |
-| `per_engine_in_flight` | `2` | 1–32 | Requests in flight per engine (LIM-C2) |
-| `fetches_in_flight` | `4` | 1–256 | Fetches in flight, whole process (LIM-C3) |
-| `parsing_in_flight` | `2` | 1–64 | Parsing tasks in flight (LIM-C5) |
-| `web_search_per_minute` | `60` | 1–100000 | `web_search` calls accepted (LIM-C6) |
-| `web_fetch_per_minute` | `30` | 1–100000 | `web_fetch` calls accepted (LIM-C7) |
-| `engine_status_per_minute` | `30` | 1–100000 | `engine_status` calls accepted (LIM-C8) |
+| `outbound_in_flight` | `32` | 1–256 | Outbound requests in flight, whole process (LIM-C1) |
+| `per_engine_in_flight` | `2` | 1–8 | Requests in flight per engine (LIM-C2) |
+| `fetches_in_flight` | `4` | 1–64 | Fetches in flight, whole process (LIM-C3) |
+| `parsing_in_flight` | `2` | 1–16 | Parsing tasks in flight (LIM-C5) |
+| `web_search_per_minute` | `60` | 1–6000 | `web_search` calls accepted (LIM-C6) |
+| `web_fetch_per_minute` | `30` | 1–6000 | `web_fetch` calls accepted (LIM-C7) |
+| `engine_status_per_minute` | `30` | 1–6000 | `engine_status` calls accepted (LIM-C8) |
 
 ## `[resilience]` (used from release 0.2.0; accepted now)
 
@@ -132,6 +134,7 @@ two engines are configured: `wikipedia` (keyless) and `brave` (keyed by
 | `api_key_env` | — | variable name | Where the credential is read from (keyed drivers) |
 | `api_key_file` | — | path | Alternative to `api_key_env`; the file's content, trimmed |
 | `endpoint` | `"web"` | `web`, `news` | Brave only: which endpoint the engine queries |
+| `base_url` | — | an absolute URL | Wikipedia only: a private MediaWiki mirror; plain HTTP is admitted on a loopback host only |
 
 A credential is never given inline: `api_key = "…"` is refused at
 startup. When the variable is unset or the file unreadable, the engine is

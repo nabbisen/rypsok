@@ -109,3 +109,17 @@ specifications).
 ## Open questions
 
 None that block M0. The mock server crate is chosen in the aggregation RFC.
+
+## Amendment to RFC 002 (2026-10-20, M1 review)
+
+- Requirements of milestone `All` with method `T` are enforced by the
+  coverage gate from M1 on, because M0 has no pipeline to test determinism,
+  panic isolation or network-free stages against. `All` means "every
+  milestone that has the subject", never "M0 with placeholders".
+- The deny step is `taiki-e/install-action@cargo-deny` followed by the
+  literal `cargo deny` command of the gate table.
+- Gate tests that read repository files live in
+  `crates/rypsok/tests/m0_gates.rs`; a unit test of the core
+  (`req_cfg_001_configuration_page_matches_the_schema`) checks the
+  configuration page against the serialized schema, which is the second
+  half of RFC 004's deliverable 7.

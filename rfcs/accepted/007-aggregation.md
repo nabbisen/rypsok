@@ -108,3 +108,20 @@ configuration only (REQ-TEST-005 principle).
 ## Open questions
 
 None.
+
+## Amendment to RFC 007 (2026-10-20, M1 review)
+
+- The mock server (`wiremock`) is admitted through the Wikipedia driver's
+  `base_url` on a loopback host, not through an allow rule: the egress
+  policy with allow lists arrives in M3.
+- A panicked driver task is attributed to its engine through the task
+  identifier and classified `request_failure`, as designed; the log event
+  is `driver_panic` with the engine.
+- No cut before the boundary: rank fusion orders every candidate and the
+  pipeline cuts to `max_results` after the boundary, so a dropped result
+  never leaves a hole and the notices describe only what is returned.
+- Cancellation is observed inside the fan-out and again between stages;
+  it ends as `CallError::Cancelled` (RFC 003 amendment).
+- The core tests use scripted drivers that implement `Driver` directly;
+  the HTTP path is covered by the driver fixture tests and the end-to-end
+  protocol tests.

@@ -123,3 +123,13 @@ output contains no removed code point; JSON round-trips.
 
 - The exact phrase list. It is a reviewable constant; the first list above
   is the starting point.
+
+## Amendment to RFC 005 (2026-10-20, M1 review)
+
+- Step 1 replaces a tag by one space, not by nothing, so that words
+  glued by markup (`a<br>b`) do not merge; step 4 folds the spaces.
+- `SearchResult` is sealed by a crate-private marker field (RFC 003
+  amendment) instead of `pub(crate)` fields with builders.
+- The phrase list is matched as a substring of the lower-cased text:
+  "system prompted" matches "system prompt". A heuristic that only adds a
+  notice may over-match; it never changes text.

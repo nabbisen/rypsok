@@ -154,6 +154,18 @@ impl Sensitive {
     }
 }
 
+impl From<&str> for Sensitive {
+    fn from(text: &str) -> Self {
+        Sensitive(text.to_owned())
+    }
+}
+
+impl From<String> for Sensitive {
+    fn from(text: String) -> Self {
+        Sensitive(text)
+    }
+}
+
 impl std::fmt::Debug for Sensitive {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Sensitive({} chars)", self.chars())

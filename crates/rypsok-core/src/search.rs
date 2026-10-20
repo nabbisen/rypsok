@@ -13,6 +13,7 @@ pub mod rank;
 use std::collections::BTreeSet;
 
 use crate::model::{Category, Language, SearchRequest, TimeRange, ToolError};
+use crate::privacy::Sensitive;
 
 /// What validation checks a request against: the limits and the
 /// configuration of the process.
@@ -52,8 +53,8 @@ impl SearchPolicy {
 /// A request after validation: every parameter resolved to its value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidatedSearch {
-    /// The query, trimmed.
-    pub query: String,
+    /// The query, trimmed. It cannot reach a log field (REQ-PRIV-004).
+    pub query: Sensitive,
     /// The category.
     pub category: Category,
     /// How many results at most.
@@ -94,7 +95,7 @@ pub fn validate(req: &SearchRequest, policy: &SearchPolicy) -> Result<ValidatedS
         Some(_) => return Err(ToolError::not_allowed("language", policy.language_names())),
     };
     Ok(ValidatedSearch {
-        query: query.to_owned(),
+        query: Sensitive::new(query),
         category,
         max_results,
         language,

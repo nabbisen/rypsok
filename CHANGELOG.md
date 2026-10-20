@@ -43,6 +43,8 @@ is announced here.
   honoring `Retry-After`.
 - Workspace, CI gates, requirement coverage gate, limits consistency gate
   (RFC 001, RFC 002).
+- Log events of dependencies are capped at `warn` whatever the configured
+  level, so that no library can log a query or a URL at `debug`.
 
 ### Limits (provisional, to be confirmed by measurement)
 

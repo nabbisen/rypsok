@@ -20,7 +20,7 @@ fn req_search_001_query_length_after_trimming() {
     assert!(validate(&SearchRequest::new("   "), &p).is_err());
     assert!(validate(&SearchRequest::new(""), &p).is_err());
     let ok = validate(&SearchRequest::new("  rust  "), &p).unwrap();
-    assert_eq!(ok.query, "rust");
+    assert_eq!(ok.query.expose(), "rust");
     let long = "あ".repeat(401);
     let err = validate(&SearchRequest::new(long), &p).unwrap_err();
     assert_eq!(err.kind, ErrorKind::InvalidRequest);

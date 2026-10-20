@@ -60,7 +60,7 @@ fn req_rank_005_fusion_scores_are_integer_and_reward_agreement() {
         observe(0, "a", 10, 3, "https://example.org/agreed"),
         observe(1, "b", 20, 3, "https://example.org/agreed"),
     ]);
-    let ordered = order_and_cut(merged, 10);
+    let ordered = order(merged);
     // 1_000_000 / 63 = 15_873 per engine at rank 3, twice: 31_746; rank 1 alone: 16_393.
     assert_eq!(ordered[0].best.returned_url, "https://example.org/agreed");
     assert_eq!(ordered[0].score, 2 * (RRF_SCALE / (RRF_K + 3)));
@@ -69,17 +69,16 @@ fn req_rank_005_fusion_scores_are_integer_and_reward_agreement() {
     assert_eq!(ordered[1].score, 16_393);
 }
 
-/// REQ-RANK-006 and REQ-RANK-007: ties resolve by best rank, preference,
-/// then key; the list is cut to `max_results`.
+/// REQ-RANK-006: ties resolve by best rank, preference, then key.
 #[test]
-fn req_rank_006_total_order_and_cut() {
+fn req_rank_006_total_order() {
     let merged = merge(vec![
         observe(0, "a", 10, 1, "https://example.org/b"),
         observe(1, "b", 5, 1, "https://example.org/a"),
         observe(0, "a", 10, 2, "https://example.org/c"),
         observe(1, "b", 5, 2, "https://example.org/c"),
     ]);
-    let ordered = order_and_cut(merged, 10);
+    let ordered = order(merged);
     let urls: Vec<&str> = ordered
         .iter()
         .map(|m| m.best.returned_url.as_str())
@@ -92,8 +91,6 @@ fn req_rank_006_total_order_and_cut() {
             "https://example.org/b"
         ]
     );
-    let cut = order_and_cut(ordered, 2);
-    assert_eq!(cut.len(), 2);
 }
 
 /// REQ-ARCH-004: the same observations in another arrival order yield the
@@ -108,8 +105,8 @@ fn req_arch_004_fusion_is_independent_of_arrival_order() {
     ];
     let mut b = a.clone();
     b.reverse();
-    let first = order_and_cut(merge(a), 10);
-    let second = order_and_cut(merge(b), 10);
+    let first = order(merge(a));
+    let second = order(merge(b));
     let urls = |m: &[Merged]| {
         m.iter()
             .map(|x| (x.best.returned_url.clone(), x.score, x.engines.clone()))
@@ -137,17 +134,4 @@ fn req_rank_001_merged_result_holds_observations_with_ranks() {
         ]
     );
     assert_eq!(x.best.raw.title, "b 1");
-}
-
-/// REQ-RANK-007: after ranking the list is cut to `max_results`.
-#[test]
-fn req_rank_007_cut_to_max_results() {
-    let merged = merge(
-        (1..=7)
-            .map(|i| observe(0, "a", 10, i, &format!("https://example.org/{i}")))
-            .collect(),
-    );
-    assert_eq!(order_and_cut(merged.clone(), 3).len(), 3);
-    assert_eq!(order_and_cut(merged.clone(), 100).len(), 7);
-    assert_eq!(order_and_cut(merged, 0).len(), 0);
 }

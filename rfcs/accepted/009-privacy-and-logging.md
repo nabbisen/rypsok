@@ -102,3 +102,21 @@ the unlocked debug mode. A test that `Sensitive<String>` and
 ## Open questions
 
 None.
+
+## Amendment to RFC 009 (2026-10-20, M1 review)
+
+- **Foreign log targets are capped.** The MCP SDK logs every request it
+  receives at `debug`, query included. The subscriber therefore gives the
+  configured level to the crates `rypsok` and `rypsok_core` only and caps
+  every other target at `warn`, whatever the level. A new dependency
+  cannot leak a query or a URL through the log.
+- `Sensitive` wraps the query from validation to the drivers
+  (`ValidatedSearch::query`, `EngineRequest::query`); a driver reads it
+  through `expose()`.
+- `logging.log_queries = true` emits one `debug` event `query` with the
+  text; `serve` warns at start.
+- Warn mode counts under `warnings`, a counter of its own; a warning is
+  not a refusal.
+- The request identifier is the start time in milliseconds and a process
+  sequence number, in hexadecimal: unique within a process, which is what
+  log correlation needs, without a randomness dependency.

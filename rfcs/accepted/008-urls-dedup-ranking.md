@@ -93,3 +93,13 @@ credentials). Applied with this RFC.
 
 - Whether `m.` mobile hosts should be folded like `www.`. Decided here: no,
   until a corpus shows the need.
+
+## Amendment to RFC 008 (2026-10-20, M1 review)
+
+- The returned URL is the `url` crate's serialization of the parsed URL:
+  scheme and host lower-cased and a default port removed, percent-encoding
+  as the crate writes it. The resource is the same; "keep everything
+  else" applies to path, query, fragment and a non-default port.
+- A merged result carries `engines` (distinct, selection order) and
+  `ranks` (every observation with its rank), REQ-RANK-001's list of
+  observations.

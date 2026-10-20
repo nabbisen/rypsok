@@ -442,8 +442,7 @@ configuration RFC; its shape:
 ```toml
 config_version = 1                 # REQ-MAIN-003
 
-[service]
-transport = "stdio"                # or "http" (M4)
+[service]                          # the transport is a command-line choice, not a key
 structured_content = true          # REQ-MCP-011
 
 [search]

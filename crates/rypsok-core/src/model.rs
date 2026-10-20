@@ -15,7 +15,9 @@ pub mod error;
 pub mod ids;
 pub mod outcome;
 
-pub use error::{DetailReason, ErrorDetail, ErrorEnvelope, ErrorKind, SecretKind, ToolError};
+pub use error::{
+    CallError, DetailReason, ErrorDetail, ErrorEnvelope, ErrorKind, SecretKind, ToolError,
+};
 pub use ids::{Date, EngineId, Language};
 pub use outcome::{Decision, decide};
 

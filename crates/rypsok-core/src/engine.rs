@@ -18,12 +18,14 @@ use std::time::Duration;
 use crate::CancellationToken;
 use crate::config::SafeSearch;
 use crate::model::{Date, Language, Reason, TimeRange};
+use crate::privacy::Sensitive;
 
 /// What one engine is asked for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EngineRequest {
-    /// The query, validated and checked for secrets.
-    pub query: String,
+    /// The query, validated and checked for secrets. A driver reads it
+    /// with `expose()`; it cannot reach a log field (REQ-PRIV-004).
+    pub query: Sensitive,
     /// Results wanted from this engine (LIM-S3 or fewer).
     pub max_results: u8,
     /// The language of the results.

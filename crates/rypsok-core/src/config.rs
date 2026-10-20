@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::limits::{Limits, defaults};
 use crate::model::{Category, EngineId, Language};
@@ -27,7 +27,7 @@ pub const CONFIG_ENV: &str = "RYPSOK_CONFIG";
 pub const CONFIG_VERSION: u32 = 1;
 
 /// Every operational setting of a process (external design §13.2).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     /// Schema version; must be [`CONFIG_VERSION`].
@@ -64,22 +64,10 @@ pub struct Config {
     pub engines: BTreeMap<String, EngineTable>,
 }
 
-/// The transport `serve` uses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Transport {
-    /// Standard input and output.
-    Stdio,
-    /// Streamable HTTP (milestone M4).
-    Http,
-}
-
 /// `[service]`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ServiceConfig {
-    /// `stdio` or `http`; `http` is refused before milestone M4.
-    pub transport: Transport,
     /// Whether tool results carry `structuredContent` (REQ-MCP-011).
     pub structured_content: bool,
     /// Appended to the User-Agent: a URL or an address (REQ-CMP-004).
@@ -91,7 +79,6 @@ pub struct ServiceConfig {
 impl Default for ServiceConfig {
     fn default() -> Self {
         ServiceConfig {
-            transport: Transport::Stdio,
             structured_content: true,
             user_agent_contact: String::new(),
             http: HttpConfig::default(),
@@ -100,7 +87,7 @@ impl Default for ServiceConfig {
 }
 
 /// `[service.http]` (milestone M4).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct HttpConfig {
     /// The address to bind.
@@ -116,7 +103,7 @@ impl Default for HttpConfig {
 }
 
 /// The safe-search level passed to engines that support it (REQ-SEARCH-008).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SafeSearch {
     /// Off.
@@ -128,7 +115,7 @@ pub enum SafeSearch {
 }
 
 /// `[search]`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SearchConfig {
     /// Languages offered to callers; the first is the default (REQ-SEARCH-004).
@@ -186,7 +173,7 @@ impl Default for SearchConfig {
 }
 
 /// `[fetch]` (milestone M3; keys accepted from M1).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct FetchConfig {
     /// LIM-F1.
@@ -229,7 +216,7 @@ impl Default for FetchConfig {
 }
 
 /// `[egress]`.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct EgressConfig {
     /// Allow plain HTTP fetches (REQ-FETCH-010).
@@ -243,7 +230,7 @@ pub struct EgressConfig {
 }
 
 /// `[limits]`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LimitsConfig {
     /// LIM-C1.
@@ -277,7 +264,7 @@ impl Default for LimitsConfig {
 }
 
 /// `[resilience]` (RFC 010).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ResilienceConfig {
     /// LIM-B1.
@@ -299,7 +286,7 @@ impl Default for ResilienceConfig {
 }
 
 /// The secret-detection mode (LIM-P1; RFC 009).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SecretDetection {
     /// No scan.
@@ -313,7 +300,7 @@ pub enum SecretDetection {
 }
 
 /// `[privacy]`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct PrivacyConfig {
     /// LIM-P1.
@@ -329,7 +316,7 @@ impl Default for PrivacyConfig {
 }
 
 /// The log level (LIM-P2).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
     /// Process-level failures only.
@@ -343,7 +330,7 @@ pub enum LogLevel {
 }
 
 /// `[logging]`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LoggingConfig {
     /// LIM-P2.
@@ -362,7 +349,7 @@ impl Default for LoggingConfig {
 }
 
 /// `[status]`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct StatusConfig {
     /// Whether `engine_status` is offered (REQ-STATUS-003).
@@ -376,7 +363,7 @@ impl Default for StatusConfig {
 }
 
 /// `[engines.<id>]`: the common keys and the keys the driver declares.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngineTable {
     /// The driver: `wikipedia` or `brave`.
     #[serde(rename = "type")]
@@ -566,9 +553,6 @@ impl Config {
                 "config_version: only {CONFIG_VERSION} is supported"
             ));
         }
-        if self.service.transport == Transport::Http {
-            problems.push("service.transport: http is not available in this release".to_owned());
-        }
         let s = &self.search;
         if s.languages.is_empty() {
             problems.push("search.languages: at least one language is required".to_owned());
@@ -649,10 +633,17 @@ impl Config {
         let f = &self.fetch;
         range(
             &mut problems,
+            "fetch.max_chars_ceiling",
+            f.max_chars_ceiling,
+            500,
+            100_000,
+        );
+        range(
+            &mut problems,
             "fetch.max_chars",
             f.max_chars,
             500,
-            f.max_chars_ceiling.max(500),
+            f.max_chars_ceiling.clamp(500, 100_000),
         );
         range(
             &mut problems,
@@ -693,49 +684,49 @@ impl Config {
             "limits.outbound_in_flight",
             l.outbound_in_flight,
             1,
-            1024,
+            256,
         );
         range(
             &mut problems,
             "limits.per_engine_in_flight",
             u32::from(l.per_engine_in_flight),
             1,
-            32,
+            8,
         );
         range(
             &mut problems,
             "limits.fetches_in_flight",
             l.fetches_in_flight,
             1,
-            256,
+            64,
         );
         range(
             &mut problems,
             "limits.parsing_in_flight",
             l.parsing_in_flight,
             1,
-            64,
+            16,
         );
         range(
             &mut problems,
             "limits.web_search_per_minute",
             l.web_search_per_minute,
             1,
-            100_000,
+            6000,
         );
         range(
             &mut problems,
             "limits.web_fetch_per_minute",
             l.web_fetch_per_minute,
             1,
-            100_000,
+            6000,
         );
         range(
             &mut problems,
             "limits.engine_status_per_minute",
             l.engine_status_per_minute,
             1,
-            100_000,
+            6000,
         );
         let r = &self.resilience;
         range(

@@ -1,8 +1,8 @@
 # Wikipedia
 
 Driver type `wikipedia`; keyless. Facts verified on 2026-09-29 from the
-Wikimedia API and User-Agent policy pages; the query length was set
-conservatively and is to be measured in milestone M1.
+Wikimedia API and User-Agent policy pages; the query length was measured
+on 2026-10-20 against the live API.
 
 | Field | Value |
 |---|---|
@@ -15,7 +15,7 @@ conservatively and is to be measured in milestone M1.
 | Attribution | Not mandatory beyond the URL; `attribution_required = false` |
 | Languages | Every Wikipedia language edition: `languages = All`, mapped to the subdomain from the primary language subtag |
 | Time range | Not supported: `time_ranges = None`; the engine is skipped when a period is asked for |
-| Query length | 300 characters, conservative; to be confirmed against the API's own limit |
+| Query length | `max_query_chars = 250`. The API refuses a query above 300 characters (`cirrussearch-query-too-long`) counted on its rewritten form: a single 300-character token is reported as 345, a 255-character token passes, a 299-character multi-word query passes. 250 keeps every shape of query under the limit |
 | Categories | `general`, `science` by default |
 | Date | The revision timestamp of the page, as a date |
 | Result URL | `https://<lang>.wikipedia.org/wiki/<Title_with_underscores>`, percent-encoded |

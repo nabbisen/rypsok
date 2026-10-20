@@ -53,7 +53,7 @@ use config::{Config, ConfigError};
 use engine::registry::Registry;
 use limits::Limits;
 use model::{
-    EngineStatus, FetchRequest, FetchResponse, Outcome, SearchRequest, SearchResponse,
+    CallError, EngineStatus, FetchRequest, FetchResponse, Outcome, SearchRequest, SearchResponse,
     StatusResponse, ToolError,
 };
 use search::SearchPolicy;
@@ -141,17 +141,18 @@ impl Rypsok {
     /// LIM-F9.
     ///
     /// Validation and the privacy check run before any engine request
-    /// (REQ-SEARCH-006).
+    /// (REQ-SEARCH-006). A cancelled call ends as
+    /// [`CallError::Cancelled`] and has nothing to return (REQ-MCP-007).
     pub async fn search(
         &self,
         req: SearchRequest,
         cancel: CancellationToken,
-    ) -> Result<SearchResponse, ToolError> {
+    ) -> Result<SearchResponse, CallError> {
         let validated = match search::validate(&req, &self.policy) {
             Ok(validated) => validated,
             Err(error) => {
                 self.counters.refused("web_search", "invalid_request");
-                return Err(error);
+                return Err(error.into());
             }
         };
         let pipeline = Pipeline {
@@ -163,6 +164,7 @@ impl Rypsok {
             secret_detection: self.config.privacy.secret_detection,
             drop_flagged: self.config.search.drop_flagged_results,
             engine_attribution: self.config.search.engine_attribution,
+            log_queries: self.config.logging.log_queries,
             outbound: Arc::clone(&self.outbound),
             counters: &self.counters,
         };
@@ -179,9 +181,9 @@ impl Rypsok {
         &self,
         req: FetchRequest,
         cancel: CancellationToken,
-    ) -> Result<FetchResponse, ToolError> {
+    ) -> Result<FetchResponse, CallError> {
         let _ = (req, cancel);
-        Err(ToolError::busy())
+        Err(ToolError::busy().into())
     }
 
     /// `engine_status`: report the state of each configured engine. For

@@ -92,16 +92,15 @@ fn req_cfg_005_ranges_and_rules_name_the_key() {
     );
 }
 
-/// REQ-CFG-005 and REQ-MCP-003: the HTTP transport is refused before M4.
+/// REQ-CFG-002 and REQ-OPS-001: the transport is chosen on the command
+/// line alone; a `service.transport` key is unknown and refused by name.
 #[test]
-fn req_cfg_005_http_transport_refused_before_m4() {
-    let err = Config::parse("config_version = 1\n[service]\ntransport = \"http\"\n")
-        .unwrap()
-        .validate()
-        .unwrap_err();
-    assert_eq!(
-        err.problems,
-        vec!["service.transport: http is not available in this release"]
+fn req_cfg_002_transport_is_not_a_configuration_key() {
+    let err = Config::parse("config_version = 1\n[service]\ntransport = \"stdio\"\n").unwrap_err();
+    assert!(
+        err.problems.iter().any(|p| p.contains("transport")),
+        "{:?}",
+        err.problems
     );
 }
 
@@ -178,4 +177,74 @@ fn req_cfg_001_precedence_flag_env_defaults() {
     let err = Config::locate(Some(&missing)).unwrap_err();
     assert!(err.problems[0].starts_with("cannot read configuration file"));
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// REQ-CFG-001 and REQ-CFG-003: the configuration page documents every
+/// key of the schema, under its table, and nothing else. The schema is
+/// read from the serialized defaults; the engine table is read from the
+/// common keys and the keys every driver declares.
+#[test]
+fn req_cfg_001_configuration_page_matches_the_schema() {
+    let page = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/src/reference/configuration.md"
+    ))
+    .unwrap();
+
+    let mut schema = std::collections::BTreeSet::new();
+    let mut config = Config::parse("config_version = 1\n").unwrap();
+    for table in config.engines.values() {
+        for key in ["type", "enabled", "categories", "preference"] {
+            schema.insert(format!("engines.<id>.{key}"));
+        }
+        for key in crate::engine::drivers::declared_keys(&table.kind).unwrap() {
+            schema.insert(format!("engines.<id>.{key}"));
+        }
+    }
+    config.engines.clear();
+    let rendered: toml::Table = toml::from_str(&toml::to_string(&config).unwrap()).unwrap();
+    fn leaves(prefix: &str, value: &toml::Value, out: &mut std::collections::BTreeSet<String>) {
+        match value {
+            toml::Value::Table(table) => {
+                for (key, inner) in table {
+                    let path = if prefix.is_empty() {
+                        key.clone()
+                    } else {
+                        format!("{prefix}.{key}")
+                    };
+                    leaves(&path, inner, out);
+                }
+            }
+            _ => {
+                out.insert(prefix.to_owned());
+            }
+        }
+    }
+    leaves("", &toml::Value::Table(rendered), &mut schema);
+
+    let mut documented = std::collections::BTreeSet::new();
+    let mut prefix = String::new();
+    for line in page.lines() {
+        if line == "## Top level" {
+            prefix.clear();
+        } else if let Some(rest) = line
+            .strip_prefix("## `[")
+            .or_else(|| line.strip_prefix("### `["))
+        {
+            prefix = rest.split("]`").next().unwrap().to_owned();
+        } else if line.starts_with("## ") {
+            prefix = "-".to_owned();
+        } else if let Some(rest) = line.strip_prefix("| `") {
+            if prefix == "-" {
+                continue;
+            }
+            let key = rest.split('`').next().unwrap();
+            documented.insert(if prefix.is_empty() {
+                key.to_owned()
+            } else {
+                format!("{prefix}.{key}")
+            });
+        }
+    }
+    assert_eq!(documented, schema);
 }

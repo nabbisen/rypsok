@@ -504,6 +504,44 @@ mod end_to_end_more {
         assert!(stderr.contains("\"event\":\"call\""));
     }
 
+    /// REQ-PRIV-004 and REQ-OBS-005: `logging.log_queries = true` unlocks
+    /// the query text in one `debug` event; at `debug` level without it
+    /// the query still never appears.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn req_priv_004_log_queries_unlocks_the_query_at_debug_only() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/w/api.php"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(fixture("search-ok.json")))
+            .mount(&server)
+            .await;
+        for (log_queries, expected) in [(true, true), (false, false)] {
+            let config = config_file(&format!(
+                "config_version = 1\n[logging]\nlevel = \"debug\"\nlog_queries = {log_queries}\n[engines.wiki]\ntype = \"wikipedia\"\ncategories = [\"general\"]\nbase_url = \"{}/\"\n",
+                server.uri()
+            ));
+            let stderr = tokio::task::spawn_blocking(move || {
+                let mut s = Session::start(Some(&config));
+                s.discover();
+                let result = s.request(
+                    "tools/call",
+                    json!({ "name": "web_search", "arguments": { "query": "zebra quokka wombat" } }),
+                );
+                assert_eq!(result["isError"], false, "{result}");
+                s.close_and_wait(std::time::Duration::from_millis(3000)).2
+            })
+            .await
+            .unwrap();
+            assert_eq!(
+                stderr.contains("zebra quokka wombat"),
+                expected,
+                "log_queries = {log_queries}: {stderr}"
+            );
+            assert_eq!(stderr.contains("\"event\":\"query\""), expected);
+            assert_eq!(stderr.contains("\"event\":\"log_queries\""), expected);
+        }
+    }
+
     /// REQ-OBS-006: a provider error body is not logged at the default level.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn req_obs_006_provider_error_text_is_not_logged_at_info() {

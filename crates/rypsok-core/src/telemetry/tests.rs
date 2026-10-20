@@ -32,3 +32,21 @@ fn req_obs_005_request_ids_are_unique() {
             .all(|id| id.len() == 18 && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-'))
     );
 }
+
+/// REQ-PRIV-004: at `debug` level the events of a dependency stay capped
+/// at `warn`; only the crates of rypsok follow the configured level.
+#[test]
+fn req_priv_004_foreign_targets_are_capped_whatever_the_level() {
+    use tracing_subscriber::filter::LevelFilter;
+    let debug = filter(LogLevel::Debug);
+    assert!(debug.would_enable("rypsok_core::search", &tracing::Level::DEBUG));
+    assert!(debug.would_enable("rypsok::mcp", &tracing::Level::DEBUG));
+    assert!(!debug.would_enable("rmcp::service", &tracing::Level::DEBUG));
+    assert!(!debug.would_enable("rmcp::service", &tracing::Level::INFO));
+    assert!(debug.would_enable("rmcp::service", &tracing::Level::WARN));
+    assert!(!debug.would_enable("hyper_util::client", &tracing::Level::DEBUG));
+    let error = filter(LogLevel::Error);
+    assert!(!error.would_enable("rypsok_core::search", &tracing::Level::WARN));
+    assert!(!error.would_enable("rmcp::service", &tracing::Level::WARN));
+    assert_eq!(FOREIGN_CAP, LevelFilter::WARN);
+}

@@ -162,6 +162,37 @@ pub struct ToolError {
     pub detail: Box<ErrorDetail>,
 }
 
+/// How a call ends when it does not end with a response.
+///
+/// A host returns `Tool` to its caller as the error object (external
+/// design §4) and returns nothing for `Cancelled`: the caller asked for
+/// the call to stop, nothing of the call keeps running, and there is no
+/// outcome to report (REQ-MCP-007). A cancelled call is never dressed up
+/// as a deadline or any other error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CallError {
+    /// The error object to return.
+    Tool(ToolError),
+    /// The caller cancelled the call; there is nothing to return.
+    Cancelled,
+}
+
+impl From<ToolError> for CallError {
+    fn from(error: ToolError) -> Self {
+        CallError::Tool(error)
+    }
+}
+
+impl CallError {
+    /// The error object, when the call ended with one.
+    pub fn tool(self) -> Option<ToolError> {
+        match self {
+            CallError::Tool(error) => Some(error),
+            CallError::Cancelled => None,
+        }
+    }
+}
+
 /// The error as it is rendered: `{"error": …}` (external design §4).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ErrorEnvelope {

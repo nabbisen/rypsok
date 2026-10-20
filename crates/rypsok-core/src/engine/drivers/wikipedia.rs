@@ -20,7 +20,7 @@ pub const KIND: &str = "wikipedia";
 
 /// The properties from the admission record.
 pub const PROPERTIES: EngineProperties = EngineProperties {
-    max_query_chars: 300,
+    max_query_chars: 250,
     max_query_words: None,
     languages: LanguageSupport::All,
     time_ranges: TimeRangeSupport::None,
@@ -140,7 +140,7 @@ impl Driver for Wikipedia {
         let request = self.client.get(endpoint).query(&[
             ("action", "query"),
             ("list", "search"),
-            ("srsearch", req.query.as_str()),
+            ("srsearch", req.query.expose()),
             ("srlimit", limit.as_str()),
             ("srprop", "snippet|timestamp"),
             ("format", "json"),
