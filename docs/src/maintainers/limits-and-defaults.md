@@ -57,6 +57,8 @@ it.
 | LIM-F11 | HTML nesting depth | 256 | operator | R-04 |
 | LIM-F12 | robots.txt kept in memory | 24 hours | ≤ 24 hours | RFC 9309 §2.4 |
 | LIM-F13 | Size of a robots.txt read | 512 KiB | operator | Parser bound |
+| LIM-F14 | URLs remembered for strict mode | 10000 | operator | REQ-SEC-021; bounded memory (RFC 011) |
+| LIM-F15 | robots.txt entries kept in memory | 1000 origins | operator | REQ-CMP-005; bounded memory (RFC 011) |
 
 ## Concurrency and rates
 

@@ -68,6 +68,10 @@ pub mod defaults {
     pub const ROBOTS_TTL_S: u32 = 86400; // LIM-F12
     /// Size of a robots.txt read, in bytes.
     pub const ROBOTS_MAX_BYTES: u64 = 524_288; // LIM-F13
+    /// URLs remembered for strict mode (RFC 011; used from milestone M3).
+    pub const STRICT_MODE_URLS: u32 = 10000; // LIM-F14
+    /// robots.txt entries kept in memory (RFC 011; used from milestone M3).
+    pub const ROBOTS_CACHE_ENTRIES: u32 = 1000; // LIM-F15
 
     /// Outbound requests in flight, whole process.
     pub const OUTBOUND_IN_FLIGHT: u32 = 32; // LIM-C1

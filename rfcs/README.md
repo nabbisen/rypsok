@@ -51,6 +51,8 @@ _None yet._
 | 008 | [URL comparison keys, deduplication, rank fusion](./accepted/008-urls-dedup-ranking.md) | M1 | [handoffs/008-urls-dedup-ranking](./handoffs/008-urls-dedup-ranking/README.md) |
 | 009 | [Query privacy and logging](./accepted/009-privacy-and-logging.md) | M1 | [handoffs/009-privacy-and-logging](./handoffs/009-privacy-and-logging/README.md) |
 | 010 | [Health, circuit breaking, provider limits, `engine_status`](./accepted/010-health-and-circuit.md) | M2 | [handoffs/010-health-and-circuit](./handoffs/010-health-and-circuit/README.md) |
+| 011 | [Egress policy and SSRF defense](./accepted/011-egress-policy.md) | M3 | [handoffs/011-egress-policy](./handoffs/011-egress-policy/README.md) |
+| 012 | [Fetch pipeline: `web_fetch`, extraction, robots.txt](./accepted/012-fetch-pipeline.md) | M3 | [handoffs/012-fetch-pipeline](./handoffs/012-fetch-pipeline/README.md) |
 
 ## Implemented
 
