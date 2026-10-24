@@ -5,7 +5,11 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+// Tokio's clock, so that the deadlines follow a paused test clock and
+// agree with the health table; in production it is the system clock.
+use tokio::time::Instant;
 
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
@@ -25,6 +29,7 @@ use crate::model::{
 };
 use crate::privacy::{self, Sensitive, Verdict};
 use crate::telemetry::Counters;
+use crate::telemetry::health::{Admission, Completion, HealthTable};
 
 /// What the pipeline needs from the process.
 pub struct Pipeline<'a> {
@@ -50,13 +55,20 @@ pub struct Pipeline<'a> {
     pub outbound: Arc<Semaphore>,
     /// The counters.
     pub counters: &'a Counters,
+    /// The circuits and latency windows (RFC 010).
+    pub health: &'a HealthTable,
 }
 
 /// How one engine ended.
 #[derive(Debug)]
 enum Ended {
     Answered(EngineResponse, Duration),
-    Failed(EngineErrorClass, Option<Duration>),
+    Failed {
+        class: EngineErrorClass,
+        retry_after: Option<Duration>,
+        /// The duration when a response was received; none for a timeout.
+        latency: Option<Duration>,
+    },
     Skipped(Reason),
 }
 
@@ -114,6 +126,8 @@ pub async fn run(
         .cloned()
         .unwrap_or_else(|| search.language.clone());
     let mut queried: Vec<Arc<Engine>> = Vec::new();
+    // Whether each queried engine carries the probe of a half-open circuit.
+    let mut probes: Vec<bool> = Vec::new();
     for engine in p
         .registry
         .select(search.category, usize::from(p.limits.engines_per_request))
@@ -139,7 +153,25 @@ pub async fn run(
                     Reason::RateLimited,
                 ));
             }
-            None => queried.push(engine),
+            None => {
+                // The circuit (RFC 010): an elapsed cooldown makes this call
+                // the one probe; another call's probe means a skip.
+                let (admission, transition) = p.health.admit(&engine.id);
+                if let Some(transition) = transition {
+                    transition.log();
+                }
+                match admission {
+                    Admission::Skipped => notices.push(Notice::engine(
+                        NoticeCode::EngineSkipped,
+                        engine.id.clone(),
+                        Reason::Cooldown,
+                    )),
+                    Admission::Allowed | Admission::Probe => {
+                        queried.push(engine);
+                        probes.push(admission == Admission::Probe);
+                    }
+                }
+            }
         }
     }
     if queried.is_empty() {
@@ -168,11 +200,11 @@ pub async fn run(
         let child = cancel.child_token();
         let handle = tasks.spawn(async move {
             let Ok(_global) =
-                tokio::time::timeout_at(fan_out_deadline.into(), outbound.acquire_owned()).await
+                tokio::time::timeout_at(fan_out_deadline, outbound.acquire_owned()).await
             else {
                 return (index, Ended::Skipped(Reason::RateLimited));
             };
-            let Ok(_permit) = engine.limiter.acquire(fan_out_deadline).await else {
+            let Ok(_permit) = engine.limiter.acquire(fan_out_deadline.into_std()).await else {
                 return (index, Ended::Skipped(Reason::RateLimited));
             };
             let Some(driver) = engine.driver.as_deref() else {
@@ -182,8 +214,16 @@ pub async fn run(
             let ended =
                 match tokio::time::timeout(engine_timeout, driver.search(&request, child)).await {
                     Ok(Ok(response)) => Ended::Answered(response, started.elapsed()),
-                    Ok(Err(error)) => Ended::Failed(error.class, error.retry_after),
-                    Err(_) => Ended::Failed(EngineErrorClass::Timeout, None),
+                    Ok(Err(error)) => Ended::Failed {
+                        class: error.class,
+                        retry_after: error.retry_after,
+                        latency: Some(started.elapsed()),
+                    },
+                    Err(_) => Ended::Failed {
+                        class: EngineErrorClass::Timeout,
+                        retry_after: None,
+                        latency: None,
+                    },
                 };
             (index, ended)
         });
@@ -197,9 +237,10 @@ pub async fn run(
         let next = tokio::select! {
             _ = cancel.cancelled() => {
                 drop(tasks);
+                settle_cancelled(p, &queried, &probes, &ended);
                 return Err(cancelled(p, start));
             }
-            _ = tokio::time::sleep_until(fan_out_deadline.into()) => None,
+            _ = tokio::time::sleep_until(fan_out_deadline) => None,
             joined = tasks.join_next() => joined,
         };
         match next {
@@ -214,7 +255,11 @@ pub async fn run(
                         engine = %queried[index].id,
                         "an engine task panicked; classified as request_failure"
                     );
-                    ended[index] = Some(Ended::Failed(EngineErrorClass::RequestFailure, None));
+                    ended[index] = Some(Ended::Failed {
+                        class: EngineErrorClass::RequestFailure,
+                        retry_after: None,
+                        latency: None,
+                    });
                 }
             }
             None => break,
@@ -227,6 +272,7 @@ pub async fn run(
     // Observed between stages as well (RFC 007): an engine that ends on the
     // same tick as the cancellation must not turn the call into an outcome.
     if cancel.is_cancelled() {
+        settle_cancelled(p, &queried, &probes, &ended);
         return Err(cancelled(p, start));
     }
 
@@ -237,15 +283,22 @@ pub async fn run(
     let mut all_timeouts = true;
     let mut retry_after: Option<Duration> = None;
     for (index, engine) in queried.iter().enumerate() {
-        let outcome = ended[index]
-            .take()
-            .unwrap_or(Ended::Failed(EngineErrorClass::Timeout, None));
+        let outcome = ended[index].take().unwrap_or(Ended::Failed {
+            class: EngineErrorClass::Timeout,
+            retry_after: None,
+            latency: None,
+        });
+        inform_health(p, engine, probes[index], Some(&outcome));
         match outcome {
             Ended::Answered(response, latency) => {
                 tracing::debug!(event = "engine_answered", engine = %engine.id, results = response.results.len(), latency_ms = latency.as_millis() as u64, "engine answered");
                 answered.push((index, response));
             }
-            Ended::Failed(class, wait) => {
+            Ended::Failed {
+                class,
+                retry_after: wait,
+                ..
+            } => {
                 failed += 1;
                 all_timeouts &= class == EngineErrorClass::Timeout;
                 if let Some(wait) = wait {
@@ -415,6 +468,65 @@ pub async fn run(
         notices,
         results,
     })
+}
+
+/// Informs the health table how an engine ended (REQ-OBS-002, REQ-RES-004,
+/// REQ-RES-005) and logs what it asks for. `None` is an engine whose
+/// request never completed: nothing to count, except that a probe without
+/// a verdict reopens its circuit.
+fn inform_health(p: &Pipeline<'_>, engine: &Engine, probe: bool, ended: Option<&Ended>) {
+    let completion = match ended {
+        Some(Ended::Answered(_, latency)) => {
+            p.health.record_latency(&engine.id, *latency);
+            Some(Completion::Success)
+        }
+        Some(Ended::Failed {
+            class,
+            retry_after,
+            latency,
+        }) => {
+            // A classified failure received a response and counts toward the
+            // latency window; a timeout, whether the driver's or the
+            // pipeline's, did not (REQ-OBS-002).
+            if let Some(latency) = latency
+                && *class != EngineErrorClass::Timeout
+            {
+                p.health.record_latency(&engine.id, *latency);
+            }
+            Some(Completion::Failure {
+                class: *class,
+                retry_after: *retry_after,
+            })
+        }
+        Some(Ended::Skipped(_)) | None => probe.then_some(Completion::Cancelled),
+    };
+    let Some(completion) = completion else {
+        return;
+    };
+    let completed = p.health.complete(&engine.id, completion);
+    if completed.warn_auth {
+        tracing::warn!(
+            event = "auth_failure",
+            engine = %engine.id,
+            "the provider refused the credential; the engine stays selected so that a corrected key takes effect at once"
+        );
+    }
+    if let Some(transition) = completed.transition {
+        transition.log();
+    }
+}
+
+/// On cancellation, what did complete is still an observation; a probe that
+/// did not complete reopens its circuit (RFC 010).
+fn settle_cancelled(
+    p: &Pipeline<'_>,
+    queried: &[Arc<Engine>],
+    probes: &[bool],
+    ended: &[Option<Ended>],
+) {
+    for (index, engine) in queried.iter().enumerate() {
+        inform_health(p, engine, probes[index], ended[index].as_ref());
+    }
 }
 
 /// The end of a cancelled call: counted, logged, nothing returned

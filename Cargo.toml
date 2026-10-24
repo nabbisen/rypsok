@@ -41,6 +41,7 @@ unsafe_code = "forbid"
 missing_docs = "warn"
 
 [workspace.lints.clippy]
+await_holding_lock = "deny"
 print_stdout = "deny"
 print_stderr = "deny"
 dbg_macro = "deny"

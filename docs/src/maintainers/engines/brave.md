@@ -21,5 +21,5 @@ Brave Search API documentation and terms.
 | Date | `page_age` when present, as a date |
 | Errors | 429 → `rate_limited` with `Retry-After` or `X-RateLimit-Reset`; 401 and 403 → `auth_failure`; other statuses → `request_failure`; a body that does not parse → `parse_failure`; a timeout → `timeout` |
 | Response bound | 1 MiB after decompression |
-| Live check | Query `rust programming language` on the web endpoint, asserting at least one result that parses; weekly; skipped and reported when the repository secret `BRAVE_API_KEY` is absent |
+| Live check | Query `rust programming language` on the web endpoint, asserting at least one result that parses; weekly from `.github/workflows/scheduled.yml`, never on a pull request and never as a gate; skipped and reported when the repository secret `BRAVE_API_KEY` is absent; a failure means format drift (the provider changed its response or its terms), not an outage of rypsok |
 | Notes | `count` is at most 20; `more_results_available` is ignored (no pagination, REQ-SEARCH-007) |

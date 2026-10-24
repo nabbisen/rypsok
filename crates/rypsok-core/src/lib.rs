@@ -53,12 +53,12 @@ use config::{Config, ConfigError};
 use engine::registry::Registry;
 use limits::Limits;
 use model::{
-    CallError, EngineStatus, FetchRequest, FetchResponse, Outcome, SearchRequest, SearchResponse,
-    StatusResponse, ToolError,
+    CallError, FetchRequest, FetchResponse, Outcome, SearchRequest, SearchResponse, StatusResponse,
+    ToolError,
 };
 use search::SearchPolicy;
 use search::pipeline::Pipeline;
-use telemetry::Counters;
+use telemetry::{Counters, HealthTable};
 
 /// The service: one instance per process, built from a validated
 /// configuration, shared by every call.
@@ -68,6 +68,7 @@ pub struct Rypsok {
     limits: Limits,
     policy: SearchPolicy,
     registry: Registry,
+    health: HealthTable,
     counters: Counters,
     outbound: Arc<tokio::sync::Semaphore>,
 }
@@ -101,11 +102,13 @@ impl Rypsok {
         let outbound = Arc::new(tokio::sync::Semaphore::new(
             limits.outbound_in_flight as usize,
         ));
+        let health = HealthTable::new(&registry, &limits);
         Ok(Rypsok {
             config,
             limits,
             policy,
             registry,
+            health,
             counters: Counters::new(),
             outbound,
         })
@@ -129,6 +132,11 @@ impl Rypsok {
     /// The engines.
     pub fn registry(&self) -> &Registry {
         &self.registry
+    }
+
+    /// The health state of every engine (RFC 010).
+    pub fn health(&self) -> &HealthTable {
+        &self.health
     }
 
     /// `web_search`: search several engines at once and return deduplicated,
@@ -165,6 +173,7 @@ impl Rypsok {
             drop_flagged: self.config.search.drop_flagged_results,
             engine_attribution: self.config.search.engine_attribution,
             log_queries: self.config.logging.log_queries,
+            health: &self.health,
             outbound: Arc::clone(&self.outbound),
             counters: &self.counters,
         };
@@ -190,21 +199,13 @@ impl Rypsok {
     /// diagnosis, not for answering questions.
     ///
     /// Profile (external design §3.3): no effect on local state; nothing
-    /// leaves the host; at most LIM-S13 long.
+    /// leaves the host; at most LIM-S13 long. A snapshot of the health
+    /// table under a read lock: no I/O, no await (REQ-STATUS-001).
     pub fn status(&self) -> StatusResponse {
         StatusResponse {
             outcome: Outcome::Ok,
             notices: Vec::new(),
-            engines: self
-                .registry
-                .engines()
-                .iter()
-                .map(|e| EngineStatus {
-                    id: e.id.clone(),
-                    state: e.state(),
-                    latency_ms: None,
-                })
-                .collect(),
+            engines: self.health.snapshot(),
         }
     }
 }

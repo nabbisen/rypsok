@@ -10,7 +10,8 @@ use crate::engine::{
     Driver, EngineError, EngineProperties, LanguageSupport, RawResult, TimeRangeSupport,
     UserAgentFormat,
 };
-use crate::model::{Category, ErrorKind, Language, SearchRequest};
+use crate::model::{Category, EngineState, ErrorKind, Language, SearchRequest};
+use crate::telemetry::HealthTable;
 
 /// What a scripted engine does when asked.
 #[derive(Debug, Clone)]
@@ -20,6 +21,12 @@ enum Script {
     Slow(Duration, Vec<(&'static str, &'static str, &'static str)>),
     Hang,
     Panic,
+    /// Fails with the class while the call count is at most `n`, then answers.
+    FailFirst(
+        usize,
+        EngineErrorClass,
+        Vec<(&'static str, &'static str, &'static str)>,
+    ),
 }
 
 #[derive(Debug)]
@@ -88,12 +95,20 @@ impl Driver for Scripted {
                 Err(EngineError::new(EngineErrorClass::RequestFailure))
             }
             Script::Panic => panic!("scripted panic"),
+            Script::FailFirst(n, class, items) => {
+                if self.calls.load(Ordering::SeqCst) <= *n {
+                    Err(EngineError::new(*class))
+                } else {
+                    Ok(answer(items))
+                }
+            }
         }
     }
 }
 
 struct Harness {
     registry: Registry,
+    health: HealthTable,
     limits: Limits,
     policy: SearchPolicy,
     counters: Counters,
@@ -133,8 +148,11 @@ fn harness_with(engines: Vec<(&str, Script)>, tune: impl Fn(&mut EnginePropertie
         search_reserve_ms: 100,
         ..Limits::default()
     };
+    let registry = Registry::from_engines(built);
+    let health = HealthTable::new(&registry, &limits);
     Harness {
-        registry: Registry::from_engines(built),
+        registry,
+        health,
         limits,
         policy: SearchPolicy {
             query_max_chars: 400,
@@ -178,6 +196,7 @@ impl Harness {
             log_queries: false,
             outbound: Arc::new(Semaphore::new(32)),
             counters: &self.counters,
+            health: &self.health,
         };
         let validated = super::super::validate(&req, &self.policy).unwrap();
         run(&pipeline, validated, cancel).await
@@ -812,6 +831,7 @@ async fn req_agg_005_process_wide_outbound_cap_is_enforced() {
         log_queries: false,
         outbound: Arc::new(Semaphore::new(1)),
         counters: &h.counters,
+        health: &h.health,
     };
     let validated = super::super::validate(&req(), &h.policy).unwrap();
     let started = Instant::now();
@@ -945,4 +965,249 @@ async fn req_life_002_cancelled_call_releases_its_tasks() {
     let _ = h.search(req(), cancel).await;
     tokio::time::sleep(Duration::from_millis(50)).await;
     assert_eq!(Arc::strong_count(&h.registry.engines()[0]), 1);
+}
+
+fn state_of(h: &Harness, id: &str) -> EngineState {
+    h.health
+        .circuit(&EngineId::new(id).unwrap())
+        .unwrap()
+        .state()
+}
+
+/// REQ-RES-004, REQ-OBS-001 and REQ-OBS-004: after LIM-B1 consecutive
+/// counted failures the engine is skipped with reason `cooldown` and is
+/// not called; the other engine keeps answering; `engine_status` shows
+/// `open`.
+#[tokio::test(start_paused = true)]
+async fn req_res_004_failing_engine_enters_cooldown_and_is_skipped() {
+    let h = harness(vec![
+        ("a", Script::Fail(EngineErrorClass::Timeout, None)),
+        ("b", Script::Answer(B.to_vec())),
+    ]);
+    for _ in 0..3 {
+        let response = h.search(req(), CancellationToken::new()).await.unwrap();
+        assert_eq!(response.outcome, Outcome::Partial);
+    }
+    assert_eq!(state_of(&h, "a"), EngineState::Open);
+    let response = h.search(req(), CancellationToken::new()).await.unwrap();
+    assert_eq!(response.outcome, Outcome::Ok);
+    assert_eq!(
+        response.notices,
+        vec![Notice::engine(
+            NoticeCode::EngineSkipped,
+            EngineId::new("a").unwrap(),
+            Reason::Cooldown
+        )]
+    );
+    assert_eq!(
+        h.calls[0].load(Ordering::SeqCst),
+        3,
+        "not called in cooldown"
+    );
+    assert_eq!(h.counters.engine_errors_of("a", "timeout"), 3);
+    let snapshot = h.health.snapshot();
+    assert_eq!(snapshot[0].state, EngineState::Open);
+    assert_eq!(snapshot[0].latency_ms, None, "timeouts record no latency");
+    assert!(snapshot[1].latency_ms.is_some(), "b answered three times");
+}
+
+/// REQ-RES-005 and REQ-TEST-017: after the cooldown exactly one of two
+/// concurrent calls carries the probe; the other is skipped with reason
+/// `cooldown`; a successful probe closes the circuit and a later call
+/// uses the engine again.
+#[tokio::test(start_paused = true)]
+async fn req_res_005_one_probe_under_two_concurrent_calls() {
+    let h = harness(vec![(
+        "a",
+        Script::FailFirst(3, EngineErrorClass::ParseFailure, A.to_vec()),
+    )]);
+    for _ in 0..3 {
+        assert!(h.search(req(), CancellationToken::new()).await.is_err());
+    }
+    assert_eq!(state_of(&h, "a"), EngineState::Open);
+    tokio::time::advance(Duration::from_secs(60)).await;
+    let (first, second) = tokio::join!(
+        h.search(req(), CancellationToken::new()),
+        h.search(req(), CancellationToken::new())
+    );
+    let first = first.unwrap();
+    assert_eq!(first.outcome, Outcome::Ok, "the probe answered");
+    let second = second.unwrap_err().tool().unwrap();
+    assert_eq!(
+        second.detail.reason,
+        Some(crate::model::DetailReason::NoEngine),
+        "the second call found the only engine half-open and skipped it"
+    );
+    assert_eq!(h.calls[0].load(Ordering::SeqCst), 4, "one probe, not two");
+    assert_eq!(state_of(&h, "a"), EngineState::Closed);
+    let again = h.search(req(), CancellationToken::new()).await.unwrap();
+    assert!(again.notices.is_empty());
+}
+
+/// REQ-RES-005: a probe cancelled before completion reopens the circuit
+/// with the same cooldown; a probe that fails doubles it.
+#[tokio::test(start_paused = true)]
+async fn req_res_005_cancelled_probe_reopens_failed_probe_doubles() {
+    let h = harness(vec![("a", Script::Hang)]);
+    // Three fan-out deadlines count as three timeouts and open the circuit.
+    for _ in 0..3 {
+        assert!(h.search(req(), CancellationToken::new()).await.is_err());
+    }
+    assert_eq!(state_of(&h, "a"), EngineState::Open);
+    tokio::time::advance(Duration::from_secs(60)).await;
+    let cancel = CancellationToken::new();
+    let soon = cancel.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        soon.cancel();
+    });
+    assert_eq!(
+        h.search(req(), cancel).await.unwrap_err(),
+        CallError::Cancelled
+    );
+    let circuit = h.health.circuit(&EngineId::new("a").unwrap()).unwrap();
+    match circuit {
+        crate::telemetry::health::Circuit::Open { cooldown, .. } => {
+            assert_eq!(
+                cooldown,
+                Duration::from_secs(60),
+                "same cooldown after a cancelled probe"
+            );
+        }
+        other => panic!("expected open, got {other:?}"),
+    }
+    tokio::time::advance(Duration::from_secs(60)).await;
+    assert!(h.search(req(), CancellationToken::new()).await.is_err());
+    match h.health.circuit(&EngineId::new("a").unwrap()).unwrap() {
+        crate::telemetry::health::Circuit::Open { cooldown, .. } => {
+            assert_eq!(
+                cooldown,
+                Duration::from_secs(120),
+                "doubled after a failed probe"
+            );
+        }
+        other => panic!("expected open, got {other:?}"),
+    }
+}
+
+/// REQ-OBS-003 and REQ-OBS-002: engine errors are counted by class and the
+/// latency of a classified failure is recorded, while `auth_failure` and
+/// `request_failure` leave the circuit closed.
+#[tokio::test(start_paused = true)]
+async fn req_obs_003_errors_counted_by_class_without_opening() {
+    let h = harness(vec![
+        ("a", Script::Fail(EngineErrorClass::AuthFailure, None)),
+        ("b", Script::Fail(EngineErrorClass::RequestFailure, None)),
+    ]);
+    for _ in 0..4 {
+        assert!(h.search(req(), CancellationToken::new()).await.is_err());
+    }
+    assert_eq!(h.counters.engine_errors_of("a", "auth_failure"), 4);
+    assert_eq!(h.counters.engine_errors_of("b", "request_failure"), 4);
+    assert_eq!(state_of(&h, "a"), EngineState::Closed);
+    assert_eq!(state_of(&h, "b"), EngineState::Closed);
+    let snapshot = h.health.snapshot();
+    assert!(
+        snapshot.iter().all(|s| s.latency_ms.is_some()),
+        "classified failures record latency"
+    );
+}
+
+/// REQ-OBS-004: the three circuit events reach the log with the engine,
+/// the state, the cooldown and the failure count.
+#[tokio::test(start_paused = true)]
+async fn req_obs_004_circuit_events_are_logged() {
+    use std::io::Write;
+    use std::sync::Mutex;
+    use tracing_subscriber::fmt::MakeWriter;
+
+    #[derive(Clone, Default)]
+    struct Sink(Arc<Mutex<Vec<u8>>>);
+    struct SinkWriter(Arc<Mutex<Vec<u8>>>);
+    impl Write for SinkWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl<'a> MakeWriter<'a> for Sink {
+        type Writer = SinkWriter;
+        fn make_writer(&'a self) -> SinkWriter {
+            SinkWriter(Arc::clone(&self.0))
+        }
+    }
+
+    let sink = Sink::default();
+    let subscriber = tracing_subscriber::fmt()
+        .json()
+        .flatten_event(true)
+        .with_target(false)
+        .without_time()
+        .with_writer(sink.clone())
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    let h = harness(vec![(
+        "a",
+        Script::FailFirst(3, EngineErrorClass::Blocked, A.to_vec()),
+    )]);
+    for _ in 0..3 {
+        let _ = h.search(req(), CancellationToken::new()).await;
+    }
+    tokio::time::advance(Duration::from_secs(60)).await;
+    h.search(req(), CancellationToken::new()).await.unwrap();
+    let log = String::from_utf8(sink.0.lock().unwrap().clone()).unwrap();
+    let events: Vec<serde_json::Value> = log
+        .lines()
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .filter(|v: &serde_json::Value| {
+            v["event"]
+                .as_str()
+                .is_some_and(|e| e.starts_with("circuit_"))
+        })
+        .collect();
+    let names: Vec<&str> = events
+        .iter()
+        .map(|e| e["event"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        vec!["circuit_opened", "circuit_half_open", "circuit_closed"]
+    );
+    assert_eq!(events[0]["engine"], "a");
+    assert_eq!(events[0]["state"], "open");
+    assert_eq!(events[0]["cooldown_ms"], 60_000);
+    assert_eq!(events[0]["consecutive_failures"], 3);
+    assert_eq!(events[1]["state"], "half_open");
+    assert_eq!(events[2]["state"], "closed");
+    assert!(!log.contains("rust"), "the query is not in the log");
+}
+
+/// REQ-STATUS-001 and LIM-S13: a snapshot of sixteen engines is well
+/// within the status call's budget and reports every engine.
+#[tokio::test(start_paused = true)]
+async fn req_status_001_snapshot_of_sixteen_engines_within_budget() {
+    let names: Vec<String> = (0..16).map(|i| format!("e{i:02}")).collect();
+    let h = harness(
+        names
+            .iter()
+            .map(|n| (n.as_str(), Script::Answer(A.to_vec())))
+            .collect(),
+    );
+    h.search(req(), CancellationToken::new()).await.unwrap();
+    let started = std::time::Instant::now();
+    let snapshot = h.health.snapshot();
+    let elapsed = started.elapsed();
+    assert_eq!(snapshot.len(), 16);
+    assert!(
+        elapsed < Duration::from_millis(crate::limits::defaults::STATUS_CALL_MAX_MS.into()),
+        "snapshot took {elapsed:?}"
+    );
+    assert!(
+        snapshot.iter().take(8).all(|s| s.latency_ms.is_some()),
+        "the eight queried engines have a latency"
+    );
 }

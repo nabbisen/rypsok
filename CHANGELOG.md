@@ -8,7 +8,27 @@ Until 1.0.0 the external contract (tool names, parameters, response fields,
 outcomes, error kinds) may change between minor versions; every such change
 is announced here.
 
-## [Unreleased]
+## [Unreleased] — Health and circuit breaking (milestone M2, 0.2.0)
+
+### Added
+
+- A circuit per engine, driven by real requests and the clock: `open` after
+  3 consecutive failures of class `timeout`, `rate_limited`, `blocked` or
+  `parse_failure`, cooldown 60 s doubling up to 900 s, `Retry-After`
+  honored within that cap; one real request probes the engine after the
+  cooldown; `auth_failure` and `request_failure` never open it (RFC 010).
+- `engine_status` reports the circuit state and the median latency of the
+  last 20 completed requests per engine; state lives in memory and is
+  reset when the process restarts.
+- Circuit transitions are logged as `circuit_opened`, `circuit_half_open`
+  and `circuit_closed` events with the engine, the cooldown and the
+  failure count.
+
+### Changed
+
+- A cancelled probe, or a probe that ends with an uncounted failure,
+  reopens the circuit with the same cooldown instead of counting as a
+  verdict.
 
 ## [0.1.0] — 2026-10-20 — Search kernel (milestone M1)
 

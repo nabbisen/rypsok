@@ -21,5 +21,5 @@ on 2026-10-20 against the live API.
 | Result URL | `https://<lang>.wikipedia.org/wiki/<Title_with_underscores>`, percent-encoded |
 | Errors | 429 → `rate_limited` with `Retry-After`; 403 → `blocked` (a bad User-Agent); other statuses and an `error` object → `request_failure`; a body that does not parse → `parse_failure`; a timeout → `timeout` |
 | Response bound | 1 MiB after decompression |
-| Live check | Query `Rust (programming language)` on `en`, asserting at least one result that parses; weekly |
+| Live check | Query `Rust (programming language)` on `en`, asserting at least one result that parses; weekly from `.github/workflows/scheduled.yml`, never on a pull request and never as a gate; a failure means format drift (the provider changed its response or its terms), not an outage of rypsok |
 | Notes | Avoid the `api.wikimedia.org` Core endpoints (deprecation announced from July 2026) |

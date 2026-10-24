@@ -51,7 +51,7 @@ fn req_ops_003_inactive_engines_are_disabled_not_fatal() {
     let registry = Registry::build(&config, None, true);
     assert_eq!(registry.engines().len(), 3);
     for engine in registry.engines() {
-        assert_eq!(engine.state(), EngineState::Disabled, "{}", engine.id);
+        assert!(!engine.is_active(), "{}", engine.id);
         assert!(engine.driver.is_none());
     }
     assert!(registry.select(Category::General, 8).is_empty());
@@ -66,7 +66,7 @@ fn req_eng_010_active_engine_carries_properties() {
     );
     let registry = Registry::build(&config, None, true);
     let engine = &registry.engines()[0];
-    assert_eq!(engine.state(), EngineState::Closed);
+    assert!(engine.is_active());
     let properties = engine.properties().unwrap();
     assert_eq!(properties.requests_per_minute, 100);
     assert_eq!(properties.max_in_flight, 1);

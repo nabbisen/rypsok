@@ -3,6 +3,7 @@
 //! ever receives a query, a URL path or page content (REQ-PRIV-004).
 
 pub mod counters;
+pub mod health;
 
 use tracing_subscriber::filter::{LevelFilter, Targets};
 use tracing_subscriber::fmt::time::UtcTime;
@@ -11,6 +12,7 @@ use tracing_subscriber::prelude::*;
 use crate::config::LogLevel;
 
 pub use counters::Counters;
+pub use health::HealthTable;
 
 /// The crates whose events follow the configured level. Every other
 /// target is capped at [`FOREIGN_CAP`] whatever the level, because a

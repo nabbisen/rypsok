@@ -2,7 +2,7 @@
 //! driver, limiter and admission properties (REQ-ENG-002, REQ-ENG-003,
 //! REQ-ENG-007, REQ-OPS-003).
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use super::drivers::{self, DriverContext};
@@ -10,7 +10,7 @@ use super::limiter::EngineLimiter;
 use super::{Driver, EngineProperties};
 use crate::config::Config;
 use crate::egress;
-use crate::model::{Category, EngineId, EngineState};
+use crate::model::{Category, EngineId};
 
 /// One configured engine.
 pub struct Engine {
@@ -26,7 +26,6 @@ pub struct Engine {
     pub driver: Option<Box<dyn Driver>>,
     /// The limiter.
     pub limiter: EngineLimiter,
-    state: Mutex<EngineState>,
 }
 
 impl std::fmt::Debug for Engine {
@@ -34,7 +33,7 @@ impl std::fmt::Debug for Engine {
         f.debug_struct("Engine")
             .field("id", &self.id)
             .field("kind", &self.kind)
-            .field("state", &self.state())
+            .field("active", &self.is_active())
             .finish()
     }
 }
@@ -57,18 +56,13 @@ impl Engine {
             preference,
             driver: Some(driver),
             limiter,
-            state: Mutex::new(EngineState::Closed),
         }
     }
 
-    /// The circuit state.
-    pub fn state(&self) -> EngineState {
-        *self.state.lock().expect("engine state lock")
-    }
-
-    /// Whether the engine can be selected.
+    /// Whether the engine has a driver and can be selected. The circuit
+    /// (cooldown, probe) is the health table's, consulted by the pipeline.
     pub fn is_active(&self) -> bool {
-        self.driver.is_some() && self.state() == EngineState::Closed
+        self.driver.is_some()
     }
 
     /// The admission properties, when the engine is active.
@@ -136,7 +130,6 @@ impl Registry {
                     .as_deref()
                     .map(|d| (d.properties().requests_per_minute, d.properties().max_in_flight.min(limits.per_engine_in_flight)))
                     .unwrap_or((1, 1));
-                let state = if driver.is_some() { EngineState::Closed } else { EngineState::Disabled };
                 Engine {
                     id,
                     kind: table.kind.clone(),
@@ -144,7 +137,6 @@ impl Registry {
                     preference: table.preference,
                     driver,
                     limiter: EngineLimiter::new(per_minute, max_in_flight),
-                    state: Mutex::new(state),
                 }
             })
             .collect();
