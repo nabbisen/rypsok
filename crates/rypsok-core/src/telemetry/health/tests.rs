@@ -319,3 +319,30 @@ async fn req_status_002_status_has_no_field_for_endpoint_credential_or_provider_
         assert!(!text.contains(forbidden), "{forbidden} in {text}");
     }
 }
+
+/// REQ-OBS-004: the failure streak reported by the events counts every
+/// counted failure since the last success, across the open and half-open
+/// states, and resets on success.
+#[tokio::test(start_paused = true)]
+async fn req_obs_004_events_report_the_failure_streak_across_states() {
+    let t = table();
+    for _ in 0..3 {
+        fail(&t, EngineErrorClass::Timeout);
+    }
+    tokio::time::advance(Duration::from_secs(60)).await;
+    let (_, half_open) = t.admit(&id("a"));
+    assert_eq!(half_open.unwrap().consecutive_failures, 3);
+    let reopened = fail(&t, EngineErrorClass::Timeout);
+    assert_eq!(reopened.transition.unwrap().consecutive_failures, 4);
+    tokio::time::advance(Duration::from_secs(120)).await;
+    t.admit(&id("a"));
+    let closed = t.complete(&id("a"), Completion::Success);
+    assert_eq!(closed.transition.unwrap().consecutive_failures, 0);
+    fail(&t, EngineErrorClass::Timeout);
+    assert_eq!(
+        t.circuit(&id("a")),
+        Some(Circuit::Closed {
+            consecutive_failures: 1
+        })
+    );
+}

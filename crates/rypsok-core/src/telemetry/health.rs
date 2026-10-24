@@ -36,13 +36,12 @@ pub enum Circuit {
         /// The length of this cooldown, doubled on the next failure.
         cooldown: Duration,
     },
-    /// The cooldown elapsed and one call carries the probe (LIM-B5).
+    /// The cooldown elapsed and one call carries the probe (LIM-B5); the
+    /// state itself means that the probe is in flight, and it ends with
+    /// the probe's completion or the call's cancellation.
     HalfOpen {
         /// The cooldown that just elapsed.
         cooldown: Duration,
-        /// True from the transition on: the probing call owns the probe
-        /// until it reports completion or cancellation.
-        probe_in_flight: bool,
     },
 }
 
@@ -162,6 +161,9 @@ pub fn counted(class: EngineErrorClass) -> bool {
 #[derive(Debug)]
 struct Health {
     circuit: Circuit,
+    /// Consecutive counted failures since the last success, across every
+    /// state; what `Closed` carries and what the events report.
+    streak: u8,
     latencies: VecDeque<u32>,
     auth_warned: bool,
 }
@@ -211,6 +213,7 @@ impl HealthTable {
                     id,
                     Health {
                         circuit,
+                        streak: 0,
                         latencies: VecDeque::new(),
                         auth_warned: false,
                     },
@@ -243,17 +246,14 @@ impl HealthTable {
                 if Instant::now() < until {
                     return (Admission::Skipped, None);
                 }
-                health.circuit = Circuit::HalfOpen {
-                    cooldown,
-                    probe_in_flight: true,
-                };
+                health.circuit = Circuit::HalfOpen { cooldown };
                 (
                     Admission::Probe,
                     Some(Transition {
                         engine: id.clone(),
                         state: EngineState::HalfOpen,
                         cooldown: Some(cooldown),
-                        consecutive_failures: self.policy.failures_to_open,
+                        consecutive_failures: health.streak,
                     }),
                 )
             }
@@ -294,7 +294,19 @@ impl HealthTable {
                 },
             )
         };
+        // The streak follows every verdict, whatever the state.
+        match completion {
+            Completion::Success => health.streak = 0,
+            Completion::Failure { class, .. } if counted(class) => {
+                health.streak = health.streak.saturating_add(1);
+            }
+            Completion::Failure { .. } | Completion::Cancelled => {}
+        }
+        let streak = health.streak;
         let next = match (health.circuit, completion) {
+            // A completion that arrives while the circuit is open belongs to
+            // a request started before it opened: it neither closes nor
+            // extends the cooldown.
             (Circuit::Disabled, _) | (Circuit::Open { .. }, _) => None,
             (Circuit::Closed { .. }, Completion::Success) => Some((
                 Circuit::Closed {
@@ -303,28 +315,19 @@ impl HealthTable {
                 None,
             )),
             (Circuit::Closed { .. }, Completion::Cancelled) => None,
-            (
-                Circuit::Closed {
-                    consecutive_failures,
-                },
-                Completion::Failure { class, retry_after },
-            ) => {
+            (Circuit::Closed { .. }, Completion::Failure { class, retry_after }) => {
                 if !counted(class) {
                     None
+                } else if streak >= policy.failures_to_open {
+                    let (circuit, transition) = open(policy.first_cooldown, retry_after, streak);
+                    Some((circuit, Some(transition)))
                 } else {
-                    let failures = consecutive_failures.saturating_add(1);
-                    if failures >= policy.failures_to_open {
-                        let (circuit, transition) =
-                            open(policy.first_cooldown, retry_after, failures);
-                        Some((circuit, Some(transition)))
-                    } else {
-                        Some((
-                            Circuit::Closed {
-                                consecutive_failures: failures,
-                            },
-                            None,
-                        ))
-                    }
+                    Some((
+                        Circuit::Closed {
+                            consecutive_failures: streak,
+                        },
+                        None,
+                    ))
                 }
             }
             (Circuit::HalfOpen { .. }, Completion::Success) => Some((
@@ -338,21 +341,17 @@ impl HealthTable {
                     consecutive_failures: 0,
                 }),
             )),
-            (Circuit::HalfOpen { cooldown, .. }, Completion::Failure { class, retry_after })
+            (Circuit::HalfOpen { cooldown }, Completion::Failure { class, retry_after })
                 if counted(class) =>
             {
                 let doubled = cooldown.saturating_mul(2).min(policy.max_cooldown);
-                let (circuit, transition) = open(
-                    doubled,
-                    retry_after,
-                    policy.failures_to_open.saturating_add(1),
-                );
+                let (circuit, transition) = open(doubled, retry_after, streak);
                 Some((circuit, Some(transition)))
             }
-            (Circuit::HalfOpen { cooldown, .. }, _) => {
+            (Circuit::HalfOpen { cooldown }, _) => {
                 // An uncounted failure or a cancelled probe: open again with
                 // the same cooldown; the probe gave no verdict.
-                let (circuit, transition) = open(cooldown, None, policy.failures_to_open);
+                let (circuit, transition) = open(cooldown, None, streak);
                 Some((circuit, Some(transition)))
             }
         };

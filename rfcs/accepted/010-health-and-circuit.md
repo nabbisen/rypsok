@@ -163,3 +163,36 @@ The `[resilience]` table above is added to the configuration schema and to
 - Whether `request_failure` (network errors and 5xx) should count toward
   opening the circuit. The M2 review decides with the error counters in
   hand; adopting it is a change to REQ-RES-004.
+
+## Amendment to RFC 010 (2026-10-24, M2 review)
+
+- `HalfOpen` carries only `cooldown`: the state itself means that the
+  probe is in flight, so the `probe_in_flight` flag, which no code path
+  could set to `false`, is dropped.
+- The health entry keeps one failure streak across every state: counted
+  failures since the last success. `Closed` carries it, and the three
+  events report it as `consecutive_failures` (3 on opening at the default,
+  4 when the first probe fails, 0 on closing).
+- A completion that arrives while the circuit is `Open` belongs to a
+  request started before it opened; it neither closes nor extends the
+  cooldown. Added to the transition table.
+- Selection order: request fit (`skip_reason`), the limiter's provider
+  block (a read, not an acquisition), then the circuit. A probe whose task
+  cannot acquire the limiter or the global semaphore before the fan-out
+  deadline reports `Cancelled` and reopens the circuit with the same
+  cooldown, so no engine stays half-open without a probe.
+- Latency: a driver-classified `timeout` is a timeout and is not recorded,
+  like the pipeline's own; every other classified failure is.
+- The pipeline runs on `tokio::time::Instant` so that deadlines and
+  cooldowns follow one clock (and the paused clock of tests); the limiter
+  keeps the system clock through `governor`.
+- `Engine::state()` is gone; the circuit lives only in `HealthTable` and
+  `Engine::is_active()` means "has a driver". Hosts read state through
+  `Rypsok::health().snapshot()`.
+- `engine_status` lists engines in identifier order, which is the order
+  of the `[engines.*]` tables; the registry's preference order is for
+  selection only. Written into the tools page.
+- The open question on `request_failure` stays open with a
+  recommendation: keep REQ-RES-004 as written until a deployment's
+  counters show sustained `request_failure` streaks; revisit in M3's
+  review.

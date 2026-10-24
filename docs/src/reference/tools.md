@@ -80,7 +80,7 @@ answering questions. No parameters.
 `state` is `disabled` (by configuration or for lack of a credential),
 `closed` (in use), `open` (skipped during a cooldown; it stays `open` until
 the first call after the cooldown, which carries the probe) or `half_open`
-(that one probe request in flight). `latency_ms` is the median of the last 20
+(that one probe request in flight). Engines are listed in identifier order. `latency_ms` is the median of the last 20
 completed requests, or null. State lives in memory and is reset when the
 process restarts. No endpoint, credential or provider text appears.
 

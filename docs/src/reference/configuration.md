@@ -91,7 +91,7 @@ chooses it on the command line, where the launching host can see it.
 | `web_fetch_per_minute` | `30` | 1–6000 | `web_fetch` calls accepted (LIM-C7) |
 | `engine_status_per_minute` | `30` | 1–6000 | `engine_status` calls accepted (LIM-C8) |
 
-## `[resilience]` (used from release 0.2.0; accepted now)
+## `[resilience]`
 
 | Key | Default | Range | Meaning |
 |---|---|---|---|
