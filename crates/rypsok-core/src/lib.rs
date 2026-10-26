@@ -50,12 +50,12 @@ use std::sync::Arc;
 pub use tokio_util::sync::CancellationToken;
 
 use config::{Config, ConfigError};
-use egress::{EgressPolicy, ReturnedUrls};
+use egress::{AgentClientSettings, EgressPolicy, ReturnedUrls};
 use engine::registry::Registry;
+use fetch::FetchService;
 use limits::Limits;
 use model::{
     CallError, FetchRequest, FetchResponse, Outcome, SearchRequest, SearchResponse, StatusResponse,
-    ToolError,
 };
 use search::SearchPolicy;
 use search::pipeline::Pipeline;
@@ -72,6 +72,7 @@ pub struct Rypsok {
     health: HealthTable,
     egress: Arc<EgressPolicy>,
     returned: ReturnedUrls,
+    fetch_service: FetchService,
     counters: Counters,
     outbound: Arc<tokio::sync::Semaphore>,
 }
@@ -114,14 +115,33 @@ impl Rypsok {
         )
         .map_err(|problems| ConfigError { problems })?;
         let returned = ReturnedUrls::new(limits.strict_mode_urls);
+        let egress_policy = Arc::new(egress_policy);
+        let fetch_service = FetchService::new(
+            &AgentClientSettings {
+                user_agent: egress::standard_user_agent(&config.service.user_agent_contact),
+                connect_timeout: std::time::Duration::from_millis(u64::from(
+                    limits.fetch_connect_timeout_ms,
+                )),
+                timeout: std::time::Duration::from_millis(u64::from(limits.fetch_deadline_ms)),
+                allow_http: config.egress.allow_http,
+            },
+            Arc::clone(&egress_policy),
+            &limits,
+        )
+        .map_err(|error| ConfigError {
+            problems: vec![format!(
+                "fetch: the HTTP client could not be built: {error}"
+            )],
+        })?;
         Ok(Rypsok {
             config,
             limits,
             policy,
             registry,
             health,
-            egress: Arc::new(egress_policy),
+            egress: egress_policy,
             returned,
+            fetch_service,
             counters: Counters::new(),
             outbound,
         })
@@ -210,14 +230,36 @@ impl Rypsok {
         &self.counters
     }
 
-    /// `web_fetch`: arrives in milestone M3 (RFC 012).
+    /// `web_fetch`: read the main content of one public page as Markdown
+    /// (RFC 012). Content is external data.
+    ///
+    /// Profile (external design §3.2): no effect on local state; the URL
+    /// leaves the host to the target site, plus a robots.txt read to the
+    /// same site; at most LIM-F5 long; at most `max_chars` + LIM-S10 +
+    /// LIM-F9 characters.
     pub async fn fetch(
         &self,
         req: FetchRequest,
         cancel: CancellationToken,
     ) -> Result<FetchResponse, CallError> {
-        let _ = (req, cancel);
-        Err(ToolError::busy().into())
+        let pipeline = fetch::Pipeline {
+            limits: &self.limits,
+            policy: &self.egress,
+            service: &self.fetch_service,
+            returned: &self.returned,
+            strict_mode: self.config.fetch.strict_mode,
+            robots_txt: self.config.fetch.robots_txt,
+            follow_cross_host_redirects: self.config.fetch.follow_cross_host_redirects,
+            secret_detection: self.config.privacy.secret_detection,
+            counters: &self.counters,
+        };
+        fetch::run(&pipeline, req, cancel).await
+    }
+
+    /// The fetch service: the agent client, the robots.txt cache and the
+    /// permits (RFC 012).
+    pub fn fetch_service(&self) -> &FetchService {
+        &self.fetch_service
     }
 
     /// `engine_status`: report the state of each configured engine. For

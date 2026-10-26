@@ -1,0 +1,5 @@
+title = "An XHTML document"
+must_contain = ["# An XHTML document", "After a self-closing break.", "An image alt", "---"]
+must_not_contain = ["x.png", "<br", "xmlns"]
+notices = []
+media_type = "application/xhtml+xml"

@@ -1,0 +1,4 @@
+title = "Council approves new park"
+must_contain = ["The council approved the park on Tuesday.", "Residents welcomed the decision.", "Work begins in spring."]
+must_not_contain = ["Buy things now", "Related story", "Subscribe today", "Share on everything", "Terms", "Privacy", "Sport"]
+notices = []

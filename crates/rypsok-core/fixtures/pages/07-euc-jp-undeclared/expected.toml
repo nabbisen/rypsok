@@ -1,0 +1,4 @@
+title = "宣言なしの文字コード"
+must_contain = ["宣言なしの文字コード", "本文は十分に長い日本語です。"]
+must_not_contain = []
+notices = []

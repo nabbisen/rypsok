@@ -1,0 +1,5 @@
+Plain text document.
+
+It has two paragraphs, and no markup at all: <b>not bold</b>.
+
+    indented line

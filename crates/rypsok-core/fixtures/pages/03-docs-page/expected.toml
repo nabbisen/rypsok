@@ -1,0 +1,4 @@
+title = "Configuration reference"
+must_contain = ["# Configuration reference", "## Keys", "| Key | Default |", "| --- | --- |", "| max_results | 5 |", "## Example", "```\n[search]\nmax_results = 5\n    deadline_ms = 2500\n```", "1. Install", "2. Configure", "  - Copy the file", "3. Run", "`rypsok check`"]
+must_not_contain = ["Section A", "Section B", "static site generator"]
+notices = []

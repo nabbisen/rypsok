@@ -285,3 +285,33 @@ RFC 011.
   form; recorded for the tools page.
 - The chrome class list and the 200-character candidate threshold are
   reviewable constants; the corpus decides their first values.
+
+## Amendment to RFC 012 (2026-10-27, implementation)
+
+- **The node bound stops the feed, not the sink.** The parser is fed in
+  chunks of 8 KiB and feeding stops once the sink reports LIM-F10 nodes,
+  so the tree holds at most the bound plus one chunk's nodes. A sink that
+  "creates nothing further" cannot be built on `html5ever`, whose tree
+  builder compares the handles it is given; feeding less is the honest
+  bound and keeps the parser's own invariants.
+- **Order of the privacy check and the credential rule.** Userinfo with a
+  password is found by the privacy scan first (`secret_in_url`, kind
+  `basic_auth_url`); userinfo without a password is the policy's
+  `credential_in_url`. Both are `denied` before any request, as
+  REQ-PAGE-001 orders the stages.
+- **Escaping.** Emphasis, code and link delimiters are escaped anywhere in
+  text, and heading, quote and list markers at the start of a line;
+  underscores are not escaped (intraword underscores are literal in
+  CommonMark and identifiers stay readable).
+- **`text/markdown`** is read as text, and the `Accept` header lists it.
+- **robots.txt redirects** are followed within the same origin only, up to
+  LIM-F7 hops; a cross-origin redirect counts as unreachable (disallow for
+  one hour), as the RFC's table says for "unavailable".
+- **Strict mode keys** are computed from the URL's returned form (tracking
+  parameters removed) so that a fetch of a tracked link matches the result
+  the search returned.
+- **`clean_text` tag rule.** A `<` followed by any letter starts a tag, not
+  only an ASCII letter: NFC maps the Kelvin sign to `K`, and the property
+  test of RFC 005 found that the ASCII-only rule broke idempotence.
+- **Title fallback** trims whitespace; a document without `<title>` and
+  without `h1` has an empty title.

@@ -1,0 +1,5 @@
+title = ""
+must_contain = ["Plain text document.", "<b>not bold</b>", "    indented line"]
+must_not_contain = ["#"]
+notices = []
+media_type = "text/plain"

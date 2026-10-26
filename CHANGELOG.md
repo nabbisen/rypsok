@@ -8,7 +8,38 @@ Until 1.0.0 the external contract (tool names, parameters, response fields,
 outcomes, error kinds) may change between minor versions; every such change
 is announced here.
 
-## [Unreleased]
+## [Unreleased] — Secure fetch (milestone M3, 0.3.0)
+
+### Added
+
+- `web_fetch`: the main content of one public page as Markdown, bounded by
+  `max_chars`, continuable by `start_char`; HTML, XHTML, plain text and
+  Markdown; charset from the header, a `meta` declaration or detection;
+  parsing bounded in nodes and depth with `extraction_partial` when a
+  bound is hit; the error kinds `redirected`, `unsupported_content`,
+  `too_large` and the fetch reasons of `denied` and `unavailable` (RFC 012).
+- The agent-directed egress profile: a policy that refuses loopback,
+  private, link-local, metadata and other internal destinations, judged
+  on the URL before any request and on every address at connect time
+  through the client's resolver; operator `allow` and `deny` rules;
+  address literals in every notation; names that never name a public site
+  (RFC 011).
+- Strict fetch mode: only URLs `web_search` returned in this process, or
+  the operator's allow list, can be fetched.
+- robots.txt honored per RFC 9309 for the product token `rypsok` and `*`,
+  cached per origin for a day (one hour for a failed read), bounded.
+- Manual redirects: same-host redirects followed up to 5 hops, every
+  target re-judged by the policy; a cross-host target returned as
+  `redirected` unless the operator allows following.
+- Concurrency limits for fetches: per process, per host (one at a time)
+  and for parsing, which runs off the I/O path.
+- An extraction corpus of 15 hand-written pages, resource tests for byte,
+  node and depth bombs, and a memory measurement script.
+
+### Changed
+
+- A `<` followed by any letter starts a tag for the title and snippet
+  cleaner, so that cleaning stays idempotent under NFC.
 
 ## [0.2.0] — 2026-10-24 — Health and circuit breaking (milestone M2)
 

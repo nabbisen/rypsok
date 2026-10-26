@@ -51,7 +51,10 @@ fn req_mcp_006_legacy_initialize_handshake() {
     assert_eq!(init["instructions"], INSTRUCTIONS);
     s.notify_raw(json!({ "method": "notifications/initialized" }));
     let list = s.request_raw(json!({ "method": "tools/list" }));
-    assert_eq!(tool_names(&list), vec!["web_search", "engine_status"]);
+    assert_eq!(
+        tool_names(&list),
+        vec!["web_search", "web_fetch", "engine_status"]
+    );
     s.finish();
 }
 
@@ -62,14 +65,17 @@ fn req_mcp_008_tool_list_is_annotated_flat_and_within_budget() {
     let mut s = Session::start(None);
     s.discover();
     let list = s.request("tools/list", json!({}));
-    assert_eq!(tool_names(&list), vec!["web_search", "engine_status"]);
+    assert_eq!(
+        tool_names(&list),
+        vec!["web_search", "web_fetch", "engine_status"]
+    );
     let mut size = INSTRUCTIONS.chars().count();
     for tool in list["tools"].as_array().unwrap() {
         let a = &tool["annotations"];
         assert_eq!(a["readOnlyHint"], true);
         assert_eq!(a["destructiveHint"], false);
         assert_eq!(a["idempotentHint"], true);
-        assert_eq!(a["openWorldHint"], tool["name"] == "web_search");
+        assert_eq!(a["openWorldHint"], tool["name"] != "engine_status");
         let schema = &tool["inputSchema"];
         assert_eq!(schema["additionalProperties"], false);
         let properties = schema["properties"]
@@ -173,7 +179,7 @@ fn req_status_003_disabled_status_tool_is_unknown() {
     let mut s = Session::start(Some(&config));
     s.discover();
     let list = s.request("tools/list", json!({}));
-    assert_eq!(tool_names(&list), vec!["web_search"]);
+    assert_eq!(tool_names(&list), vec!["web_search", "web_fetch"]);
     let error = s.request_error(
         "tools/call",
         json!({ "name": "engine_status", "arguments": {} }),
@@ -629,6 +635,158 @@ mod end_to_end_more {
             assert!(s.no_response_for(id, std::time::Duration::from_millis(2500)), "a response arrived after cancellation");
             let status = s.request("tools/call", json!({ "name": "engine_status", "arguments": {} }));
             assert_eq!(status["isError"], false);
+            s.finish();
+        })
+        .await
+        .unwrap();
+    }
+}
+
+/// `web_fetch` over stdio against a loopback site (RFC 012).
+mod fetch_end_to_end {
+    use super::*;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    const PAGE: &str = "<html><head><title>Loopback page</title></head><body><nav>menu</nav><main><h1>Loopback page</h1><p>Main text of the loopback page, long enough to be chosen as the content of the document by the extractor's rules.</p></main></body></html>";
+
+    fn config_for(server: &MockServer, extra: &str) -> std::path::PathBuf {
+        let port = server.address().port();
+        config_file(&format!(
+            "config_version = 1\n[egress]\nallow = [\"127.0.0.1/32\"]\nallow_http = true\n[fetch]\nports = [80, 443, {port}]\n{extra}[engines.wiki]\ntype = \"wikipedia\"\ncategories = [\"general\"]\nbase_url = \"{}/\"\n",
+            server.uri()
+        ))
+    }
+
+    /// REQ-FETCH-001, REQ-FETCH-004 and REQ-MCP-011: a real `web_fetch`
+    /// over stdio returns the structured response and the same JSON as
+    /// text; the error kinds of external design §4 come back as tool
+    /// execution errors.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn req_fetch_001_web_fetch_end_to_end_over_stdio() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/page"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_raw(PAGE.as_bytes().to_vec(), "text/html"),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/gone"))
+            .respond_with(ResponseTemplate::new(410).set_body_string("GONE-BODY"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/moved"))
+            .respond_with(
+                ResponseTemplate::new(301).insert_header("location", "https://example.org/new"),
+            )
+            .mount(&server)
+            .await;
+        let config = config_for(&server, "");
+        let base = server.uri();
+        tokio::task::spawn_blocking(move || {
+            let mut s = Session::start(Some(&config));
+            s.discover();
+            let result = s.request(
+                "tools/call",
+                json!({ "name": "web_fetch", "arguments": { "url": format!("{base}/page"), "max_chars": 500 } }),
+            );
+            assert_eq!(result["isError"], false, "{result}");
+            let response = &result["structuredContent"];
+            assert_eq!(response["outcome"], "ok");
+            assert_eq!(response["title"], "Loopback page");
+            assert!(response["content"].as_str().unwrap().starts_with("# Loopback page"));
+            assert!(!response["content"].as_str().unwrap().contains("menu"));
+            assert_eq!(response["truncated"], false);
+            let text: Value = serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();
+            assert_eq!(&text, response, "the text form is the JSON of the structure");
+
+            let gone = s.request(
+                "tools/call",
+                json!({ "name": "web_fetch", "arguments": { "url": format!("{base}/gone") } }),
+            );
+            assert_eq!(gone["isError"], true);
+            assert_eq!(gone["structuredContent"]["error"]["kind"], "unavailable");
+            assert_eq!(gone["structuredContent"]["error"]["detail"]["reason"], "http_status");
+            assert_eq!(gone["structuredContent"]["error"]["detail"]["status"], 410);
+            assert!(!gone.to_string().contains("GONE-BODY"));
+
+            let moved = s.request(
+                "tools/call",
+                json!({ "name": "web_fetch", "arguments": { "url": format!("{base}/moved") } }),
+            );
+            assert_eq!(moved["structuredContent"]["error"]["kind"], "redirected");
+            assert_eq!(moved["structuredContent"]["error"]["detail"]["location"], "https://example.org/new");
+
+            let internal = s.request(
+                "tools/call",
+                json!({ "name": "web_fetch", "arguments": { "url": "http://169.254.169.254/latest/meta-data/" } }),
+            );
+            assert_eq!(internal["structuredContent"]["error"]["kind"], "denied");
+            assert_eq!(internal["structuredContent"]["error"]["detail"]["reason"], "egress");
+
+            let unknown = s.request(
+                "tools/call",
+                json!({ "name": "web_fetch", "arguments": { "url": format!("{base}/page"), "depth": 2 } }),
+            );
+            assert_eq!(unknown["structuredContent"]["error"]["kind"], "invalid_request");
+            assert!(!unknown.to_string().contains("depth"), "the caller's text is not repeated");
+            s.finish();
+        })
+        .await
+        .unwrap();
+    }
+
+    /// REQ-SEC-021: in strict mode a URL that `web_search` returned in the
+    /// same session is fetched and another is `denied` / `strict_mode`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn req_sec_021_strict_mode_over_stdio() {
+        let server = MockServer::start().await;
+        let fixture = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../rypsok-core/fixtures/wikipedia/search-ok.json"),
+        )
+        .unwrap();
+        // The search fixture returns en.wikipedia.org pages; in this test the
+        // mirror serves the same paths, so a returned URL is rewritten to the
+        // mirror only through the operator's allow rule... which strict mode
+        // admits by itself. Instead, a result URL is taken from the search
+        // and checked against the strict refusal of an unrelated URL.
+        Mock::given(method("GET"))
+            .and(path("/w/api.php"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(fixture))
+            .mount(&server)
+            .await;
+        let config = config_for(&server, "strict_mode = true\n");
+        let base = server.uri();
+        tokio::task::spawn_blocking(move || {
+            let mut s = Session::start(Some(&config));
+            s.discover();
+            let other = s.request(
+                "tools/call",
+                json!({ "name": "web_fetch", "arguments": { "url": "https://example.org/not-returned" } }),
+            );
+            assert_eq!(other["structuredContent"]["error"]["kind"], "denied", "{other}");
+            assert_eq!(other["structuredContent"]["error"]["detail"]["reason"], "strict_mode");
+            let search = s.request(
+                "tools/call",
+                json!({ "name": "web_search", "arguments": { "query": "rust language" } }),
+            );
+            assert_eq!(search["isError"], false, "{search}");
+            let returned = search["structuredContent"]["results"][0]["url"].as_str().unwrap().to_owned();
+            // The returned URL is a public Wikipedia page; strict mode admits
+            // it (the refusal would come later, from the network, which this
+            // test does not reach: the policy admits the name and the test
+            // host has no route). What is asserted is the strict decision.
+            let admitted = s.request(
+                "tools/call",
+                json!({ "name": "web_fetch", "arguments": { "url": returned } }),
+            );
+            let reason = &admitted["structuredContent"]["error"]["detail"]["reason"];
+            assert_ne!(reason, "strict_mode", "{admitted}");
+            let _ = base;
             s.finish();
         })
         .await

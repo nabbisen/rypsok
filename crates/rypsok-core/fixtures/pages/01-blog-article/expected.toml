@@ -1,0 +1,4 @@
+title = "Why bounded tools matter"
+must_contain = ["# Why bounded tools matter", "By A. Writer", "[the limits page](https://example.org/limits)", "*emphasis*", "**strength**", "## A second section", "- First point", "- Second point"]
+must_not_contain = ["Example Blog", "Posts", "About", "Popular", "Post one", "Copyright notice", "First comment text", "a.js", "s.css"]
+notices = []

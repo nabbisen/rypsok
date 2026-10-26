@@ -25,6 +25,20 @@ pub enum ErrorKind {
     TooLarge,
 }
 
+impl ErrorKind {
+    /// The snake-case name, as serialized.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ErrorKind::InvalidRequest => "invalid_request",
+            ErrorKind::Denied => "denied",
+            ErrorKind::Unavailable => "unavailable",
+            ErrorKind::Redirected => "redirected",
+            ErrorKind::UnsupportedContent => "unsupported_content",
+            ErrorKind::TooLarge => "too_large",
+        }
+    }
+}
+
 /// The reason inside `detail` for `denied`, `unavailable` and
 /// `unsupported_content` errors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
@@ -62,6 +76,30 @@ pub enum DetailReason {
     MediaType,
     /// Unsupported content: nothing could be extracted.
     ExtractionFailed,
+}
+
+impl DetailReason {
+    /// The snake-case name, as serialized.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DetailReason::Egress => "egress",
+            DetailReason::RobotsTxt => "robots_txt",
+            DetailReason::Scheme => "scheme",
+            DetailReason::StrictMode => "strict_mode",
+            DetailReason::CredentialInUrl => "credential_in_url",
+            DetailReason::SecretInQuery => "secret_in_query",
+            DetailReason::SecretInUrl => "secret_in_url",
+            DetailReason::NoEngine => "no_engine",
+            DetailReason::AllFailed => "all_failed",
+            DetailReason::RateLimited => "rate_limited",
+            DetailReason::Network => "network",
+            DetailReason::Deadline => "deadline",
+            DetailReason::HttpStatus => "http_status",
+            DetailReason::Busy => "busy",
+            DetailReason::MediaType => "media_type",
+            DetailReason::ExtractionFailed => "extraction_failed",
+        }
+    }
 }
 
 /// The kind of credential the secret check found (RFC 009).
@@ -379,6 +417,123 @@ impl ToolError {
             ErrorDetail {
                 reason: Some(DetailReason::RateLimited),
                 retry_after_ms: Some(retry_after_ms),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// `denied` for the fetch policies (external design §4): a fixed
+    /// message per reason; never a URL, a host or an address.
+    pub fn denied(reason: DetailReason) -> Self {
+        let message = match reason {
+            DetailReason::Egress => "the destination is not allowed by the egress policy",
+            DetailReason::RobotsTxt => "the site's robots.txt disallows this page for rypsok",
+            DetailReason::Scheme => "only https URLs can be fetched, and the https retry failed",
+            DetailReason::StrictMode => {
+                "strict mode: only URLs that web_search returned in this process, or that the operator listed, can be fetched"
+            }
+            DetailReason::CredentialInUrl => "the URL carries credentials; remove them",
+            _ => "the call was refused by policy",
+        };
+        Self::new(
+            ErrorKind::Denied,
+            message.to_owned(),
+            ErrorDetail {
+                reason: Some(reason),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// `unavailable` / `network`: the page could not be retrieved.
+    pub fn network() -> Self {
+        Self::new(
+            ErrorKind::Unavailable,
+            "the page could not be retrieved; retry later".to_owned(),
+            ErrorDetail {
+                reason: Some(DetailReason::Network),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// `unavailable` / `http_status`: the target answered 4xx or 5xx; the
+    /// body is never returned (REQ-FETCH-011).
+    pub fn http_status(status: u16) -> Self {
+        Self::new(
+            ErrorKind::Unavailable,
+            format!("the site answered HTTP {status}; the page was not read"),
+            ErrorDetail {
+                reason: Some(DetailReason::HttpStatus),
+                status: Some(status),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// `redirected`: the page moved to another host that passes the
+    /// policy; `location` is external data bounded by the caller
+    /// (REQ-FETCH-006).
+    pub fn redirected(location: String) -> Self {
+        Self::new(
+            ErrorKind::Redirected,
+            "the page moved to another host; see detail.location".to_owned(),
+            ErrorDetail {
+                location: Some(location),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// `unsupported_content` / `media_type`: the type cannot be extracted;
+    /// `media_type` is external data bounded by the caller (REQ-FETCH-008).
+    pub fn unsupported_media_type(media_type: String) -> Self {
+        Self::new(
+            ErrorKind::UnsupportedContent,
+            "the content type cannot be extracted; see detail.media_type".to_owned(),
+            ErrorDetail {
+                reason: Some(DetailReason::MediaType),
+                media_type: Some(media_type),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// `unsupported_content` / `extraction_failed`: nothing could be
+    /// extracted (REQ-PAGE-006).
+    pub fn extraction_failed() -> Self {
+        Self::new(
+            ErrorKind::UnsupportedContent,
+            "nothing could be extracted from the page".to_owned(),
+            ErrorDetail {
+                reason: Some(DetailReason::ExtractionFailed),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// `too_large`: the response exceeded the byte limit (REQ-PAGE-003).
+    pub fn too_large(limit_bytes: u64) -> Self {
+        Self::new(
+            ErrorKind::TooLarge,
+            format!("the response exceeds the limit of {limit_bytes} bytes"),
+            ErrorDetail {
+                limit_bytes: Some(limit_bytes),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// `invalid_request`: `start_char` is at or beyond the end of the
+    /// content; the message states the length (REQ-FETCH-005).
+    pub fn start_beyond_end(total_chars: u32) -> Self {
+        Self::new(
+            ErrorKind::InvalidRequest,
+            format!("start_char is beyond the end: the content has {total_chars} characters"),
+            ErrorDetail {
+                parameter: Some("start_char".to_owned()),
+                min: Some(0),
+                max: Some(total_chars.saturating_sub(1)),
                 ..Default::default()
             },
         )

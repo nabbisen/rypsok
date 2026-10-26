@@ -284,3 +284,20 @@ fn req_cfg_005_bad_egress_rule_names_key_and_index() {
             .any(|p| p == "fetch.ports: 0 is not a port")
     );
 }
+
+/// REQ-RES-008: the engine proxy comes from the configuration only; an
+/// empty key means none, and the environment is never consulted.
+#[test]
+fn req_res_008_proxy_comes_from_configuration_only() {
+    let none = Config::parse("config_version = 1\n").unwrap();
+    assert_eq!(none.egress.proxy, "");
+    let some =
+        Config::parse("config_version = 1\n[egress]\nproxy = \"http://proxy.corp.example:3128\"\n")
+            .unwrap();
+    some.validate().unwrap();
+    assert_eq!(some.egress.proxy, "http://proxy.corp.example:3128");
+    // The setting is a value of the file, not of the process environment:
+    // the same text parses the same whatever the environment holds.
+    let again = Config::parse("config_version = 1\n").unwrap();
+    assert_eq!(again.egress.proxy, none.egress.proxy);
+}

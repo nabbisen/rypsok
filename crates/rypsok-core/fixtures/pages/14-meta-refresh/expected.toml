@@ -1,0 +1,4 @@
+title = "Moved page"
+must_contain = ["# Moved page", "If you are not redirected, read this text instead."]
+must_not_contain = ["elsewhere", "refresh"]
+notices = []

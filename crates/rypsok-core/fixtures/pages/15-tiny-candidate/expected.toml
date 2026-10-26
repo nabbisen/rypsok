@@ -1,0 +1,4 @@
+title = "Teaser"
+must_contain = ["Short teaser.", "This is the body of the article"]
+must_not_contain = ["Site navigation"]
+notices = []

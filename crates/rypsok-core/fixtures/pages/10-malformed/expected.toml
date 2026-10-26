@@ -1,0 +1,4 @@
+title = "Malformed page"
+must_contain = ["Opening paragraph that never closes", "Second paragraph", "**bold *both", "Third paragraph after a stray closer.", "cell without closers"]
+must_not_contain = ["</span>"]
+notices = []

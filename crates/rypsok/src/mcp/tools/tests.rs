@@ -3,6 +3,7 @@
 use std::collections::BTreeSet;
 
 use super::*;
+use rypsok_core::limits::Limits;
 use rypsok_core::model::ErrorKind;
 
 fn policy(languages: &[&str]) -> SearchPolicy {
@@ -24,7 +25,7 @@ fn policy(languages: &[&str]) -> SearchPolicy {
 /// tool has at most LIM-I2 parameters; every schema is flat (LIM-I3).
 #[test]
 fn req_mcp_008_definitions_fit_the_budget_and_are_flat() {
-    let tools = tool_list(&policy(&["en", "ja"]), true);
+    let tools = tool_list(&policy(&["en", "ja"]), &Limits::default(), true);
     assert!(
         definitions_size(&tools) <= 2000,
         "definitions take {} characters",
@@ -54,28 +55,30 @@ fn req_mcp_008_definitions_fit_the_budget_and_are_flat() {
     }
 }
 
-/// REQ-MCP-009: annotations are fixed; `openWorldHint` is true for search
-/// and false for status; the order is deterministic.
+/// REQ-MCP-009: annotations are fixed; `openWorldHint` is true for the
+/// tools that reach the network and false for status; the order is
+/// deterministic.
 #[test]
 fn req_mcp_009_annotations_and_order() {
-    let tools = tool_list(&policy(&["en"]), true);
+    let tools = tool_list(&policy(&["en"]), &Limits::default(), true);
     let names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
-    assert_eq!(names, vec!["web_search", "engine_status"]);
+    assert_eq!(names, vec!["web_search", "web_fetch", "engine_status"]);
     for tool in &tools {
         let a = tool.annotations.as_ref().unwrap();
         assert_eq!(a.read_only_hint, Some(true));
         assert_eq!(a.destructive_hint, Some(false));
         assert_eq!(a.idempotent_hint, Some(true));
-        assert_eq!(a.open_world_hint, Some(tool.name == "web_search"));
+        assert_eq!(a.open_world_hint, Some(tool.name != "engine_status"));
     }
 }
 
 /// REQ-STATUS-003: `engine_status` is absent from the list when disabled.
 #[test]
 fn req_status_003_status_tool_absent_when_disabled() {
-    let tools = tool_list(&policy(&["en"]), false);
-    assert_eq!(tools.len(), 1);
+    let tools = tool_list(&policy(&["en"]), &Limits::default(), false);
+    assert_eq!(tools.len(), 2);
     assert_eq!(tools[0].name, "web_search");
+    assert_eq!(tools[1].name, "web_fetch");
 }
 
 /// REQ-SEARCH-002 and REQ-SEARCH-004: the schema enumerates served

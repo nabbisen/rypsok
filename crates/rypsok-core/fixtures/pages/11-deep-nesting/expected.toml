@@ -1,0 +1,4 @@
+title = "Deep"
+must_contain = ["Before the deep part.", "After the deep part."]
+must_not_contain = ["deepest text"]
+notices = ["extraction_partial"]

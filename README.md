@@ -15,7 +15,7 @@ and ranks their results, cleans every piece of external text before it
 reaches the agent, and refuses to send anything that looks like a secret.
 It is written in Rust and runs as one process with one configuration file.
 
-Tools: `web_search` (0.1.0), `engine_status` (0.2.0), `web_fetch` (0.3.0).
+Tools: `web_search`, `web_fetch` and `engine_status`.
 
 ## Why and when
 

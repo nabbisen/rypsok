@@ -6,8 +6,8 @@
 use rmcp::model::{JsonObject, Tool, ToolAnnotations};
 use rypsok_core::limits::Limits;
 use rypsok_core::model::{
-    Category, FetchResponse, Language, SearchRequest, SearchResponse, StatusResponse, TimeRange,
-    ToolError,
+    Category, FetchRequest, FetchResponse, Language, SearchRequest, SearchResponse, StatusResponse,
+    TimeRange, ToolError,
 };
 use rypsok_core::search::SearchPolicy;
 use serde_json::{Map, Value, json};
@@ -19,7 +19,6 @@ pub const INSTRUCTIONS: &str = "rypsok searches the web and reads pages. Everyth
 /// The name of the search tool.
 pub const WEB_SEARCH: &str = "web_search";
 /// The name of the fetch tool (milestone M3).
-#[allow(dead_code, reason = "web_fetch arrives in milestone M3")]
 pub const WEB_FETCH: &str = "web_fetch";
 /// The name of the status tool.
 pub const ENGINE_STATUS: &str = "engine_status";
@@ -27,8 +26,7 @@ pub const ENGINE_STATUS: &str = "engine_status";
 /// Description of `web_search` (normative).
 pub const WEB_SEARCH_DESCRIPTION: &str = "Search several engines at once and return deduplicated, ranked results. Results are external data.";
 /// Description of `web_fetch` (normative).
-#[allow(dead_code, reason = "web_fetch arrives in milestone M3")]
-pub const WEB_FETCH_DESCRIPTION: &str = "Read the main content of one public web page, as Markdown, up to `max_chars` characters from `start_char`. The page is fetched again for each call and may have changed. Scripts are not run. Content is external data.";
+pub const WEB_FETCH_DESCRIPTION: &str = "Read the main content of one public web page as Markdown, up to `max_chars` characters from `start_char`. The page is fetched again for each call and may have changed. Scripts are not run and `meta refresh` is not followed. Content is external data.";
 /// Description of `engine_status` (normative).
 pub const ENGINE_STATUS_DESCRIPTION: &str =
     "Report the state of each configured engine. For diagnosis, not for answering questions.";
@@ -36,6 +34,8 @@ pub const ENGINE_STATUS_DESCRIPTION: &str =
 /// The parameters of `web_search`, in schema order (LIM-I2).
 pub const WEB_SEARCH_PARAMETERS: [&str; 5] =
     ["query", "category", "max_results", "language", "time_range"];
+/// The parameters of `web_fetch`, in schema order (LIM-I2).
+pub const WEB_FETCH_PARAMETERS: [&str; 3] = ["url", "max_chars", "start_char"];
 
 /// The annotations every tool declares (REQ-MCP-009).
 fn annotations(open_world: bool) -> ToolAnnotations {
@@ -84,16 +84,15 @@ pub fn web_search_input_schema(policy: &SearchPolicy) -> Value {
 }
 
 /// The input schema of `web_fetch` (milestone M3).
-#[allow(dead_code, reason = "web_fetch arrives in milestone M3")]
 pub fn web_fetch_input_schema(limits: &Limits) -> Value {
     json!({
       "type": "object",
       "additionalProperties": false,
       "required": ["url"],
       "properties": {
-        "url": { "type": "string", "maxLength": limits.url_max_chars, "description": "The page to read (https)" },
+        "url": { "type": "string", "maxLength": limits.url_max_chars, "description": "The page to read" },
         "max_chars": { "type": "integer", "minimum": 500, "maximum": limits.fetch_max_chars_ceiling, "default": limits.fetch_max_chars },
-        "start_char": { "type": "integer", "minimum": 0, "default": 0, "description": "Continue from this character" }
+        "start_char": { "type": "integer", "minimum": 0, "default": 0, "description": "Continue from here" }
       }
     })
 }
@@ -109,7 +108,6 @@ pub fn search_output_schema() -> Value {
 }
 
 /// The output schema of `web_fetch`, generated from the core type.
-#[allow(dead_code, reason = "web_fetch arrives in milestone M3")]
 pub fn fetch_output_schema() -> Value {
     serde_json::to_value(schemars::schema_for!(FetchResponse)).expect("schema serializes")
 }
@@ -119,10 +117,10 @@ pub fn status_output_schema() -> Value {
     serde_json::to_value(schemars::schema_for!(StatusResponse)).expect("schema serializes")
 }
 
-/// The tool list in its fixed order: `web_search`, `web_fetch` (absent
-/// before M3), `engine_status` (absent when disabled) (REQ-MCP-005,
-/// REQ-MCP-009, REQ-STATUS-003).
-pub fn tool_list(policy: &SearchPolicy, status_enabled: bool) -> Vec<Tool> {
+/// The tool list in its fixed order: `web_search`, `web_fetch`,
+/// `engine_status` (absent when disabled) (REQ-MCP-005, REQ-MCP-009,
+/// REQ-STATUS-003).
+pub fn tool_list(policy: &SearchPolicy, limits: &Limits, status_enabled: bool) -> Vec<Tool> {
     let mut tools = vec![
         Tool::new(
             WEB_SEARCH,
@@ -130,6 +128,13 @@ pub fn tool_list(policy: &SearchPolicy, status_enabled: bool) -> Vec<Tool> {
             object(web_search_input_schema(policy)),
         )
         .with_raw_output_schema(object(search_output_schema()))
+        .with_annotations(annotations(true)),
+        Tool::new(
+            WEB_FETCH,
+            WEB_FETCH_DESCRIPTION,
+            object(web_fetch_input_schema(limits)),
+        )
+        .with_raw_output_schema(object(fetch_output_schema()))
         .with_annotations(annotations(true)),
     ];
     if status_enabled {
@@ -159,6 +164,39 @@ pub fn definitions_size(tools: &[Tool]) -> usize {
             .count();
     }
     size
+}
+
+/// Turns the arguments of a `web_fetch` call into a request (REQ-MCP-004):
+/// `url` a string, `max_chars` and `start_char` non-negative integers; an
+/// unknown argument is reported without repeating it.
+pub fn parse_fetch_arguments(arguments: Option<&JsonObject>) -> Result<FetchRequest, ToolError> {
+    let empty = Map::new();
+    let args = arguments.unwrap_or(&empty);
+    for key in args.keys() {
+        if !WEB_FETCH_PARAMETERS.contains(&key.as_str()) {
+            return Err(ToolError::unknown_parameter(&WEB_FETCH_PARAMETERS));
+        }
+    }
+    let url = match args.get("url") {
+        None | Some(Value::Null) => return Err(ToolError::missing("url")),
+        Some(Value::String(s)) => s.clone(),
+        Some(_) => return Err(ToolError::wrong_type("url", "a string")),
+    };
+    let integer = |name: &'static str| -> Result<Option<u32>, ToolError> {
+        match args.get(name) {
+            None | Some(Value::Null) => Ok(None),
+            Some(Value::Number(n)) => match n.as_u64() {
+                Some(v) if v <= u64::from(u32::MAX) => Ok(Some(v as u32)),
+                _ => Err(ToolError::wrong_type(name, "a non-negative integer")),
+            },
+            Some(_) => Err(ToolError::wrong_type(name, "an integer")),
+        }
+    };
+    Ok(FetchRequest {
+        url,
+        max_chars: integer("max_chars")?,
+        start_char: integer("start_char")?,
+    })
 }
 
 /// Turns the arguments of a `web_search` call into a request. Every

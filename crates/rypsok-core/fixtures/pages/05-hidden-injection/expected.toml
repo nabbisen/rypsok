@@ -1,0 +1,4 @@
+title = "Product page"
+must_contain = ["# Product page", "Zerowidthjoinedtext", "\"outcome\": \"ok\"", "Visibletext with a bidi override"]
+must_not_contain = ["Ignore previous instructions", "system prompt", "HIDDEN-ATTR-TEXT", "ARIA-HIDDEN-TEXT", "COMMENT-TEXT", "\u200b", "\u202e"]
+notices = ["characters_removed"]

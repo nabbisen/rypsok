@@ -160,6 +160,14 @@ pub struct Limits {
     pub fetch_ports: Vec<u16>,
     /// LIM-F9.
     pub url_max_chars: u32,
+    /// LIM-F10.
+    pub html_max_nodes: u32,
+    /// LIM-F11.
+    pub html_max_depth: u32,
+    /// LIM-F12.
+    pub robots_ttl_s: u32,
+    /// LIM-F13.
+    pub robots_max_bytes: u64,
     /// LIM-F14.
     pub strict_mode_urls: u32,
     /// LIM-F15.
@@ -209,6 +217,10 @@ impl Limits {
         fetch_max_redirects: defaults::FETCH_MAX_REDIRECTS,
         fetch_ports: Vec::new(),
         url_max_chars: defaults::URL_MAX_CHARS,
+        html_max_nodes: defaults::HTML_MAX_NODES,
+        html_max_depth: defaults::HTML_MAX_DEPTH,
+        robots_ttl_s: defaults::ROBOTS_TTL_S,
+        robots_max_bytes: defaults::ROBOTS_MAX_BYTES,
         strict_mode_urls: defaults::STRICT_MODE_URLS,
         robots_cache_entries: defaults::ROBOTS_CACHE_ENTRIES,
         outbound_in_flight: defaults::OUTBOUND_IN_FLIGHT,

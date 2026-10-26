@@ -55,7 +55,7 @@ chooses it on the command line, where the launching host can see it.
 | `drop_flagged_results` | `false` | boolean | Drop results with instruction-like content instead of only noticing them |
 | `engine_attribution` | `false` | boolean | Always carry `results[].engines` |
 
-## `[fetch]` (used from release 0.3.0; accepted now)
+## `[fetch]`
 
 | Key | Default | Range | Meaning |
 |---|---|---|---|

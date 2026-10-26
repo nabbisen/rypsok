@@ -258,3 +258,40 @@ fn req_ctx_007_truncation_is_reported() {
     );
     assert!(!effects.title_truncated && !effects.snippet_truncated);
 }
+
+/// REQ-FETCH-003 and REQ-FETCH-005: content is windowed in scalar values
+/// from `start_char`; `truncated` and `next_start_char` continue without
+/// overlap or gap; a start at or beyond the end is refused with the length.
+#[test]
+fn req_fetch_005_content_window_continues_without_gap() {
+    let text = "日本語の段落。\n\n\n\nSecond paragraph   \nthird line\u{200B}end";
+    let first = clean_content(text, 0, 10).unwrap();
+    assert_eq!(first.text, "日本語の段落。\n\nS");
+    assert!(first.truncated);
+    assert_eq!(first.next_start_char, Some(10));
+    assert_eq!(first.removed, 1, "the zero-width space");
+    let second = clean_content(text, 10, 1000).unwrap();
+    assert_eq!(second.text, "econd paragraph\nthird lineend");
+    assert!(!second.truncated);
+    assert_eq!(second.next_start_char, None);
+    assert_eq!(
+        format!("{}{}", first.text, second.text),
+        "日本語の段落。\n\nSecond paragraph\nthird lineend"
+    );
+    let total = first.total_chars;
+    assert_eq!(
+        clean_content(text, total, 10),
+        Err(StartBeyondEnd { total_chars: total })
+    );
+    assert_eq!(clean_content("", 0, 10).unwrap().text, "");
+}
+
+/// REQ-CTX-005 and REQ-SEC-015: content cleaning keeps indentation inside
+/// lines (code blocks) while folding blank runs and removing invisibles.
+#[test]
+fn req_sec_015_content_cleaning_keeps_indentation() {
+    let code = "```\nfn a() {\n    inner();\u{FEFF}\n}\n```\n\n\n\ntail";
+    let cleaned = clean_content(code, 0, 1000).unwrap();
+    assert_eq!(cleaned.text, "```\nfn a() {\n    inner();\n}\n```\n\ntail");
+    assert_eq!(cleaned.removed, 1);
+}

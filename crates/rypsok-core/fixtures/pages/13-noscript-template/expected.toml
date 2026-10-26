@@ -1,0 +1,4 @@
+title = "Templates"
+must_contain = ["# Templates", "Visible second paragraph."]
+must_not_contain = ["NOSCRIPT-ONLY", "TEMPLATE-ROW"]
+notices = []

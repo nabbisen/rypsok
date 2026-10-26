@@ -33,6 +33,7 @@ pub struct Adapter {
     structured_content: bool,
     status_enabled: bool,
     search_limiter: ToolLimiter,
+    fetch_limiter: ToolLimiter,
     status_limiter: ToolLimiter,
 }
 
@@ -43,7 +44,7 @@ impl Adapter {
         let config = service.config();
         let limits = service.limits();
         let status_enabled = config.status.enabled;
-        let tool_list = tools::tool_list(service.search_policy(), status_enabled);
+        let tool_list = tools::tool_list(service.search_policy(), limits, status_enabled);
         tracing::info!(
             event = "tools",
             count = tool_list.len(),
@@ -55,6 +56,7 @@ impl Adapter {
             structured_content: config.service.structured_content,
             status_enabled,
             search_limiter: ToolLimiter::per_minute(limits.web_search_per_minute),
+            fetch_limiter: ToolLimiter::per_minute(limits.web_fetch_per_minute),
             status_limiter: ToolLimiter::per_minute(limits.engine_status_per_minute),
             service,
         }
@@ -120,6 +122,31 @@ impl ServerHandler for Adapter {
                             Err(CallError::Tool(error)) => self.render_error(error),
                             // The SDK drops the response of a cancelled
                             // request; nothing is sent (REQ-MCP-007).
+                            Err(CallError::Cancelled) => {
+                                return Err(McpError::new(
+                                    rmcp::model::ErrorCode(-32800),
+                                    "request cancelled",
+                                    None,
+                                ));
+                            }
+                        },
+                    }
+                }
+            }
+            tools::WEB_FETCH => {
+                if let Err(retry_after_ms) = self.fetch_limiter.admit() {
+                    tracing::warn!(
+                        tool = tools::WEB_FETCH,
+                        reason = "rate_limited",
+                        "call refused"
+                    );
+                    self.render_error(ToolError::rate_limited(retry_after_ms))
+                } else {
+                    match tools::parse_fetch_arguments(request.arguments.as_ref()) {
+                        Err(error) => self.render_error(error),
+                        Ok(req) => match self.service.fetch(req, context.ct.clone()).await {
+                            Ok(response) => self.render_ok(&response),
+                            Err(CallError::Tool(error)) => self.render_error(error),
                             Err(CallError::Cancelled) => {
                                 return Err(McpError::new(
                                     rmcp::model::ErrorCode(-32800),

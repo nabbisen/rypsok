@@ -112,9 +112,9 @@ pub const FETCH_ACCEPT: &str =
 /// redirect is followed by the client; environment proxies are ignored and
 /// no proxy is used; no cookie store; `User-Agent` and `Accept` are the
 /// only default headers; idle connections are dropped after 30 s.
-pub fn agent_client(
+pub fn agent_client<L: resolver::Lookup>(
     settings: &AgentClientSettings,
-    resolver: Arc<JudgingResolver>,
+    resolver: Arc<JudgingResolver<L>>,
 ) -> Result<reqwest::Client, ClientError> {
     ensure_crypto_provider();
     let mut headers = HeaderMap::new();

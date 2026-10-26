@@ -1,0 +1,4 @@
+title = "Nodes"
+must_contain = ["First paragraph of the node bomb, kept.", "n0", "n1"]
+must_not_contain = ["LAST-PARAGRAPH", "n119999"]
+notices = ["extraction_partial"]

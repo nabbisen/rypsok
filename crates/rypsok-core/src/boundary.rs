@@ -72,6 +72,78 @@ pub fn clean_text(raw: &str, max_chars: u32) -> Cleaned {
     }
 }
 
+/// The outcome of cleaning fetched content (RFC 012).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CleanedContent {
+    /// The window of the cleaned content.
+    pub text: String,
+    /// Invisible and control characters removed from the whole content.
+    pub removed: u32,
+    /// Whether content remains after the window.
+    pub truncated: bool,
+    /// Where to continue when it was cut.
+    pub next_start_char: Option<u32>,
+    /// The length of the whole cleaned content, in scalar values.
+    pub total_chars: u32,
+}
+
+/// Why a window could not be taken.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StartBeyondEnd {
+    /// The length of the cleaned content.
+    pub total_chars: u32,
+}
+
+/// Cleans rendered page content (RFC 012; REQ-CTX-005, REQ-SEC-015,
+/// REQ-FETCH-003, REQ-FETCH-005): NFC, invisible characters removed and
+/// counted, trailing whitespace of each line removed, three or more
+/// newlines folded to two, then the window of `max_chars` scalar values
+/// from `start_char` at a character boundary. Spaces inside a line are
+/// kept, so code blocks keep their indentation.
+pub fn clean_content(
+    rendered: &str,
+    start_char: u32,
+    max_chars: u32,
+) -> Result<CleanedContent, StartBeyondEnd> {
+    let normalized: String = rendered.nfc().collect();
+    let (visible, removed) = remove_invisible(&normalized);
+    let mut folded = String::with_capacity(visible.len());
+    let mut newlines = 0usize;
+    for line in visible.split('\n') {
+        let line = line.trim_end();
+        if line.is_empty() {
+            newlines += 1;
+            continue;
+        }
+        if !folded.is_empty() {
+            folded.push_str(if newlines > 0 { "\n\n" } else { "\n" });
+        }
+        folded.push_str(line);
+        newlines = 0;
+    }
+    let total_chars = folded.chars().count();
+    let start = start_char as usize;
+    if start >= total_chars && !(start == 0 && total_chars == 0) {
+        return Err(StartBeyondEnd {
+            total_chars: total_chars as u32,
+        });
+    }
+    let window: String = folded
+        .chars()
+        .skip(start)
+        .take(max_chars as usize)
+        .collect();
+    let taken = window.chars().count();
+    let truncated = start + taken < total_chars;
+    Ok(CleanedContent {
+        text: window,
+        removed,
+        truncated,
+        next_start_char: truncated.then(|| (start + taken) as u32),
+        total_chars: total_chars as u32,
+    })
+}
+
 /// Whether the cleaned text contains an instruction-like phrase.
 pub fn has_instruction_like_pattern(text: &str) -> bool {
     let lower = text.to_lowercase();
@@ -133,7 +205,7 @@ fn strip_tags(raw: &str) -> String {
             let starts_tag = raw[i + 1..]
                 .chars()
                 .next()
-                .is_some_and(|n| n.is_ascii_alphabetic() || matches!(n, '/' | '!' | '?'));
+                .is_some_and(|n| n.is_alphabetic() || matches!(n, '/' | '!' | '?'));
             if starts_tag {
                 let mut closed = false;
                 for (_, n) in chars.by_ref() {

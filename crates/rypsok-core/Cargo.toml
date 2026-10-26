@@ -37,6 +37,11 @@ rustls.workspace = true
 async-trait.workspace = true
 url.workspace = true
 ipnet.workspace = true
+html5ever.workspace = true
+markup5ever.workspace = true
+encoding_rs.workspace = true
+chardetng.workspace = true
+robotstxt.workspace = true
 regex.workspace = true
 
 [dev-dependencies]

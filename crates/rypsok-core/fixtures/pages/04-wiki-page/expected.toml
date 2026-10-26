@@ -1,0 +1,4 @@
+title = "Example Topic - Encyclopedia"
+must_contain = ["# Example Topic", "| Type | Concept |", "**Example Topic** is a concept used in tests.", "## History", "## References", "1. Reference one"]
+must_not_contain = ["Main page", "Random", "free license"]
+notices = []

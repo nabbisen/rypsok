@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+# Measures the resident memory of one rypsok process under concurrent
+# fetches (REQ-PERF-003; RFC 012): a loopback HTTP server serves a 5 MiB
+# HTML document with many nodes; a release build of rypsok is driven over
+# stdio with `fetches_in_flight` concurrent web_fetch calls; the peak
+# resident set (VmHWM) of the rypsok process is read from /proc.
+#
+# Usage: tools/measure-memory [concurrent fetches, default 4]
+# Prints the peak resident set in MiB and the per-fetch cost above the
+# idle baseline. Linux only (reads /proc); not a CI gate.
+
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+CONCURRENT = int(sys.argv[1]) if len(sys.argv) > 1 else 4
+NODES = 100_000  # LIM-F10
+PAGE = ("<html><head><title>Memory</title></head><body><main>"
+        + "".join(f"<p>paragraph {i} with enough text to fill the page body up to the byte budget of the measurement run</p>" for i in range(NODES // 2))
+        + "</main></body></html>").encode()
+assert len(PAGE) > 4 * 1024 * 1024, f"{len(PAGE)} bytes: make the page bigger"
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/robots.txt":
+            self.send_response(404)
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(PAGE)))
+        self.end_headers()
+        self.wfile.write(PAGE)
+
+    def log_message(self, *_):
+        pass
+
+
+def rss_mib(pid):
+    with open(f"/proc/{pid}/status", encoding="utf-8") as f:
+        fields = dict(line.split(":", 1) for line in f if ":" in line)
+    return int(fields["VmHWM"].split()[0]) / 1024, int(fields["VmRSS"].split()[0]) / 1024
+
+
+def main():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    port = server.server_address[1]
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    subprocess.run(["cargo", "build", "--release", "-q", "-p", "rypsok"], check=True)
+    binary = os.path.join("target", "release", "rypsok")
+    with tempfile.TemporaryDirectory() as tmp:
+        config = os.path.join(tmp, "rypsok.toml")
+        with open(config, "w", encoding="utf-8") as f:
+            f.write(
+                "config_version = 1\n[egress]\nallow = [\"127.0.0.1/32\"]\nallow_http = true\n"
+                f"[fetch]\nports = [80, 443, {port}]\nmax_bytes = 10485760\nmax_chars_ceiling = 20000\n"
+                f"[limits]\nfetches_in_flight = {CONCURRENT}\nparsing_in_flight = {CONCURRENT}\n"
+                "[engines.w]\ntype = \"wikipedia\"\ncategories = [\"general\"]\n"
+            )
+        stderr_path = os.path.join(tmp, "stderr.log")
+        stderr_file = open(stderr_path, "w", encoding="utf-8")  # noqa: SIM115 (closed with the process)
+        proc = subprocess.Popen(
+            [binary, "serve", "--transport", "stdio", "--config", config],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr_file, text=True,
+        )
+
+        def alive_or_die():
+            if proc.poll() is not None:
+                stderr_file.flush()
+                with open(stderr_path, encoding="utf-8") as f:
+                    sys.stderr.write(f.read()[-4000:])
+                sys.exit(f"measure-memory: rypsok exited with {proc.returncode}")
+
+        def send(message):
+            proc.stdin.write(json.dumps(message) + "\n")
+            proc.stdin.flush()
+
+        meta = {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientInfo": {"name": "measure-memory", "version": "0"},
+                "io.modelcontextprotocol/clientCapabilities": {}}
+        send({"jsonrpc": "2.0", "id": 0, "method": "server/discover", "params": {"_meta": meta}})
+        proc.stdout.readline()
+        time.sleep(0.5)
+        alive_or_die()
+        base_hwm, base_rss = rss_mib(proc.pid)
+        for i in range(CONCURRENT):
+            send({"jsonrpc": "2.0", "id": i + 1, "method": "tools/call",
+                  "params": {"_meta": meta, "name": "web_fetch",
+                             "arguments": {"url": f"http://127.0.0.1:{port}/page{i}", "max_chars": 20000}}})
+        peak = base_hwm
+        answers = 0
+        while answers < CONCURRENT:
+            line = proc.stdout.readline()
+            if not line:
+                break
+            hwm, _ = rss_mib(proc.pid)
+            peak = max(peak, hwm)
+            if '"result"' in line:
+                answers += 1
+        hwm, _ = rss_mib(proc.pid)
+        peak = max(peak, hwm)
+        proc.stdin.close()
+        proc.wait(timeout=10)
+        stderr_file.close()
+    per_fetch = (peak - base_rss) / CONCURRENT
+    print(f"measure-memory: page {len(PAGE) / 1048576:.1f} MiB, {NODES} nodes, {CONCURRENT} concurrent fetches")
+    print(f"measure-memory: idle RSS {base_rss:.1f} MiB, peak RSS {peak:.1f} MiB, "
+          f"{per_fetch:.1f} MiB per concurrent fetch above idle")
+    print(f"measure-memory: answers {answers}/{CONCURRENT}")
+
+
+if __name__ == "__main__":
+    main()
