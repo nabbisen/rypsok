@@ -50,6 +50,7 @@ use std::sync::Arc;
 pub use tokio_util::sync::CancellationToken;
 
 use config::{Config, ConfigError};
+use egress::{EgressPolicy, ReturnedUrls};
 use engine::registry::Registry;
 use limits::Limits;
 use model::{
@@ -69,6 +70,8 @@ pub struct Rypsok {
     policy: SearchPolicy,
     registry: Registry,
     health: HealthTable,
+    egress: Arc<EgressPolicy>,
+    returned: ReturnedUrls,
     counters: Counters,
     outbound: Arc<tokio::sync::Semaphore>,
 }
@@ -103,12 +106,22 @@ impl Rypsok {
             limits.outbound_in_flight as usize,
         ));
         let health = HealthTable::new(&registry, &limits);
+        let egress_policy = EgressPolicy::from_texts(
+            &config.egress.allow,
+            &config.egress.deny,
+            config.egress.allow_http,
+            &config.fetch.ports,
+        )
+        .map_err(|problems| ConfigError { problems })?;
+        let returned = ReturnedUrls::new(limits.strict_mode_urls);
         Ok(Rypsok {
             config,
             limits,
             policy,
             registry,
             health,
+            egress: Arc::new(egress_policy),
+            returned,
             counters: Counters::new(),
             outbound,
         })
@@ -137,6 +150,17 @@ impl Rypsok {
     /// The health state of every engine (RFC 010).
     pub fn health(&self) -> &HealthTable {
         &self.health
+    }
+
+    /// The agent-directed egress policy (RFC 011).
+    pub fn egress_policy(&self) -> &Arc<EgressPolicy> {
+        &self.egress
+    }
+
+    /// The URLs `web_search` returned in this process, for strict mode
+    /// (REQ-SEC-021).
+    pub fn returned_urls(&self) -> &ReturnedUrls {
+        &self.returned
     }
 
     /// `web_search`: search several engines at once and return deduplicated,
@@ -174,6 +198,7 @@ impl Rypsok {
             engine_attribution: self.config.search.engine_attribution,
             log_queries: self.config.logging.log_queries,
             health: &self.health,
+            returned: &self.returned,
             outbound: Arc::clone(&self.outbound),
             counters: &self.counters,
         };

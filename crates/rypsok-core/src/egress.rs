@@ -7,11 +7,25 @@
 //! endpoint, a fixed identifying User-Agent, bounded timeouts, and the
 //! credential header set on the client so that it can reach one origin
 //! only. Bodies are read with a byte bound after decompression.
+//!
+//! The agent-directed profile builds one client for every fetch and
+//! robots.txt read: the [`policy`] judges URLs before I/O and addresses at
+//! connect time through the [`resolver`]; no redirects, no proxy, no
+//! cookies, GET only; [`strict`] narrows destinations to what rypsok
+//! returned.
 
-use std::sync::Once;
+pub mod policy;
+pub mod resolver;
+pub mod strict;
+
+use std::sync::{Arc, Once};
 use std::time::Duration;
 
 use reqwest::header::{HeaderMap, HeaderValue};
+
+pub use policy::{Denial, EgressPolicy, Host, Rule, Target};
+pub use resolver::JudgingResolver;
+pub use strict::ReturnedUrls;
 
 /// What the engine profile needs to build a client.
 #[derive(Debug, Clone)]
@@ -70,6 +84,58 @@ pub fn engine_client(settings: &EngineClientSettings) -> Result<reqwest::Client,
         _ => builder.no_proxy(),
     };
     builder
+        .build()
+        .map_err(|e| ClientError::Build(e.to_string()))
+}
+
+/// What the agent-directed profile needs to build its one client
+/// (RFC 011).
+#[derive(Debug, Clone)]
+pub struct AgentClientSettings {
+    /// The User-Agent of REQ-CMP-004.
+    pub user_agent: String,
+    /// LIM-F6.
+    pub connect_timeout: Duration,
+    /// LIM-F4.
+    pub timeout: Duration,
+    /// `[egress].allow_http`.
+    pub allow_http: bool,
+}
+
+/// The `Accept` header of a fetch: the types `web_fetch` extracts
+/// (REQ-FETCH-008) and nothing else.
+pub const FETCH_ACCEPT: &str =
+    "text/html, application/xhtml+xml, text/plain;q=0.9, text/markdown;q=0.9";
+
+/// Builds the client of the agent-directed profile (REQ-SEC-007,
+/// REQ-SEC-009): the judging resolver decides every connection; no
+/// redirect is followed by the client; environment proxies are ignored and
+/// no proxy is used; no cookie store; `User-Agent` and `Accept` are the
+/// only default headers; idle connections are dropped after 30 s.
+pub fn agent_client(
+    settings: &AgentClientSettings,
+    resolver: Arc<JudgingResolver>,
+) -> Result<reqwest::Client, ClientError> {
+    ensure_crypto_provider();
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        reqwest::header::ACCEPT,
+        HeaderValue::from_static(FETCH_ACCEPT),
+    );
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .https_only(!settings.allow_http)
+        .user_agent(
+            HeaderValue::from_str(&settings.user_agent)
+                .map_err(|e| ClientError::Build(e.to_string()))?,
+        )
+        .default_headers(headers)
+        .connect_timeout(settings.connect_timeout)
+        .timeout(settings.timeout)
+        .gzip(true)
+        .no_proxy()
+        .dns_resolver(resolver)
+        .pool_idle_timeout(Some(Duration::from_secs(30)))
         .build()
         .map_err(|e| ClientError::Build(e.to_string()))
 }

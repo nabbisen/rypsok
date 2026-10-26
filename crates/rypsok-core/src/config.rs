@@ -247,6 +247,10 @@ pub struct LimitsConfig {
     pub web_fetch_per_minute: u32,
     /// LIM-C8.
     pub engine_status_per_minute: u32,
+    /// LIM-F14.
+    pub strict_mode_urls: u32,
+    /// LIM-F15.
+    pub robots_cache_entries: u32,
 }
 
 impl Default for LimitsConfig {
@@ -259,6 +263,8 @@ impl Default for LimitsConfig {
             web_search_per_minute: defaults::WEB_SEARCH_PER_MINUTE,
             web_fetch_per_minute: defaults::WEB_FETCH_PER_MINUTE,
             engine_status_per_minute: defaults::ENGINE_STATUS_PER_MINUTE,
+            strict_mode_urls: defaults::STRICT_MODE_URLS,
+            robots_cache_entries: defaults::ROBOTS_CACHE_ENTRIES,
         }
     }
 }
@@ -674,6 +680,9 @@ impl Config {
             10,
         );
         for port in &f.ports {
+            if *port == 0 {
+                problems.push("fetch.ports: 0 is not a port".to_owned());
+            }
             if *port != 80 && *port != 443 && self.egress.allow.is_empty() {
                 problems.push(format!("fetch.ports: {port} needs an egress.allow rule"));
             }
@@ -728,6 +737,28 @@ impl Config {
             1,
             6000,
         );
+        range(
+            &mut problems,
+            "limits.strict_mode_urls",
+            l.strict_mode_urls,
+            100,
+            1_000_000,
+        );
+        range(
+            &mut problems,
+            "limits.robots_cache_entries",
+            l.robots_cache_entries,
+            10,
+            100_000,
+        );
+        if let Err(rule_problems) = crate::egress::EgressPolicy::from_texts(
+            &self.egress.allow,
+            &self.egress.deny,
+            self.egress.allow_http,
+            &self.fetch.ports,
+        ) {
+            problems.extend(rule_problems);
+        }
         let r = &self.resilience;
         range(
             &mut problems,
@@ -816,6 +847,8 @@ impl Config {
             web_search_per_minute: self.limits.web_search_per_minute,
             web_fetch_per_minute: self.limits.web_fetch_per_minute,
             engine_status_per_minute: self.limits.engine_status_per_minute,
+            strict_mode_urls: self.limits.strict_mode_urls,
+            robots_cache_entries: self.limits.robots_cache_entries,
             failures_to_open: self.resilience.failures_to_open,
             first_cooldown_s: self.resilience.first_cooldown_s,
             max_cooldown_s: self.resilience.max_cooldown_s,

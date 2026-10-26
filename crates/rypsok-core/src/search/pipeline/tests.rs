@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use super::*;
+use crate::egress::ReturnedUrls;
 use crate::engine::{
     Driver, EngineError, EngineProperties, LanguageSupport, RawResult, TimeRangeSupport,
     UserAgentFormat,
@@ -109,6 +110,7 @@ impl Driver for Scripted {
 struct Harness {
     registry: Registry,
     health: HealthTable,
+    returned: ReturnedUrls,
     limits: Limits,
     policy: SearchPolicy,
     counters: Counters,
@@ -153,6 +155,7 @@ fn harness_with(engines: Vec<(&str, Script)>, tune: impl Fn(&mut EnginePropertie
     Harness {
         registry,
         health,
+        returned: ReturnedUrls::new(100),
         limits,
         policy: SearchPolicy {
             query_max_chars: 400,
@@ -197,6 +200,7 @@ impl Harness {
             outbound: Arc::new(Semaphore::new(32)),
             counters: &self.counters,
             health: &self.health,
+            returned: &self.returned,
         };
         let validated = super::super::validate(&req, &self.policy).unwrap();
         run(&pipeline, validated, cancel).await
@@ -832,6 +836,7 @@ async fn req_agg_005_process_wide_outbound_cap_is_enforced() {
         outbound: Arc::new(Semaphore::new(1)),
         counters: &h.counters,
         health: &h.health,
+        returned: &h.returned,
     };
     let validated = super::super::validate(&req(), &h.policy).unwrap();
     let started = Instant::now();
@@ -1209,5 +1214,25 @@ async fn req_status_001_snapshot_of_sixteen_engines_within_budget() {
     assert!(
         snapshot.iter().take(8).all(|s| s.latency_ms.is_some()),
         "the eight queried engines have a latency"
+    );
+}
+
+/// REQ-SEC-021: every returned result is remembered for strict mode by its
+/// comparison key; a dropped result is not.
+#[tokio::test(start_paused = true)]
+async fn req_sec_021_returned_results_are_remembered_for_strict_mode() {
+    let h = harness(vec![
+        ("a", Script::Answer(A.to_vec())),
+        ("b", Script::Answer(B.to_vec())),
+    ]);
+    let response = h.search(req(), CancellationToken::new()).await.unwrap();
+    assert_eq!(response.results.len(), 3);
+    assert_eq!(h.returned.len(), 3);
+    for result in &response.results {
+        assert!(h.returned.contains(&normalize::comparison_key(&result.url)));
+    }
+    assert!(
+        !h.returned
+            .contains(&normalize::comparison_key("https://example.org/other"))
     );
 }

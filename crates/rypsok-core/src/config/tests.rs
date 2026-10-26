@@ -248,3 +248,39 @@ fn req_cfg_001_configuration_page_matches_the_schema() {
     }
     assert_eq!(documented, schema);
 }
+
+/// REQ-CFG-005 and REQ-SEC-006: a bad egress rule is refused by key and
+/// index; the egress policy is built from the validated texts.
+#[test]
+fn req_cfg_005_bad_egress_rule_names_key_and_index() {
+    let err = Config::parse(
+        "config_version = 1\n[egress]\nallow = [\"10.0.0.0/8\", \"http://x\"]\ndeny = [\"*.ok.example\", \"a b\"]\n",
+    )
+    .unwrap()
+    .validate()
+    .unwrap_err();
+    assert_eq!(
+        err.problems,
+        vec![
+            "egress.allow[1]: not a network in CIDR notation, an address or a host pattern",
+            "egress.deny[1]: not a network in CIDR notation, an address or a host pattern",
+        ]
+    );
+    let config = Config::parse(
+        "config_version = 1\n[egress]\nallow = [\"127.0.0.1/32\"]\n[fetch]\nports = [80, 443, 8080]\n",
+    )
+    .unwrap();
+    config.validate().unwrap();
+    let bad_port = Config::parse(
+        "config_version = 1\n[fetch]\nports = [0]\n[egress]\nallow = [\"10.0.0.0/8\"]\n",
+    )
+    .unwrap()
+    .validate()
+    .unwrap_err();
+    assert!(
+        bad_port
+            .problems
+            .iter()
+            .any(|p| p == "fetch.ports: 0 is not a port")
+    );
+}

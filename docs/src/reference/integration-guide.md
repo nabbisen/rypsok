@@ -40,6 +40,34 @@ This page is for the author of an agent runtime that embeds rypsok.
 - Restarting rypsok resets its in-memory state (circuit states, counters);
   nothing else is kept between calls.
 
+## Restricting egress at the operating-system level
+
+The egress policy is rypsok's own line of defense; a deployment should
+add the operating system's. The policy cannot see what the kernel sees,
+and a bug in one does not reach the other.
+
+With systemd, deny every address and allow the engines and the sites the
+deployment needs:
+
+```ini
+[Service]
+ExecStart=/usr/local/bin/rypsok serve --transport stdio
+IPAddressDeny=any
+IPAddressAllow=93.184.216.0/24
+RestrictAddressFamilies=AF_INET AF_INET6
+PrivateNetwork=no
+```
+
+In a container, attach rypsok to a dedicated bridge network whose firewall
+forwards only to the Internet and never to the host, the container network
+or a metadata address (for example `169.254.169.254/32` and
+`fd00:ec2::254/128` dropped in the forward chain), and give it no
+capability to change its own routes.
+
+Either way, keep `[egress].allow` empty unless a private destination is
+intended, and prefer `fetch.strict_mode = true` where the agent should only
+read what it searched for.
+
 ## Embedding the core
 
 `rypsok-core` is a library crate without any protocol dependency. A host

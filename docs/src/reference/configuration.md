@@ -68,16 +68,29 @@ chooses it on the command line, where the launching host can see it.
 | `ports` | `[80, 443]` | ports | Ports a fetch may use (LIM-F8); another port needs an `egress.allow` rule |
 | `robots_txt` | `true` | boolean | Honor robots.txt |
 | `follow_cross_host_redirects` | `false` | boolean | Follow a redirect to another host instead of returning `redirected` |
-| `strict_mode` | `false` | boolean | Fetch only hosts the operator listed |
+| `strict_mode` | `false` | boolean | `web_fetch` accepts only URLs that `web_search` returned in this process and URLs matched by an `egress.allow` rule; anything else is `denied` with reason `strict_mode` |
 
 ## `[egress]`
 
+The agent-directed profile (fetches and robots.txt reads) refuses every
+destination that is not a globally routable unicast address: loopback,
+private, link-local, unique-local, multicast, carrier-grade NAT,
+documentation, benchmarking, NAT64 and cloud metadata ranges, and names
+such as `localhost`, single labels, `*.local`, `*.internal` and `*.arpa`.
+The judgment is made on every address that is connected to, at connect
+time. Rules are applied in the order deny, allow, built-in: a `deny` rule
+refuses even what an `allow` rule admits, and an `allow` rule admits a
+private destination at the operator's own responsibility. A rule is a
+network in CIDR notation (`10.0.0.0/8`, `fd00::/8`), an address, a host
+name (`wiki.corp.example`) or a subdomain pattern (`*.corp.example`, which
+does not match `corp.example` itself); never a scheme or a port.
+
 | Key | Default | Range | Meaning |
 |---|---|---|---|
-| `allow_http` | `false` | boolean | Allow plain HTTP fetches |
-| `allow` | `[]` | CIDRs or host names | Admitted explicitly |
-| `deny` | `[]` | CIDRs or host names | Refused in addition to the built-in rules |
-| `proxy` | `""` | URL | Proxy for engine traffic only; empty means none |
+| `allow_http` | `false` | boolean | Allow plain HTTP fetches; otherwise an `http` URL is retried as `https` |
+| `allow` | `[]` | rules | Admitted explicitly, also under `fetch.strict_mode` |
+| `deny` | `[]` | rules | Refused in addition to the built-in refusals |
+| `proxy` | `""` | URL | Proxy for engine traffic only; fetches never use a proxy, because rypsok cannot verify that it applies the same profile; environment proxy variables are ignored everywhere |
 
 ## `[limits]`
 
@@ -90,6 +103,8 @@ chooses it on the command line, where the launching host can see it.
 | `web_search_per_minute` | `60` | 1–6000 | `web_search` calls accepted (LIM-C6) |
 | `web_fetch_per_minute` | `30` | 1–6000 | `web_fetch` calls accepted (LIM-C7) |
 | `engine_status_per_minute` | `30` | 1–6000 | `engine_status` calls accepted (LIM-C8) |
+| `strict_mode_urls` | `10000` | 100–1000000 | URLs remembered for `fetch.strict_mode` (LIM-F14) |
+| `robots_cache_entries` | `1000` | 10–100000 | robots.txt entries kept in memory (LIM-F15) |
 
 ## `[resilience]`
 

@@ -20,6 +20,7 @@ use super::{SearchPolicy, ValidatedSearch};
 use crate::CancellationToken;
 use crate::boundary;
 use crate::config::{SafeSearch, SecretDetection};
+use crate::egress::ReturnedUrls;
 use crate::engine::registry::{Engine, Registry};
 use crate::engine::{EngineErrorClass, EngineRequest, EngineResponse};
 use crate::limits::Limits;
@@ -57,6 +58,8 @@ pub struct Pipeline<'a> {
     pub counters: &'a Counters,
     /// The circuits and latency windows (RFC 010).
     pub health: &'a HealthTable,
+    /// The URLs returned in this process, for strict mode (REQ-SEC-021).
+    pub returned: &'a ReturnedUrls,
 }
 
 /// How one engine ended.
@@ -417,6 +420,8 @@ pub async fn run(
                 continue;
             }
         }
+        // What is returned may be fetched in strict mode (RFC 011).
+        p.returned.record(&item.best.key);
         results.push(result);
     }
     if titles_cut > 0 {
