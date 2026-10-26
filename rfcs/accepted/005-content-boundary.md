@@ -133,3 +133,15 @@ output contains no removed code point; JSON round-trips.
 - The phrase list is matched as a substring of the lower-cased text:
   "system prompted" matches "system prompt". A heuristic that only adds a
   notice may over-match; it never changes text.
+
+## Amendment to RFC 005 (2026-10-27, M3 review)
+
+- Step 1 treats `<` followed by any letter as the start of a tag, not only
+  an ASCII letter: NFC maps compatibility characters such as the Kelvin
+  sign to ASCII, and the idempotence property of RFC 002 found the gap.
+- Idempotence does not hold for entity-encoded markup (`&lt;b&gt;` decodes
+  to text that a second cleaning would strip). The browser-faithful order
+  (markup removal, then entity decoding) is kept; the residual is
+  accepted and the property test is read with that exception.
+- `clean_content` (RFC 012) keeps spaces inside a line so that code blocks
+  keep their indentation; it folds three or more newlines to two.

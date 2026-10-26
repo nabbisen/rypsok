@@ -200,3 +200,22 @@ The limits table gains two rows, applied with this RFC:
 - Whether `.arpa` and `.local` should be refused by name or left to the
   address judgment alone. Decided here: refused by name; they never name a
   public site.
+
+## Amendment to RFC 011 (2026-10-27, M3 review)
+
+- The resolver's lookup is a trait (`Lookup`) with the system resolver as
+  the default; tests script DNS answers without a network, and the fetch
+  service accepts a lookup for the same purpose. The policy judges every
+  address whatever the lookup.
+- Refusal logging lives in the fetch pipeline, the first place an
+  agent-directed request is made: `refused` with `reason` and `denial`,
+  never a URL, host or address; the resolver logs `address_refused` at
+  `debug` with the denial name.
+- A host whose last label is all digits is not a rule (neither an address
+  nor a name), so a typo is refused at startup.
+- A deny rule by name yields the denial `host_name`, by network `address`;
+  both are the error reason `egress`.
+- `*.name` does not match `name` itself; the page says so.
+- Same-host redirect targets are exempt from strict mode in the fetch
+  pipeline (RFC 012); the strict-mode key is the comparison key of the
+  URL's returned form.

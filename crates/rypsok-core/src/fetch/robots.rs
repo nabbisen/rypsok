@@ -201,7 +201,9 @@ async fn read(
                 return Verdict::DisallowAll;
             };
             hops += 1;
-            if hops > limits.max_redirects || origin_of(&location) != origin {
+            // Followed across origins too, as RFC 9309 asks; every hop
+            // passes the policy at the top of the loop.
+            if hops > limits.max_redirects {
                 return Verdict::DisallowAll;
             }
             url = location;

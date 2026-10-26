@@ -304,9 +304,10 @@ RFC 011.
   underscores are not escaped (intraword underscores are literal in
   CommonMark and identifiers stay readable).
 - **`text/markdown`** is read as text, and the `Accept` header lists it.
-- **robots.txt redirects** are followed within the same origin only, up to
-  LIM-F7 hops; a cross-origin redirect counts as unreachable (disallow for
-  one hour), as the RFC's table says for "unavailable".
+- **robots.txt redirects** are followed up to LIM-F7 hops, across origins
+  too, as RFC 9309 asks; every hop passes the policy, and a hop the policy
+  refuses makes the file unreachable (disallow for one hour). The design's
+  "same origin only" is withdrawn (M3 review decision).
 - **Strict mode keys** are computed from the URL's returned form (tracking
   parameters removed) so that a fetch of a tracked link matches the result
   the search returned.
@@ -315,3 +316,21 @@ RFC 011.
   test of RFC 005 found that the ASCII-only rule broke idempotence.
 - **Title fallback** trims whitespace; a document without `<title>` and
   without `h1` has an empty title.
+
+## Amendment to RFC 012 (2026-10-27, M3 review)
+
+- **Feed chunk 2 KiB.** The parser is fed in 2 KiB chunks, so the tree can
+  exceed LIM-F10 by at most one chunk's nodes, about one percent of the
+  bound.
+- **robots.txt redirects** are followed across origins under the policy
+  (the implementation amendment above records it): a site that serves its
+  robots.txt from another host is no longer refused for an hour.
+- The `scheme` denial's message states exactly what happened: the http URL
+  was retried over https and that request failed, and plain http is not
+  allowed here. REQ-FETCH-010's `denied` is kept even when the failure is
+  a network one, because the caller can change nothing but the URL.
+- The idempotence property of RFC 005 is stated for inputs without
+  entity-encoded markup (RFC 005 amendment of 2026-10-27).
+- Underscores unescaped, `text/markdown` as text, empty extracted HTML as
+  `extraction_failed` with an empty text document as an empty `ok`, and
+  `FetchService::with_lookup` for tests: confirmed.

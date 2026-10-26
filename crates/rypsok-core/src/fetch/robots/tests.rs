@@ -164,3 +164,83 @@ async fn req_cmp_005_cache_is_bounded() {
         "https://x.example"
     );
 }
+
+/// REQ-CMP-005 and RFC 9309: a robots.txt redirect is followed, across
+/// origins too, each hop under the policy; the rules of the final document
+/// apply to the first origin; a hop the policy refuses makes the file
+/// unreachable.
+#[tokio::test]
+async fn req_cmp_005_robots_redirects_are_followed_under_the_policy() {
+    let (first, client, policy) = harness().await;
+    let second = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/robots.txt"))
+        .respond_with(
+            ResponseTemplate::new(302)
+                .insert_header("location", format!("{}/robots.txt", second.uri()).as_str()),
+        )
+        .mount(&first)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/robots.txt"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_string("User-agent: *\nDisallow: /private\n"),
+        )
+        .mount(&second)
+        .await;
+    let both = EgressPolicy::new(
+        vec![parse_rule("127.0.0.1/32").unwrap()],
+        Vec::new(),
+        true,
+        vec![first.address().port(), second.address().port()],
+    );
+    let robots = Robots::new(Duration::from_secs(86_400), 1000);
+    assert_eq!(
+        robots
+            .check(
+                &client,
+                &both,
+                &target(&policy, &first, "/private/x"),
+                limits()
+            )
+            .await,
+        Decision::Disallowed
+    );
+    assert_eq!(
+        robots
+            .check(
+                &client,
+                &both,
+                &target(&policy, &first, "/public"),
+                limits()
+            )
+            .await,
+        Decision::Allowed
+    );
+    let third = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/robots.txt"))
+        .respond_with(
+            ResponseTemplate::new(302).insert_header("location", "http://10.0.0.1/robots.txt"),
+        )
+        .mount(&third)
+        .await;
+    let robots = Robots::new(Duration::from_secs(86_400), 1000);
+    let third_policy = EgressPolicy::new(
+        vec![parse_rule("127.0.0.1/32").unwrap()],
+        Vec::new(),
+        true,
+        vec![third.address().port()],
+    );
+    assert_eq!(
+        robots
+            .check(
+                &client,
+                &third_policy,
+                &target(&policy, &third, "/anything"),
+                limits()
+            )
+            .await,
+        Decision::Disallowed
+    );
+}

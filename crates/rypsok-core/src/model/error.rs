@@ -428,7 +428,9 @@ impl ToolError {
         let message = match reason {
             DetailReason::Egress => "the destination is not allowed by the egress policy",
             DetailReason::RobotsTxt => "the site's robots.txt disallows this page for rypsok",
-            DetailReason::Scheme => "only https URLs can be fetched, and the https retry failed",
+            DetailReason::Scheme => {
+                "the http URL was retried over https and that request failed; plain http is not allowed here"
+            }
             DetailReason::StrictMode => {
                 "strict mode: only URLs that web_search returned in this process, or that the operator listed, can be fetched"
             }

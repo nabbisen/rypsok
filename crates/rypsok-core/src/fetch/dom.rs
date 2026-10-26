@@ -19,7 +19,7 @@ pub const DOCUMENT: Handle = 0;
 
 /// How much input is fed to the parser between two checks of the node
 /// bound; the tree can exceed the bound by the nodes of one chunk.
-pub const FEED_CHUNK_BYTES: usize = 8 * 1024;
+pub const FEED_CHUNK_BYTES: usize = 2 * 1024;
 
 /// What a node is.
 #[derive(Debug, Clone)]
