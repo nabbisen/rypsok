@@ -109,6 +109,13 @@ pub mod defaults {
     /// Time until a cancelled call has aborted its outbound requests.
     pub const CANCEL_MAX_MS: u32 = 500; // LIM-O2
 
+    /// HTTP connections accepted at once (RFC 013; used from milestone M4).
+    pub const HTTP_MAX_CONNECTIONS: u32 = 64; // LIM-H1
+    /// Size of an HTTP request body, in bytes (RFC 013; used from M4).
+    pub const HTTP_MAX_REQUEST_BYTES: u64 = 65536; // LIM-H2
+    /// Idle HTTP connection timeout, in seconds (RFC 013; used from M4).
+    pub const HTTP_IDLE_TIMEOUT_S: u32 = 60; // LIM-H3
+
     /// Lifetime of a cache entry, in seconds.
     pub const CACHE_TTL_S: u32 = 300; // LIM-K2
     /// Cache entries.

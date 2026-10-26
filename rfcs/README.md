@@ -53,6 +53,7 @@ _None yet._
 | 010 | [Health, circuit breaking, provider limits, `engine_status`](./accepted/010-health-and-circuit.md) | M2 | [handoffs/010-health-and-circuit](./handoffs/010-health-and-circuit/README.md) |
 | 011 | [Egress policy and SSRF defense](./accepted/011-egress-policy.md) | M3 | [handoffs/011-egress-policy](./handoffs/011-egress-policy/README.md) |
 | 012 | [Fetch pipeline: `web_fetch`, extraction, robots.txt](./accepted/012-fetch-pipeline.md) | M3 | [handoffs/012-fetch-pipeline](./handoffs/012-fetch-pipeline/README.md) |
+| 013 | [Streamable HTTP, listener protections, authentication, per-caller limits](./accepted/013-streamable-http.md) | M4 | [handoffs/013-streamable-http](./handoffs/013-streamable-http/README.md) |
 
 ## Implemented
 

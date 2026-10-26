@@ -74,6 +74,14 @@ it.
 | LIM-C8 | `engine_status` calls accepted | 30 per minute | 1–6000 per minute | Same |
 | LIM-C9 | Requests to one engine | per engine, from its admission record | operator, never above the provider's limit | REQ-CMP-002 |
 
+## HTTP listener (M4)
+
+| ID | Parameter | Default | Range | Basis |
+|---|---|---:|---|---|
+| LIM-H1 | HTTP connections accepted at once | 64 | 1–4096 | REQ-SEC-018; bounded memory (RFC 013) |
+| LIM-H2 | Size of an HTTP request body | 65536 bytes | 4096–1048576 | A tool call is small; THR-11 (RFC 013) |
+| LIM-H3 | Idle HTTP connection timeout | 60 s | 5–600 s | Resource hygiene (RFC 013) |
+
 ## Circuit breaker
 
 | ID | Parameter | Default | Range | Basis |
