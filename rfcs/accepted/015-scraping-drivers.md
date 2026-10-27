@@ -177,3 +177,25 @@ Applied with this RFC:
 - Which driver is second. Decided here: none in M5; the operator's
   upstream (SearXNG JSON) is the next engine RFC, and further scraping
   drivers come through REQ-MAIN-004 when someone needs them.
+
+## Amendment to RFC 015 (2026-10-27, M5 review)
+
+Decided by the architect under the owner's two principles after the
+review of the implementation and release 0.5.0.
+
+- **One parsing bound for the process.** The parsing permits (LIM-C5)
+  are owned by the `Registry` and shared with the `FetchService` by
+  `Rypsok::from_parts`, so the scraping drivers and `web_fetch` parse
+  under one bound. A host that assembles its own `Registry` and
+  `FetchService` shares them with `FetchService::with_parsing`; the
+  integration guide's embedding section says so.
+- **No redirect is followed**, on or off the provider's host. The
+  provider answers its results page directly; a branch for an on-host
+  redirect would serve no observed case. The design's "no redirect off
+  the host" is tightened to "no redirect".
+- **503 is `rate_limited`**, with `Retry-After` when present; 403 and a
+  challenge page are `blocked`.
+- **The header test is a whitelist.** The test asserts that every header
+  the driver sends is one of `host`, `user-agent`, `accept` and
+  `accept-encoding`; a blacklist of browser headers could be outrun by a
+  new one.

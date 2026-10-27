@@ -82,7 +82,12 @@ read what it searched for.
 
 `rypsok-core` is a library crate without any protocol dependency. A host
 written in Rust may call `Rypsok::search` directly with its own
-cancellation token and render the response itself. A call ends with a
-response, with `CallError::Tool` (the error object to return), or with
-`CallError::Cancelled` when the host cancelled it and there is nothing to
-return. The interface is unstable until 1.0.0.
+cancellation token and render the response itself, or `Rypsok::search_as`
+to name the caller whose cache entries and limits the call belongs to. A
+call ends with a response, with `CallError::Tool` (the error object to
+return), or with `CallError::Cancelled` when the host cancelled it and
+there is nothing to return. A host that assembles its own `Registry` and
+`FetchService` shares the parsing permits between them with
+`FetchService::with_parsing`, as `Rypsok::from_parts` does, so that one
+bound (LIM-C5) holds for the process. The interface is unstable until
+1.0.0.

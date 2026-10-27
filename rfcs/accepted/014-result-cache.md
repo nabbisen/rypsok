@@ -209,3 +209,19 @@ Applied with this RFC:
 - Whether the key should include `max_results`. Decided here: yes. An
   engine asked for fewer results returns a different answer, and
   LIM-S3 makes the value a constant per process in practice.
+
+## Amendment to RFC 014 (2026-10-27, M5 review)
+
+Decided by the architect under the owner's two principles after the
+review of the implementation and release 0.5.0.
+
+- **A sixth counter outcome, `disabled`.** A store that fails because the
+  cache disabled itself is counted as `disabled`, beside `hit`, `miss`,
+  `stored`, `too_large` and `bypassed`. It names the one failure mode
+  the cache has; folding it into another outcome would hide it.
+- **A probe stores.** The design's table said so; recorded here because
+  a reviewer asked: a probe's answer is a fresh network answer and is
+  stored, while a probe never reads the cache.
+- **Expiry before recency.** With one lifetime for every entry the
+  expired entry is also the least recently used; the implementation
+  keeps the order the design states, at no cost.

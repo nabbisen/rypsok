@@ -81,21 +81,16 @@ async fn req_eng_014_honest_headers_and_the_record_parameters() {
         headers.get("accept").unwrap().to_str().unwrap(),
         "text/html"
     );
-    for browser_header in [
-        "cookie",
-        "accept-language",
-        "sec-fetch-mode",
-        "sec-fetch-site",
-        "sec-fetch-dest",
-        "sec-ch-ua",
-        "upgrade-insecure-requests",
-        "referer",
-    ] {
-        assert!(
-            headers.get(browser_header).is_none(),
-            "{browser_header} is a browser's header: {headers:?}"
-        );
-    }
+    // A whitelist, not a blacklist (RFC 015 amendment): exactly what the
+    // engine client sends and nothing a browser would add.
+    let mut sent: Vec<String> = headers.keys().map(|k| k.as_str().to_owned()).collect();
+    sent.sort();
+    sent.dedup();
+    let allowed = ["accept", "accept-encoding", "host", "user-agent"];
+    assert!(
+        sent.iter().all(|h| allowed.contains(&h.as_str())),
+        "only the engine client's headers are sent: {sent:?}"
+    );
     assert!(driver.properties().scraping);
     assert_eq!(driver.kind(), "duckduckgo");
 }
