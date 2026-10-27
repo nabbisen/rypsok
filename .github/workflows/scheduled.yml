@@ -24,13 +24,15 @@ jobs:
           tool: cargo-fuzz
       - name: Build the targets
         working-directory: fuzz
-        run: cargo +nightly fuzz build
+        # The runner's default target may be musl, where the sanitizer
+        # cannot link statically; name the host target.
+        run: cargo +nightly fuzz build --target x86_64-unknown-linux-gnu
       - name: Run each target for 120 s
         working-directory: fuzz
         run: |
           for target in $(cargo +nightly fuzz list); do
             echo "::group::$target"
-            cargo +nightly fuzz run "$target" -- -max_total_time=120 -rss_limit_mb=2048 -timeout=30
+            cargo +nightly fuzz run --target x86_64-unknown-linux-gnu "$target" -- -max_total_time=120 -rss_limit_mb=2048 -timeout=30
             echo "::endgroup::"
           done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
