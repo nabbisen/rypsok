@@ -148,7 +148,8 @@ policy and sanitization are rule-based. (AO §15.4 promoted)
 
 ### REQ-ARCH-007 Documented core interface — M1 · I
 The Rust interface of the core crate shall be documented and shall be marked
-unstable until release 1.0.0. (D-35)
+unstable until release 1.0.0, and stable from 1.0.0 under the policy of
+RFC 016. (D-35)
 
 ### REQ-ARCH-008 Pinned protocol SDK — M1 · I
 The MCP SDK shall be pinned to an exact version and updated only through a

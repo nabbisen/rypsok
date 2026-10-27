@@ -16,7 +16,7 @@ requirement names its milestone.
 | **M3** | Secure fetch | The agent-directed egress profile; strict mode; connect-time enforcement; redirect handling; robots.txt; fetch pipeline with byte, node and depth limits; charset handling; extraction; continuation; `web_fetch`; memory measurement | 0.3.0 |
 | **M4** | Network transport | MCP Streamable HTTP; `Origin` and `Host` validation; loopback bind by default; authentication; per-caller limits; container image | 0.4.0 |
 | **M5** | Optimization | Result cache under the cache policy; further engines through admission records; scraping drivers as an opt-in engine type (DR-006); adaptive selection prepared | 0.5.0 and later |
-| **1.0.0** | Stable contract | The external contract is declared stable; breaking changes need a major version from then on | 1.0.0 |
+| **1.0.0** | Stable contract | The external contract is declared stable (RFC 016: the stability page, growth-safe types, a semver gate); breaking changes need a major version from then on | 1.0.0 |
 
 ## Exit criteria
 
@@ -50,6 +50,7 @@ RFC numbers are assigned when each file is created (RFC 000).
 | 13 | Streamable HTTP and authentication | M4 |
 | 14 | Result cache | M5 |
 | 15 | Scraping drivers as an opt-in engine type | M5 |
+| 16 | 1.0.0: the stable contract | 1.0.0 |
 
 ## Release cycle
 

@@ -56,6 +56,7 @@ _None yet._
 | 013 | [Streamable HTTP, listener protections, authentication, per-caller limits](./accepted/013-streamable-http.md) | M4 | [handoffs/013-streamable-http](./handoffs/013-streamable-http/README.md) |
 | 014 | [Result cache](./accepted/014-result-cache.md) | M5 | [handoffs/014-result-cache](./handoffs/014-result-cache/README.md) |
 | 015 | [Scraping drivers as an opt-in engine type](./accepted/015-scraping-drivers.md) | M5 | [handoffs/015-scraping-drivers](./handoffs/015-scraping-drivers/README.md) |
+| 016 | [1.0.0: the stable contract](./accepted/016-stable-contract.md) | 1.0.0 | [handoffs/016-stable-contract](./handoffs/016-stable-contract/README.md) |
 
 ## Implemented
 
