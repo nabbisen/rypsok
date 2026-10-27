@@ -147,6 +147,11 @@
           "const": "extraction_partial",
           "description": "A fetched document was malformed and extracted in part (`web_fetch` only).",
           "type": "string"
+        },
+        {
+          "const": "from_cache",
+          "description": "`engine`'s answer came from the cache and may be as old as\n`[cache] ttl_s` (RFC 014).",
+          "type": "string"
         }
       ]
     },

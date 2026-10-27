@@ -149,7 +149,11 @@ impl ServerHandler for Adapter {
                 } else {
                     match tools::parse_search_arguments(request.arguments.as_ref()) {
                         Err(error) => self.render_error(error),
-                        Ok(req) => match self.service.search(req, context.ct.clone()).await {
+                        Ok(req) => match self
+                            .service
+                            .search_as(&caller, req, context.ct.clone())
+                            .await
+                        {
                             Ok(response) => self.render_ok(&response),
                             Err(CallError::Tool(error)) => self.render_error(error),
                             // The SDK drops the response of a cancelled

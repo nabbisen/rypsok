@@ -50,6 +50,36 @@ impl fmt::Display for EngineId {
     }
 }
 
+/// The identity a call is attributed to: its rate limits, its log line
+/// and its cache entries (REQ-SEC-019, REQ-CACHE-004). `local` is the
+/// caller of stdio and of an HTTP listener without configured callers;
+/// configured callers are validated by the configuration (RFC 013).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CallerId(String);
+
+impl CallerId {
+    /// The one caller of stdio and of a listener without callers.
+    pub fn local() -> Self {
+        CallerId("local".to_owned())
+    }
+
+    /// A configured caller.
+    pub fn new(id: &str) -> Self {
+        CallerId(id.to_owned())
+    }
+
+    /// The identifier.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for CallerId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// A language tag: two or three lowercase letters, optionally followed by a
 /// hyphen and a two-letter region in uppercase, as in `en` or `pt-BR`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, schemars::JsonSchema)]

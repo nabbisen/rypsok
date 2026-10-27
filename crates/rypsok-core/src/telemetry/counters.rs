@@ -19,6 +19,9 @@ struct Totals {
     engine_errors: BTreeMap<(String, &'static str), u64>,
     characters_removed: u64,
     results_dropped: u64,
+    /// The result cache: `hit`, `miss`, `stored`, `too_large`, `bypassed`
+    /// (RFC 014).
+    cache: BTreeMap<&'static str, u64>,
 }
 
 /// The counters of a process.
@@ -53,6 +56,28 @@ impl Counters {
             .entry((tool, outcome))
             .or_default() += 1;
         self.flush_if_due();
+    }
+
+    /// One event of the result cache (RFC 014).
+    pub fn cache(&self, outcome: &'static str) {
+        *self
+            .totals
+            .lock()
+            .expect("counters lock")
+            .cache
+            .entry(outcome)
+            .or_default() += 1;
+    }
+
+    /// The count of one cache outcome.
+    pub fn cache_of(&self, outcome: &str) -> u64 {
+        self.totals
+            .lock()
+            .expect("counters lock")
+            .cache
+            .get(outcome)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// One call was refused before work started (REQ-OBS-007).
@@ -183,6 +208,12 @@ impl Counters {
             .map(|((e, c), n)| format!("{e}.{c}={n}"))
             .collect::<Vec<_>>()
             .join(" ");
+        let cache = totals
+            .cache
+            .iter()
+            .map(|(k, n)| format!("{k}={n}"))
+            .collect::<Vec<_>>()
+            .join(" ");
         tracing::info!(
             event = "counters",
             calls = %render(&totals.calls),
@@ -191,6 +222,7 @@ impl Counters {
             engine_errors = %engine_errors,
             characters_removed = totals.characters_removed,
             results_dropped = totals.results_dropped,
+            cache = %cache,
             "counters"
         );
     }

@@ -54,7 +54,9 @@ Notice codes: `engine_unavailable` (reason: `timeout`, `rate_limited`,
 `cooldown`, `rate_limited`), `snippet_truncated`, `title_truncated`,
 `characters_removed`, `instruction_like_content`, `results_dropped`
 (reason: `instruction_like_content`, `url_too_long`, `url_invalid`),
-`credential_masked`.
+`credential_masked`, `from_cache` (with `engine`: that engine's answer
+came from the result cache and may be as old as `[cache] ttl_s`; only
+when the operator enabled the cache).
 
 Profile: no effect on local state. The query leaves the host to every
 enabled engine of the category; each learns the host's network address and

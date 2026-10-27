@@ -45,8 +45,10 @@ This page is for the author of an agent runtime that embeds rypsok.
 - Expect `partial` often: one engine failing is not an error.
 - Do not retry a `denied` error; retry `unavailable` after
   `retry_after_ms` when present.
-- Restarting rypsok resets its in-memory state (circuit states, counters);
-  nothing else is kept between calls.
+- Restarting rypsok resets its in-memory state (circuit states, counters,
+  the result cache when enabled); nothing else is kept between calls. A
+  result served from the cache is marked by the `from_cache` notice and
+  may be up to `[cache] ttl_s` old; over HTTP the cache is per caller.
 
 ## Restricting egress at the operating-system level
 

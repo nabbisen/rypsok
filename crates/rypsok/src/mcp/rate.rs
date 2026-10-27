@@ -45,26 +45,9 @@ impl ToolLimiter {
     }
 }
 
-/// The identity a call is attributed to for its limits and its log line.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CallerId(String);
-
-impl CallerId {
-    /// The caller of stdio and of an HTTP listener without callers.
-    pub fn local() -> Self {
-        CallerId("local".to_owned())
-    }
-
-    /// A configured caller.
-    pub fn new(id: &str) -> Self {
-        CallerId(id.to_owned())
-    }
-
-    /// The identifier.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
+/// The identity a call is attributed to for its limits, its log line and
+/// its cache entries: a core type since RFC 014.
+pub use rypsok_core::model::CallerId;
 
 /// The three limiters of one caller.
 #[derive(Debug)]

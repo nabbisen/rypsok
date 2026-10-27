@@ -8,7 +8,17 @@ Until 1.0.0 the external contract (tool names, parameters, response fields,
 outcomes, error kinds) may change between minor versions; every such change
 is announced here.
 
-## [Unreleased]
+## [Unreleased] — Optimization (milestone M5, 0.5.0)
+
+### Added
+
+- `[cache]`: an in-memory result cache, off by default; one entry per
+  engine answer per caller, only for engines whose admission record
+  allows storage; a hit is reported by the notice `from_cache`; bounded
+  by `ttl_s`, `max_entries` and `max_entry_bytes` (LIM-K1 to LIM-K4,
+  RFC 014). `web_fetch` is never cached.
+- `CallerId` is a core type; `Rypsok::search_as` searches on behalf of a
+  caller (the caller of the HTTP gate, or `local`).
 
 ### Changed
 

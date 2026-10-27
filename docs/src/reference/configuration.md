@@ -163,6 +163,22 @@ does not match `corp.example` itself); never a scheme or a port.
 |---|---|---|---|
 | `enabled` | `true` | boolean | Offer `engine_status`; when false it is absent from the tool list |
 
+## `[cache]`
+
+The result cache: one entry per engine answer, per caller, in memory
+only. Off by default. Enabling it retains the queries of the last `ttl_s`
+seconds in memory as cache keys; nothing is written to disk. Only
+`web_search` answers of engines whose admission record allows storage
+(Wikipedia; not Brave) are cached, and a response built from a cached
+answer carries the notice `from_cache`.
+
+| Key | Default | Range | Meaning |
+|---|---|---|---|
+| `enabled` | `false` | boolean | Whether answers are cached (LIM-K1) |
+| `ttl_s` | `300` | 10–3600 | Lifetime of an entry (LIM-K2) |
+| `max_entries` | `1000` | 1–100000 | Entries held at most; the least recently used goes first (LIM-K3) |
+| `max_entry_bytes` | `32768` | 1024–1048576 | An answer above this size is not stored (LIM-K4); memory is at most `max_entries` × `max_entry_bytes` |
+
 ## `[engines.<id>]`
 
 One table per engine. The identifier is lowercase letters, digits and

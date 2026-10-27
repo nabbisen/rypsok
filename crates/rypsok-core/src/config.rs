@@ -59,6 +59,9 @@ pub struct Config {
     /// `[status]`.
     #[serde(default)]
     pub status: StatusConfig,
+    /// `[cache]` (RFC 014).
+    #[serde(default)]
+    pub cache: CacheConfig,
     /// `[engines.<id>]`, keyed by engine identifier.
     #[serde(default = "default_engines")]
     pub engines: BTreeMap<String, EngineTable>,
@@ -168,7 +171,7 @@ impl CallerConfig {
 }
 
 /// The safe-search level passed to engines that support it (REQ-SEARCH-008).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SafeSearch {
     /// Off.
@@ -433,6 +436,33 @@ impl Default for StatusConfig {
     }
 }
 
+/// `[cache]`: the result cache of RFC 014. Off by default (LIM-K1). When
+/// on, the queries of the last `ttl_s` seconds are retained in memory
+/// as cache keys (REQ-CACHE-007).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CacheConfig {
+    /// LIM-K1.
+    pub enabled: bool,
+    /// LIM-K2.
+    pub ttl_s: u32,
+    /// LIM-K3.
+    pub max_entries: u32,
+    /// LIM-K4.
+    pub max_entry_bytes: u32,
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        CacheConfig {
+            enabled: false,
+            ttl_s: defaults::CACHE_TTL_S,
+            max_entries: defaults::CACHE_ENTRIES,
+            max_entry_bytes: defaults::CACHE_ENTRY_BYTES,
+        }
+    }
+}
+
 /// `[engines.<id>]`: the common keys and the keys the driver declares.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngineTable {
@@ -523,6 +553,7 @@ impl Default for Config {
             privacy: PrivacyConfig::default(),
             logging: LoggingConfig::default(),
             status: StatusConfig::default(),
+            cache: CacheConfig::default(),
             engines: default_engines(),
         }
     }
@@ -907,6 +938,21 @@ impl Config {
             l.robots_cache_entries,
             10,
             100_000,
+        );
+        range(&mut problems, "cache.ttl_s", self.cache.ttl_s, 10, 3600);
+        range(
+            &mut problems,
+            "cache.max_entries",
+            self.cache.max_entries,
+            1,
+            100_000,
+        );
+        range(
+            &mut problems,
+            "cache.max_entry_bytes",
+            self.cache.max_entry_bytes,
+            1024,
+            1_048_576,
         );
         if let Err(rule_problems) = crate::egress::EgressPolicy::from_texts(
             &self.egress.allow,

@@ -34,6 +34,7 @@
 //! | [`telemetry`] | Structured logging, counters, health state |
 
 pub mod boundary;
+pub mod cache;
 pub mod config;
 pub mod egress;
 pub mod engine;
@@ -55,7 +56,8 @@ use engine::registry::Registry;
 use fetch::FetchService;
 use limits::Limits;
 use model::{
-    CallError, FetchRequest, FetchResponse, Outcome, SearchRequest, SearchResponse, StatusResponse,
+    CallError, CallerId, FetchRequest, FetchResponse, Outcome, SearchRequest, SearchResponse,
+    StatusResponse,
 };
 use search::SearchPolicy;
 use search::pipeline::Pipeline;
@@ -75,6 +77,9 @@ pub struct Rypsok {
     fetch_service: FetchService,
     counters: Counters,
     outbound: Arc<tokio::sync::Semaphore>,
+    /// The result cache when the operator enabled it (RFC 014). Only the
+    /// search pipeline receives a handle (REQ-CACHE-002).
+    cache: Option<cache::ResultCache>,
 }
 
 impl Rypsok {
@@ -133,6 +138,23 @@ impl Rypsok {
                 "fetch: the HTTP client could not be built: {error}"
             )],
         })?;
+        let cache = config.cache.enabled.then(|| {
+            let storable = registry
+                .engines()
+                .iter()
+                .any(|e| e.properties().is_some_and(|p| p.cacheable));
+            if !storable {
+                tracing::warn!(
+                    event = "cache_without_storable_engines",
+                    "the cache is enabled but no configured engine allows storage; it will never hit"
+                );
+            }
+            cache::ResultCache::new(cache::CacheSettings {
+                ttl: std::time::Duration::from_secs(u64::from(config.cache.ttl_s)),
+                max_entries: config.cache.max_entries as usize,
+                max_entry_bytes: config.cache.max_entry_bytes as usize,
+            })
+        });
         Ok(Rypsok {
             config,
             limits,
@@ -144,7 +166,13 @@ impl Rypsok {
             fetch_service,
             counters: Counters::new(),
             outbound,
+            cache,
         })
+    }
+
+    /// The result cache, when enabled (RFC 014).
+    pub fn cache(&self) -> Option<&cache::ResultCache> {
+        self.cache.as_ref()
     }
 
     /// The validated configuration.
@@ -200,6 +228,18 @@ impl Rypsok {
         req: SearchRequest,
         cancel: CancellationToken,
     ) -> Result<SearchResponse, CallError> {
+        self.search_as(&CallerId::local(), req, cancel).await
+    }
+
+    /// [`Self::search`] on behalf of `caller`: the caller's limits are the
+    /// adapter's business, but its cache entries are its own
+    /// (REQ-CACHE-004). Over stdio the caller is `local`.
+    pub async fn search_as(
+        &self,
+        caller: &CallerId,
+        req: SearchRequest,
+        cancel: CancellationToken,
+    ) -> Result<SearchResponse, CallError> {
         let validated = match search::validate(&req, &self.policy) {
             Ok(validated) => validated,
             Err(error) => {
@@ -221,6 +261,8 @@ impl Rypsok {
             returned: &self.returned,
             outbound: Arc::clone(&self.outbound),
             counters: &self.counters,
+            caller,
+            cache: self.cache.as_ref(),
         };
         search::pipeline::run(&pipeline, validated, cancel).await
     }

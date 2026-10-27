@@ -18,7 +18,7 @@ pub mod outcome;
 pub use error::{
     CallError, DetailReason, ErrorDetail, ErrorEnvelope, ErrorKind, SecretKind, ToolError,
 };
-pub use ids::{Date, EngineId, Language};
+pub use ids::{CallerId, Date, EngineId, Language};
 pub use outcome::{Decision, decide};
 
 /// The category of a search: which engines are asked (REQ-SEARCH-002).
@@ -191,6 +191,9 @@ pub enum NoticeCode {
     CredentialMasked,
     /// A fetched document was malformed and extracted in part (`web_fetch` only).
     ExtractionPartial,
+    /// `engine`'s answer came from the cache and may be as old as
+    /// `[cache] ttl_s` (RFC 014).
+    FromCache,
 }
 
 /// A reason carried by a notice: engine error classes and skip or drop
@@ -259,6 +262,16 @@ impl Notice {
             code,
             engine: Some(engine),
             reason: Some(reason),
+            count: None,
+        }
+    }
+
+    /// `from_cache`: the engine's answer was served from the cache.
+    pub fn cached(engine: EngineId) -> Self {
+        Notice {
+            code: NoticeCode::FromCache,
+            engine: Some(engine),
+            reason: None,
             count: None,
         }
     }

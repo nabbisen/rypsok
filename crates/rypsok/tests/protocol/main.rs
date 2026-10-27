@@ -890,3 +890,55 @@ fn ureq_get(url: &str) -> Option<u16> {
         .nth(1)
         .and_then(|code| code.parse().ok())
 }
+
+/// REQ-CACHE-002: `web_fetch` has no cache; with the cache enabled, the
+/// same page fetched twice is requested twice.
+mod cache_boundary {
+    use super::*;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn req_cache_002_web_fetch_is_never_cached() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/page"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(
+                b"<html><head><title>Twice</title></head><body><main><p>Fetched content that is long enough to extract as the main part.</p></main></body></html>".to_vec(),
+                "text/html",
+            ))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let port = server.address().port();
+        let config = config_file(&format!(
+            "config_version = 1\n[cache]\nenabled = true\n[egress]\nallow = [\"127.0.0.1/32\"]\nallow_http = true\n[fetch]\nports = [80, 443, {port}]\n[engines.wiki]\ntype = \"wikipedia\"\ncategories = [\"general\"]\nbase_url = \"{}/\"\n",
+            server.uri()
+        ));
+        let base = server.uri();
+        tokio::task::spawn_blocking(move || {
+            let mut s = Session::start(Some(&config));
+            s.discover();
+            for _ in 0..2 {
+                let result = s.request(
+                    "tools/call",
+                    json!({ "name": "web_fetch", "arguments": { "url": format!("{base}/page"), "max_chars": 500 } }),
+                );
+                assert_eq!(result["isError"], false, "{result}");
+                assert_eq!(result["structuredContent"]["title"], "Twice");
+            }
+        })
+        .await
+        .unwrap();
+        // The robots.txt read is one more request (cached per origin);
+        // the page itself was read twice.
+        let pages = server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .filter(|r| r.url.path() == "/page")
+            .count();
+        assert_eq!(pages, 2);
+    }
+}

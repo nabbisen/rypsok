@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use super::*;
+use crate::cache::ResultCache;
 use crate::egress::ReturnedUrls;
 use crate::engine::{
     Driver, EngineError, EngineProperties, LanguageSupport, RawResult, TimeRangeSupport,
@@ -24,6 +25,12 @@ enum Script {
     Panic,
     /// Fails with the class while the call count is at most `n`, then answers.
     FailFirst(
+        usize,
+        EngineErrorClass,
+        Vec<(&'static str, &'static str, &'static str)>,
+    ),
+    /// Answers while the call count is at most `n`, then fails with the class.
+    FailAfter(
         usize,
         EngineErrorClass,
         Vec<(&'static str, &'static str, &'static str)>,
@@ -103,6 +110,13 @@ impl Driver for Scripted {
                     Ok(answer(items))
                 }
             }
+            Script::FailAfter(n, class, items) => {
+                if self.calls.load(Ordering::SeqCst) <= *n {
+                    Ok(answer(items))
+                } else {
+                    Err(EngineError::new(*class))
+                }
+            }
         }
     }
 }
@@ -115,10 +129,35 @@ struct Harness {
     policy: SearchPolicy,
     counters: Counters,
     calls: Vec<Arc<AtomicUsize>>,
+    /// The result cache (RFC 014), when a test enables it.
+    cache: Option<Arc<ResultCache>>,
+    /// Whose calls these are (REQ-CACHE-004).
+    caller: CallerId,
 }
 
 fn harness(engines: Vec<(&str, Script)>) -> Harness {
     harness_with(engines, |_| {})
+}
+
+/// A harness with the cache on (LIM-K2 300 s, LIM-K3 `max_entries`,
+/// LIM-K4 `max_entry_bytes`) and every engine cacheable unless `tune`
+/// says otherwise.
+fn harness_cached(
+    engines: Vec<(&str, Script)>,
+    max_entries: usize,
+    max_entry_bytes: usize,
+    tune: impl Fn(&mut EngineProperties),
+) -> Harness {
+    let mut h = harness_with(engines, |p| {
+        p.cacheable = true;
+        tune(p);
+    });
+    h.cache = Some(Arc::new(ResultCache::new(crate::cache::CacheSettings {
+        ttl: Duration::from_secs(300),
+        max_entries,
+        max_entry_bytes,
+    })));
+    h
 }
 
 fn harness_with(engines: Vec<(&str, Script)>, tune: impl Fn(&mut EngineProperties)) -> Harness {
@@ -166,6 +205,8 @@ fn harness_with(engines: Vec<(&str, Script)>, tune: impl Fn(&mut EnginePropertie
         },
         counters: Counters::new(),
         calls,
+        cache: None,
+        caller: CallerId::local(),
     }
 }
 
@@ -201,9 +242,23 @@ impl Harness {
             counters: &self.counters,
             health: &self.health,
             returned: &self.returned,
+            caller: &self.caller,
+            cache: self.cache.as_deref(),
         };
         let validated = super::super::validate(&req, &self.policy).unwrap();
         run(&pipeline, validated, cancel).await
+    }
+
+    /// Calls as another caller (REQ-CACHE-004).
+    async fn search_as(&mut self, caller: &str, req: SearchRequest) -> SearchResponse {
+        let previous = std::mem::replace(&mut self.caller, CallerId::new(caller));
+        let response = self.search(req, CancellationToken::new()).await;
+        self.caller = previous;
+        response.unwrap()
+    }
+
+    fn engine_calls(&self, index: usize) -> usize {
+        self.calls[index].load(Ordering::SeqCst)
     }
 }
 
@@ -837,6 +892,8 @@ async fn req_agg_005_process_wide_outbound_cap_is_enforced() {
         counters: &h.counters,
         health: &h.health,
         returned: &h.returned,
+        caller: &h.caller,
+        cache: None,
     };
     let validated = super::super::validate(&req(), &h.policy).unwrap();
     let started = Instant::now();
@@ -1235,4 +1292,233 @@ async fn req_sec_021_returned_results_are_remembered_for_strict_mode() {
         !h.returned
             .contains(&normalize::comparison_key("https://example.org/other"))
     );
+}
+
+// --- The result cache (RFC 014) ---------------------------------------
+
+/// REQ-CACHE-001: off by default, every call reaches the engine even when
+/// its record allows storage.
+#[tokio::test]
+async fn req_cache_001_off_by_default_every_call_reaches_the_engine() {
+    let h = harness_with(vec![("a", Script::Answer(A.to_vec()))], |p| {
+        p.cacheable = true;
+    });
+    h.search(req(), CancellationToken::new()).await.unwrap();
+    let response = h.search(req(), CancellationToken::new()).await.unwrap();
+    assert_eq!(h.engine_calls(0), 2);
+    assert!(response.notices.is_empty());
+    assert_eq!(h.counters.cache_of("miss"), 0);
+}
+
+/// REQ-CMP-007 and REQ-CACHE-003: an engine whose record forbids storage
+/// is never stored nor looked up; a cacheable one is stored, and the
+/// second call carries `from_cache` with its identifier and the same
+/// results.
+#[tokio::test]
+async fn req_cmp_007_only_a_cacheable_engine_is_stored() {
+    let h = harness_cached(
+        vec![
+            ("a", Script::Answer(A.to_vec())),
+            ("b", Script::Answer(B.to_vec())),
+        ],
+        10,
+        4096,
+        |_| {},
+    );
+    let first = h.search(req(), CancellationToken::new()).await.unwrap();
+    assert!(first.notices.is_empty());
+    assert_eq!((h.engine_calls(0), h.engine_calls(1)), (1, 1));
+    let second = h.search(req(), CancellationToken::new()).await.unwrap();
+    assert_eq!((h.engine_calls(0), h.engine_calls(1)), (1, 1));
+    assert_eq!(second.results, first.results);
+    assert_eq!(
+        second.notices,
+        vec![
+            Notice::cached(EngineId::new("a").unwrap()),
+            Notice::cached(EngineId::new("b").unwrap()),
+        ]
+    );
+    assert_eq!(h.counters.cache_of("stored"), 2);
+    assert_eq!(h.counters.cache_of("hit"), 2);
+    assert_eq!(h.counters.cache_of("miss"), 2);
+
+    // The non-cacheable engine: never looked up, never stored.
+    let h = harness_cached(vec![("c", Script::Answer(A.to_vec()))], 10, 4096, |p| {
+        p.cacheable = false
+    });
+    h.search(req(), CancellationToken::new()).await.unwrap();
+    let response = h.search(req(), CancellationToken::new()).await.unwrap();
+    assert_eq!(h.engine_calls(0), 2);
+    assert!(response.notices.is_empty());
+    assert!(h.cache.as_ref().unwrap().is_empty());
+    assert_eq!(h.counters.cache_of("stored"), 0);
+    assert_eq!(h.counters.cache_of("miss"), 0);
+}
+
+/// REQ-CACHE-004: two callers with the same query never share an entry;
+/// the same caller hits.
+#[tokio::test]
+async fn req_cache_004_callers_do_not_share_entries() {
+    let mut h = harness_cached(vec![("a", Script::Answer(A.to_vec()))], 10, 4096, |_| {});
+    h.search_as("one", req()).await;
+    assert_eq!(h.engine_calls(0), 1);
+    let other = h.search_as("two", req()).await;
+    assert_eq!(h.engine_calls(0), 2, "the second caller misses");
+    assert!(other.notices.is_empty());
+    let again = h.search_as("one", req()).await;
+    assert_eq!(h.engine_calls(0), 2, "the first caller hits");
+    assert_eq!(
+        again.notices,
+        vec![Notice::cached(EngineId::new("a").unwrap())]
+    );
+}
+
+/// REQ-CACHE-005: a hit before the lifetime, a miss after it; the entry
+/// bound of LIM-K4 keeps a large answer out.
+#[tokio::test(start_paused = true)]
+async fn req_cache_005_a_hit_before_the_lifetime_and_a_miss_after() {
+    let h = harness_cached(vec![("a", Script::Answer(A.to_vec()))], 10, 4096, |_| {});
+    h.search(req(), CancellationToken::new()).await.unwrap();
+    tokio::time::advance(Duration::from_secs(299)).await;
+    h.search(req(), CancellationToken::new()).await.unwrap();
+    assert_eq!(h.engine_calls(0), 1);
+    tokio::time::advance(Duration::from_secs(2)).await;
+    h.search(req(), CancellationToken::new()).await.unwrap();
+    assert_eq!(h.engine_calls(0), 2, "expired: the engine is asked again");
+
+    let small = harness_cached(vec![("a", Script::Answer(A.to_vec()))], 10, 16, |_| {});
+    small.search(req(), CancellationToken::new()).await.unwrap();
+    small.search(req(), CancellationToken::new()).await.unwrap();
+    assert_eq!(small.engine_calls(0), 2);
+    assert_eq!(small.counters.cache_of("too_large"), 2);
+    assert!(small.cache.as_ref().unwrap().is_empty());
+}
+
+/// REQ-CACHE-006: a cache disabled by a failure leaves the search working
+/// through the network.
+#[tokio::test]
+async fn req_cache_006_a_disabled_cache_degrades_nothing_but_latency() {
+    let h = harness_cached(vec![("a", Script::Answer(A.to_vec()))], 10, 4096, |_| {});
+    h.search(req(), CancellationToken::new()).await.unwrap();
+    let poisoner = Arc::clone(h.cache.as_ref().unwrap());
+    let _ = std::thread::spawn(move || poisoner.poison_for_test()).join();
+    // The failure is seen at the next use: the lookup misses, the cache
+    // disables itself, and the call goes to the engine.
+    let response = h.search(req(), CancellationToken::new()).await.unwrap();
+    assert!(h.cache.as_ref().unwrap().is_disabled());
+    assert_eq!(response.outcome, Outcome::Ok);
+    assert_eq!(h.engine_calls(0), 2);
+    assert!(response.notices.is_empty());
+    assert_eq!(h.counters.cache_of("disabled"), 1);
+}
+
+/// REQ-CACHE-007: a query the privacy check warned about is never stored;
+/// a masked query is stored under its masked text, so the raw query is
+/// not in memory.
+#[tokio::test]
+async fn req_cache_007_warned_queries_bypass_and_masked_queries_are_stored_masked() {
+    let h = harness_cached(vec![("a", Script::Answer(A.to_vec()))], 10, 4096, |_| {});
+    let secret = SearchRequest::new("key AKIAIOSFODNN7EXAMPLE");
+    for _ in 0..2 {
+        h.search_tuned(
+            secret.clone(),
+            CancellationToken::new(),
+            false,
+            false,
+            SecretDetection::Warn,
+        )
+        .await
+        .unwrap();
+    }
+    assert_eq!(h.engine_calls(0), 2);
+    assert!(h.cache.as_ref().unwrap().is_empty());
+    assert_eq!(h.counters.cache_of("bypassed"), 2);
+
+    h.search_tuned(
+        secret.clone(),
+        CancellationToken::new(),
+        false,
+        false,
+        SecretDetection::Mask,
+    )
+    .await
+    .unwrap();
+    let masked = h
+        .search_tuned(
+            secret,
+            CancellationToken::new(),
+            false,
+            false,
+            SecretDetection::Mask,
+        )
+        .await
+        .unwrap();
+    assert_eq!(h.engine_calls(0), 3, "the masked query hits");
+    assert!(
+        masked
+            .notices
+            .contains(&Notice::cached(EngineId::new("a").unwrap()))
+    );
+    let raw_key = crate::cache::CacheKey::new(
+        &h.caller,
+        &EngineId::new("a").unwrap(),
+        &EngineRequest {
+            query: Sensitive::new("key AKIAIOSFODNN7EXAMPLE".to_owned()),
+            max_results: h.limits.results_per_engine,
+            language: Language::new("en").unwrap(),
+            region: "US".to_owned(),
+            safe_search: SafeSearch::Moderate,
+            time_range: None,
+        },
+    );
+    assert!(
+        h.cache.as_ref().unwrap().lookup(&raw_key).is_none(),
+        "the raw query is not a key"
+    );
+}
+
+/// RFC 014: a probe of the circuit reaches the network although an entry
+/// exists; a cancelled call stores nothing.
+#[tokio::test(start_paused = true)]
+async fn req_test_010_probes_bypass_and_cancelled_calls_store_nothing() {
+    let h = harness_cached(
+        vec![(
+            "a",
+            Script::FailAfter(1, EngineErrorClass::Timeout, A.to_vec()),
+        )],
+        10,
+        4096,
+        |_| {},
+    );
+    h.search(req(), CancellationToken::new()).await.unwrap();
+    assert_eq!(h.engine_calls(0), 1, "stored");
+    for _ in 0..3 {
+        let _ = h
+            .search(SearchRequest::new("other"), CancellationToken::new())
+            .await;
+    }
+    assert_eq!(state_of(&h, "a"), EngineState::Open);
+    tokio::time::advance(Duration::from_secs(61)).await;
+    let probe = h.search(req(), CancellationToken::new()).await;
+    assert_eq!(h.engine_calls(0), 5, "the probe reached the network");
+    assert!(
+        probe.is_err(),
+        "the probe failed on the network; it was not served from the cache"
+    );
+
+    let slow = harness_cached(
+        vec![("s", Script::Slow(Duration::from_millis(200), A.to_vec()))],
+        10,
+        4096,
+        |_| {},
+    );
+    let cancel = CancellationToken::new();
+    let canceller = cancel.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        canceller.cancel();
+    });
+    let result = slow.search(req(), cancel).await;
+    assert!(matches!(result, Err(CallError::Cancelled)));
+    assert!(slow.cache.as_ref().unwrap().is_empty());
 }

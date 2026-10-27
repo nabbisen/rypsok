@@ -19,14 +19,15 @@ use super::rank::{self, Observation};
 use super::{SearchPolicy, ValidatedSearch};
 use crate::CancellationToken;
 use crate::boundary;
+use crate::cache::{CacheKey, NotStored, ResultCache};
 use crate::config::{SafeSearch, SecretDetection};
 use crate::egress::ReturnedUrls;
 use crate::engine::registry::{Engine, Registry};
 use crate::engine::{EngineErrorClass, EngineRequest, EngineResponse};
 use crate::limits::Limits;
 use crate::model::{
-    CallError, Decision, EngineId, Notice, NoticeCode, Outcome, Reason, SearchResponse, ToolError,
-    decide,
+    CallError, CallerId, Decision, EngineId, Notice, NoticeCode, Outcome, Reason, SearchResponse,
+    ToolError, decide,
 };
 use crate::privacy::{self, Sensitive, Verdict};
 use crate::telemetry::Counters;
@@ -60,12 +61,18 @@ pub struct Pipeline<'a> {
     pub health: &'a HealthTable,
     /// The URLs returned in this process, for strict mode (REQ-SEC-021).
     pub returned: &'a ReturnedUrls,
+    /// Whose call this is: the cache keys are the caller's (REQ-CACHE-004).
+    pub caller: &'a CallerId,
+    /// The result cache, when the operator enabled it (RFC 014).
+    pub cache: Option<&'a ResultCache>,
 }
 
 /// How one engine ended.
 #[derive(Debug)]
 enum Ended {
     Answered(EngineResponse, Duration),
+    /// The cache answered for the engine (RFC 014): no request was made.
+    Cached(EngineResponse),
     Failed {
         class: EngineErrorClass,
         retry_after: Option<Duration>,
@@ -87,6 +94,8 @@ pub async fn run(
     let deadline = start + Duration::from_millis(u64::from(p.limits.search_deadline_ms));
     let fan_out_deadline = deadline - Duration::from_millis(u64::from(p.limits.search_reserve_ms));
     let mut notices: Vec<Notice> = Vec::new();
+    // A query the privacy check warned about is never retained (RFC 014).
+    let mut cache_bypassed = false;
 
     // Privacy check before any engine request (REQ-SEARCH-006, REQ-PRIV-002).
     match privacy::check(search.query.expose(), p.secret_detection) {
@@ -101,6 +110,10 @@ pub async fn run(
             search.query = Sensitive::new(text);
         }
         Verdict::Warned(count) => {
+            cache_bypassed = true;
+            if p.cache.is_some() {
+                p.counters.cache("bypassed");
+            }
             p.counters.warned("web_search", "secret_in_query");
             tracing::warn!(
                 event = "secret_in_query",
@@ -196,7 +209,18 @@ pub async fn run(
     // Task identifier → engine index, so that a panicked task is attributed
     // to its engine (REQ-AGG-007).
     let mut task_engines: HashMap<tokio::task::Id, usize> = HashMap::new();
+    let mut ended: Vec<Option<Ended>> = (0..queried.len()).map(|_| None).collect();
     for (index, engine) in queried.iter().enumerate() {
+        // The cache (RFC 014): an admitted, cacheable engine is looked up
+        // before any permit is taken; a probe reaches the network.
+        if let Some(cache) = cache_for(p, engine, probes[index], cache_bypassed) {
+            let key = CacheKey::new(p.caller, &engine.id, &request);
+            if let Some(response) = cache.lookup(&key) {
+                ended[index] = Some(Ended::Cached(response));
+                continue;
+            }
+            p.counters.cache("miss");
+        }
         let engine = Arc::clone(engine);
         let request = request.clone();
         let outbound = Arc::clone(&p.outbound);
@@ -235,8 +259,10 @@ pub async fn run(
 
     // Collection with early completion (REQ-AGG-009). Dropping the set
     // aborts what is still running.
-    let mut ended: Vec<Option<Ended>> = (0..queried.len()).map(|_| None).collect();
     loop {
+        if ended.iter().all(Option::is_some) {
+            break;
+        }
         let next = tokio::select! {
             _ = cancel.cancelled() => {
                 drop(tasks);
@@ -294,7 +320,23 @@ pub async fn run(
         inform_health(p, engine, probes[index], Some(&outcome));
         match outcome {
             Ended::Answered(response, latency) => {
-                tracing::debug!(event = "engine_answered", engine = %engine.id, results = response.results.len(), latency_ms = latency.as_millis() as u64, "engine answered");
+                tracing::debug!(event = "engine_answered", engine = %engine.id, results = response.results.len(), latency_ms = latency.as_millis() as u64, cached = false, "engine answered");
+                // A fresh answer is stored for the next call (RFC 014); a
+                // probe's answer too, it is as fresh as any.
+                if let Some(cache) = cache_for(p, engine, false, cache_bypassed) {
+                    let key = CacheKey::new(p.caller, &engine.id, &request);
+                    p.counters.cache(match cache.store(key, &response) {
+                        Ok(()) => "stored",
+                        Err(NotStored::TooLarge) => "too_large",
+                        Err(NotStored::Disabled) => "disabled",
+                    });
+                }
+                answered.push((index, response));
+            }
+            Ended::Cached(response) => {
+                p.counters.cache("hit");
+                tracing::debug!(event = "engine_answered", engine = %engine.id, results = response.results.len(), cached = true, "engine answered from the cache");
+                notices.push(Notice::cached(engine.id.clone()));
                 answered.push((index, response));
             }
             Ended::Failed {
@@ -504,6 +546,9 @@ fn inform_health(p: &Pipeline<'_>, engine: &Engine, probe: bool, ended: Option<&
             })
         }
         Some(Ended::Skipped(_)) | None => probe.then_some(Completion::Cancelled),
+        // No request was made; the health table has nothing to learn, and a
+        // probe never comes from the cache.
+        Some(Ended::Cached(_)) => None,
     };
     let Some(completion) = completion else {
         return;
@@ -519,6 +564,19 @@ fn inform_health(p: &Pipeline<'_>, engine: &Engine, probe: bool, ended: Option<&
     if let Some(transition) = completed.transition {
         transition.log();
     }
+}
+
+/// The cache that applies to `engine` on this call, if any (RFC 014): the
+/// operator enabled it, the engine's record allows storage, the query was
+/// not warned about, and the engine is not the probe of a circuit.
+fn cache_for<'a>(
+    p: &Pipeline<'a>,
+    engine: &Engine,
+    probe: bool,
+    bypassed: bool,
+) -> Option<&'a ResultCache> {
+    p.cache
+        .filter(|_| !bypassed && !probe && engine.properties().is_some_and(|pr| pr.cacheable))
 }
 
 /// On cancellation, what did complete is still an observation; a probe that
