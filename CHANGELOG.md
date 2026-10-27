@@ -4,13 +4,15 @@ All notable changes to rypsok are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/). Release tags carry no `v` prefix.
 
-From 1.0.0 the external contract is stable as the
-[stability page](docs/src/reference/stability.md) defines it: what it
-lists as frozen changes only with a major version, additions arrive in
-minor versions, and every change of a default value is announced here
-with both values.
+Until release 1.0.0 the external contract (tool names, parameters,
+response fields, outcomes, error kinds) may change between minor
+versions; every such change is announced here. From 1.0.0 the contract is
+stable as the [stability page](docs/src/reference/stability.md) defines
+it: what it lists as frozen changes only with a major version, additions
+arrive in minor versions, and every change of a default value is
+announced here with both values.
 
-## [Unreleased] — Stable contract (1.0.0)
+## [Unreleased]
 
 ### Added
 

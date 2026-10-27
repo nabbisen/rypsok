@@ -23,7 +23,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 REQUIREMENTS = ROOT / "docs" / "src" / "maintainers" / "requirements.md"
 MILESTONE_FILE = ROOT / "tools" / "CURRENT_MILESTONE"
 SOURCE_DIRS = [ROOT / "crates"]
-ORDER = ["M0", "M1", "M2", "M3", "M4", "M5"]
+ORDER = ["M0", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8"]
 
 HEADING = re.compile(
     r"^### (REQ-[A-Z]+-\d{3}) .*? — (M\d|All) · ([TIAD])\s*$", re.MULTILINE

@@ -1205,6 +1205,9 @@ page, and from M4 also as a container image; tags carry no `v` prefix.
 | M3 | `web_fetch` with the full egress policy, robots.txt, extraction and resource tests verified |
 | M4 | Streamable HTTP with listener protections and authentication verified |
 | M5 | Cache and further engines verified |
+| M6 | A new user completes the tutorials from the book alone; every example is checked by CI |
+| M7 | The threat register covers every data flow of the delivered system, each threat tied to a control and a test; the hardening the revision called for is verified; a security review is recorded |
+| M8 | The audit report is complete and its fix list is implemented or explicitly deferred by the owner |
 
 ---
 
