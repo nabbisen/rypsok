@@ -54,6 +54,8 @@ _None yet._
 | 011 | [Egress policy and SSRF defense](./accepted/011-egress-policy.md) | M3 | [handoffs/011-egress-policy](./handoffs/011-egress-policy/README.md) |
 | 012 | [Fetch pipeline: `web_fetch`, extraction, robots.txt](./accepted/012-fetch-pipeline.md) | M3 | [handoffs/012-fetch-pipeline](./handoffs/012-fetch-pipeline/README.md) |
 | 013 | [Streamable HTTP, listener protections, authentication, per-caller limits](./accepted/013-streamable-http.md) | M4 | [handoffs/013-streamable-http](./handoffs/013-streamable-http/README.md) |
+| 014 | [Result cache](./accepted/014-result-cache.md) | M5 | [handoffs/014-result-cache](./handoffs/014-result-cache/README.md) |
+| 015 | [Scraping drivers as an opt-in engine type](./accepted/015-scraping-drivers.md) | M5 | [handoffs/015-scraping-drivers](./handoffs/015-scraping-drivers/README.md) |
 
 ## Implemented
 

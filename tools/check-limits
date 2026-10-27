@@ -18,7 +18,7 @@ TABLE = ROOT / "docs" / "src" / "maintainers" / "limits-and-defaults.md"
 SOURCE = ROOT / "crates" / "rypsok-core" / "src" / "limits.rs"
 
 NON_NUMERIC = {"LIM-S7", "LIM-F5", "LIM-F8", "LIM-C9", "LIM-B4", "LIM-B5",
-               "LIM-I3", "LIM-P1", "LIM-P2", "LIM-P3", "LIM-K1",
+               "LIM-I3", "LIM-P1", "LIM-P2", "LIM-P3", "LIM-K1", "LIM-G1",
                "LIM-U1", "LIM-U2", "LIM-U3", "LIM-U4"}
 UNITS = {"MiB": 1024 * 1024, "KiB": 1024, "hours": 3600, "hour": 3600}
 

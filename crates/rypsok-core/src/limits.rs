@@ -120,6 +120,8 @@ pub mod defaults {
     pub const CACHE_TTL_S: u32 = 300; // LIM-K2
     /// Cache entries.
     pub const CACHE_ENTRIES: u32 = 1000; // LIM-K3
+    /// Size of one cache entry, in bytes (RFC 014).
+    pub const CACHE_ENTRY_BYTES: u32 = 32768; // LIM-K4
 }
 
 /// The effective limits of a process: the table's defaults, overridden by

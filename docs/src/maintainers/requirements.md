@@ -416,6 +416,26 @@ allows fewer. (A-04)
 Drivers shall deliver titles and snippets as raw text; the pipeline, not the
 driver, decodes entities, strips markup and bounds the length. (M-18)
 
+### REQ-ENG-013 Scraping drivers opt in — M5 · T
+A driver that reads a human-facing interface (`scraping = true`) shall be
+refused at configuration validation unless `[scraping] enabled = true`,
+with a message that names the engine, the type and the operator's
+responsibility; it shall never be part of the zero-configuration default
+set. (DR-006, D-06; RFC 015)
+
+### REQ-ENG-014 No browser imitation by scraping drivers — M5 · T
+A scraping driver shall send the standard User-Agent of REQ-CMP-004 and no
+header meant to resemble a browser; a challenge, CAPTCHA, 403, 429 or 503
+from the provider shall be classified `blocked` or `rate_limited` and
+never worked around. (RFC 015)
+
+### REQ-ENG-015 Bounded scraping — M5 · T
+A scraping driver shall bound the response bytes, the parsed nodes and the
+depth as `web_fetch` does, shall parse off the asynchronous runtime under
+LIM-C5, shall follow no redirect off the provider's host, and shall
+classify a page with neither results nor the provider's no-results marker
+as `parse_failure`. (RFC 015)
+
 ---
 
 ## 8. Aggregation
@@ -1043,6 +1063,13 @@ limits of REQ-CMP-002.
 ### REQ-TEST-017 Circuit tests — M2 · T
 Tests shall verify opening, cooldown growth, probing and closing of the
 circuit, and `Retry-After` handling.
+
+### REQ-TEST-018 Scraping driver tests — M5 · T
+Tests shall verify, on hand-written fixtures in the page's shape, the
+extraction of results in order, the no-results page, the drifted page,
+the challenge page and the blocking statuses, the parsing bounds, the
+refusal without the switch, the absence of browser headers and the
+on-host redirect rule. (RFC 015)
 
 ### REQ-TEST-012 CI gate — M0 · T
 Formatting, lints (including one that forbids printing to standard output in

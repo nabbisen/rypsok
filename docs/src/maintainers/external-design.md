@@ -144,7 +144,8 @@ Notice codes: `engine_unavailable` (with `reason`, an engine error class),
 `title_truncated`, `characters_removed`, `instruction_like_content`,
 `results_dropped` (with `reason` from `instruction_like_content`,
 `url_too_long`, `url_invalid`), `credential_masked`
-(only in mask mode), `extraction_partial` (`web_fetch` only). Every code
+(only in mask mode), `extraction_partial` (`web_fetch` only),
+`from_cache` (with `engine`; M5, RFC 014). Every code
 carries at most the keys named here, all from fixed vocabularies, except
 `count`.
 
@@ -399,6 +400,7 @@ Retention classes (REQ-LIFE-003):
 | Admission | A driver ships only with its admission record | REQ-CMP-001 |
 | Engine properties | Rate limit, concurrency cap, maximum query length, honored `language` and `time_range` values, cacheability, attribution, User-Agent format | REQ-ENG-010 |
 | Default set | Engines enabled by default use official interfaces: Wikipedia (keyless), Brave Search (key). Others follow through their own RFCs; scraping drivers are DR-006 | REQ-ENG-008, D-06 |
+| Scraping drivers (M5) | Refused unless `[scraping] enabled = true`; never in the default set; the standard User-Agent and no browser imitation; a block is reported as `blocked`; bounded like `web_fetch`; the endpoint's robots.txt is recorded, not consulted | REQ-ENG-013 to -015, RFC 015 |
 | User-Agent | `rypsok/<version> (+<project URL>; <operator contact>)` | REQ-CMP-004 |
 | Zero configuration | Keyless engines active; keyed engines inactive with a log line | REQ-OPS-003 |
 
@@ -409,12 +411,17 @@ of an engine names its driver.
 
 ## 12. Cache (M5)
 
-Off by default. When on: `web_search` results only, keyed by query,
-category, language, time range, engine set and configuration version;
-entries from engines whose admission record forbids storage are never
-stored; in HTTP mode keyed additionally by caller identity; expiry LIM-K2;
-at most LIM-K3 entries; failure degrades performance only
-(REQ-CACHE-001 to REQ-CACHE-007).
+Off by default. When on: one entry per engine answer, keyed by the caller,
+the engine and the engine request (query after the privacy check,
+language, region, safe search, time range, result count); entries from
+engines whose admission record forbids storage are never stored; a probe
+of the circuit bypasses the lookup; a query the privacy check warned
+about bypasses the cache; expiry LIM-K2; at most LIM-K3 entries of at
+most LIM-K4 bytes; a hit is reported by the notice `from_cache` with the
+engine; `web_fetch` has no cache; failure degrades performance only
+(REQ-CACHE-001 to REQ-CACHE-007; RFC 014). The configuration of a
+process is immutable, so entries always match it; any future reload
+clears the cache (§16).
 
 ---
 
@@ -537,6 +544,7 @@ host name of a fetch only after it passed the egress policy (REQ-PRIV-004). Refu
 | I8 | Identical engine responses give identical output | REQ-ARCH-004 |
 | I9 | The core crate has no protocol dependency | REQ-ARCH-005 |
 | I10 | Nothing retrieved is retained beyond the call unless the cache admits it | REQ-PRIV-003 |
+| I11 | A cache entry was produced under the configuration in force: the configuration of a process is immutable, and any future reload clears the cache | REQ-CACHE-003 |
 
 ---
 

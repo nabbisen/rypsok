@@ -28,6 +28,7 @@ controls as requirements and the tests that verify them.
 | THR-17 | Cache contamination: private or forbidden data served to another caller | B4 | Disclosure; breach of provider terms | REQ-CACHE-002, REQ-CACHE-003, REQ-CACHE-004, REQ-CMP-007 | REQ-TEST-010 |
 | THR-18 | Inbound DNS rebinding or CSRF against a local HTTP listener | B6 | A web page drives rypsok | REQ-SEC-018 | REQ-TEST-014 |
 | THR-19 | Unauthorized network caller | B6 | Resource consumption; data egress on someone else's behalf | REQ-SEC-018, REQ-SEC-019 | REQ-TEST-014 |
+| THR-20 | A scraping driver runs against a provider's terms, or imitates a browser to get through | B2 | The operator's exposure; the project's honesty | REQ-ENG-013, REQ-ENG-014, REQ-CMP-004 | REQ-TEST-018 |
 | THR-20 | Provider impersonation or downgrade | B2 | False results | REQ-SEC-017 (HTTPS to configured hosts) | REQ-TEST-015 |
 | THR-21 | Protocol corruption: a stray line on stdout | B1 | Loss of service | REQ-MCP-002 | REQ-TEST-009 |
 | THR-22 | Supply chain: a vulnerable or license-incompatible dependency | — | Any of the above | REQ-SEC-020, REQ-TEST-012 | REQ-TEST-012 |

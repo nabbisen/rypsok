@@ -122,4 +122,11 @@ it.
 |---|---|---:|---|---|
 | LIM-K1 | Cache | off | on, off | D-28 |
 | LIM-K2 | Lifetime of an entry | 300 s | 10–3600 s | Draft external design §15 |
-| LIM-K3 | Entries | 1000 | operator | Bounded memory |
+| LIM-K3 | Entries | 1000 | 1–100000 | Bounded memory (RFC 014) |
+| LIM-K4 | Size of one entry (raw titles, snippets, URLs) | 32768 bytes | 1024–1048576 | Memory at most LIM-K3 × LIM-K4 (RFC 014) |
+
+## Scraping (M5)
+
+| ID | Parameter | Default | Range | Basis |
+|---|---|---:|---|---|
+| LIM-G1 | Scraping drivers | off | on, off | D-06, DR-006 (RFC 015) |

@@ -34,6 +34,7 @@ word only in the sense given here.
 | **Continuation** | Reading the next part of a page: `start_char` in the request, `next_start_char` in the response. No state is kept between calls |
 | **Profile of a tool** | Its declared effect on local state, the data that leaves the host, the maximum duration, and the maximum output |
 | **Milestone** | M0 to M5 of `ROADMAP.md`. Every requirement names the milestone in which it is verified |
+| **Scraping driver** | A driver that reads a provider's human-facing page because no interface for programs exists; opt-in, off by default, honest about itself, bounded like `web_fetch` (RFC 015) |
 
 ## Words with another meaning elsewhere
 
