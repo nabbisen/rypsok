@@ -1,6 +1,6 @@
 # Threat Register
 
-**Status:** Baseline 1.0 (2026-09-30). A living document: it is reviewed at
+**Status:** Baseline 1.0 (2026-09-30), revised 2026-10-27 (RFC 018; read with the [threat model](./threat-model.md)). A living document: it is reviewed at
 every milestone and whenever a data flow, an external integration or an
 authentication mechanism changes (project rule "Release Deliverables").
 
@@ -28,12 +28,13 @@ controls as requirements and the tests that verify them.
 | THR-17 | Cache contamination: private or forbidden data served to another caller | B4 | Disclosure; breach of provider terms | REQ-CACHE-002, REQ-CACHE-003, REQ-CACHE-004, REQ-CMP-007 | REQ-TEST-010 |
 | THR-18 | Inbound DNS rebinding or CSRF against a local HTTP listener | B6 | A web page drives rypsok | REQ-SEC-018 | REQ-TEST-014 |
 | THR-19 | Unauthorized network caller | B6 | Resource consumption; data egress on someone else's behalf | REQ-SEC-018, REQ-SEC-019 | REQ-TEST-014 |
-| THR-20 | A scraping driver runs against a provider's terms, or imitates a browser to get through | B2 | The operator's exposure; the project's honesty | REQ-ENG-013, REQ-ENG-014, REQ-CMP-004 | REQ-TEST-018 |
 | THR-20 | Provider impersonation or downgrade | B2 | False results | REQ-SEC-017 (HTTPS to configured hosts) | REQ-TEST-015 |
 | THR-21 | Protocol corruption: a stray line on stdout | B1 | Loss of service | REQ-MCP-002 | REQ-TEST-009 |
-| THR-22 | Supply chain: a vulnerable or license-incompatible dependency | — | Any of the above | REQ-SEC-020, REQ-TEST-012 | REQ-TEST-012 |
+| THR-22 | Supply chain: a vulnerable, license-incompatible or compromised dependency, including a CI action referenced by a moving tag | — | Any of the above | REQ-SEC-020, REQ-TEST-012 | REQ-TEST-012 |
 | THR-23 | Non-determinism used to hide behavior or defeat tests | — | Untestable output | REQ-ARCH-004 | REQ-TEST-011 |
 | THR-24 | Misleading source metadata: homograph or confusable domains in a returned URL | B4 | The caller trusts the wrong site | REQ-RANK-003 (hosts returned in ASCII form) | REQ-TEST-007 |
+| THR-25 | A scraping driver runs against a provider's terms, or imitates a browser to get through | B2 | The operator's exposure; the project's honesty | REQ-ENG-013, REQ-ENG-014, REQ-CMP-004 | REQ-TEST-018 |
+| THR-26 | A slow or stream-flooding HTTP client exhausts the listener: a body sent a byte at a time, or one HTTP/2 connection opening many streams | B6 | Loss of service for other callers | REQ-SEC-018, REQ-SEC-022 | REQ-TEST-014 |
 
 ## Residual risks, accepted
 
@@ -43,9 +44,17 @@ controls as requirements and the tests that verify them.
 | A deliberate exfiltration that encodes a secret so that no pattern matches | Pattern detection catches accidents, not adversaries | Host: approve what leaves |
 | Results poisoned by search-engine optimization | Inherent to search | Caller |
 | Loss of health state at restart | State is not retained by design | Operator |
+| Queries retained in memory for LIM-K2 while the cache is on | A cache keyed by query is retention of queries; the configuration page says so next to the switch (REQ-CACHE-007) | Operator |
+| At most 200 characters of a provider's error body in a `debug` log line | A driver's author needs the provider's words to classify a new failure; `debug` is explicit and the bound is a constant (external design §16 I5) | Operator who enables `debug` |
 
 ## Review log
 
 | Date | Trigger | Change |
 |---|---|---|
 | 2026-09-30 | Baseline | Register created from the draft threat lists, the startup findings and the consumer analysis |
+| 2026-10-20 | M1 | Controls verified by the M1 tests; THR-16 reviewed against the `Secret` wrapper and the log filter |
+| 2026-10-24 | M2 | THR-13 and THR-15 tied to the circuit breaker (REQ-RES-004) |
+| 2026-10-27 | M3 | THR-05 to THR-07, THR-11, THR-12 and THR-14 reviewed against the fetch pipeline and the egress policy |
+| 2026-10-27 | M4 | THR-18 and THR-19 added for the listener |
+| 2026-10-27 | M5 | THR-17 reviewed against the cache; the scraping threat added (as THR-20, renumbered THR-25 on 2026-10-27) |
+| 2026-10-27 | M7 | Revision against the delivered system (RFC 018): THR-22 extended to CI actions, THR-26 added, two residual risks recorded, the threat model page added |

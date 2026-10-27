@@ -156,3 +156,15 @@ output contains no removed code point; JSON round-trips.
   an ASCII letter, as the HTML tokenizer's tag-open state defines it. The
   Kelvin-sign case of the M3 amendment is covered by the normalization
   before the step; the entity-encoded residual stands.
+
+## Amendment to RFC 005 (2026-10-28, M7 fuzzing)
+
+- The fuzz target of RFC 018 found a third gap the property test could
+  not (it generates printable characters only): a control character
+  between `<` and a letter (`<\0y`) kept the `<` as text in the first
+  pass, whose removal of the control character then produced `<y`, a tag
+  to the second pass. Step 3 (invisible and control characters) now runs
+  before step 1 as well as after entity decoding; `removed` counts both.
+  This is also the safer reading: a hidden character that makes one
+  reader see text and the next see a tag is a bypass, and the boundary
+  now strips what the next reader would strip.

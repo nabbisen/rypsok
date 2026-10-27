@@ -12,6 +12,27 @@ it: what it lists as frozen changes only with a major version, additions
 arrive in minor versions, and every change of a default value is
 announced here with both values.
 
+## [Unreleased] — Security (milestone M7, 0.7.0)
+
+### Added
+
+- The threat model page and the register revised against the delivered
+  system: THR-26 (slow or stream-flooding HTTP clients), THR-22 extended
+  to CI actions, the scraping threat renumbered THR-25, two residual
+  risks recorded, the review log caught up (RFC 018).
+- `[service.http] request_timeout_s` (LIM-H5) and `max_streams` (LIM-H4):
+  a request still running after the bound is answered 408; one HTTP/2
+  connection opens at most `max_streams` streams.
+- `fuzz/`: eight fuzz targets on every parser that reads external bytes,
+  run by the scheduled workflow, report only.
+- Every CI action pinned to a commit hash, with a gate test.
+- Hardened systemd and container profiles on the deployment page.
+
+### Changed
+
+- Invariant I5 states the one exception it always had: a driver may log
+  at most 200 characters of a provider's error body, at `debug` only.
+
 ## [0.6.0] — 2026-10-27 — Users (milestone M6)
 
 ### Added

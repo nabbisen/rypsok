@@ -177,3 +177,45 @@ fn req_main_005_fixtures_and_loopback_servers_exist() {
     assert!(read("crates/rypsok-core/Cargo.toml").contains("wiremock"));
     assert!(read("crates/rypsok/Cargo.toml").contains("wiremock"));
 }
+
+/// REQ-SEC-020 (RFC 018): every action a workflow uses is pinned to a
+/// full commit hash, with the version it stands for as a comment, so
+/// that a moved tag cannot run in this project's CI.
+#[test]
+fn req_sec_020_ci_actions_are_pinned() {
+    let dir = repository_root().join(".github/workflows");
+    let mut seen = 0;
+    for entry in std::fs::read_dir(&dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_none_or(|e| e != "yml") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).unwrap();
+        for (number, line) in text.lines().enumerate() {
+            let Some(rest) = line
+                .trim_start()
+                .strip_prefix("- uses: ")
+                .or_else(|| line.trim_start().strip_prefix("uses: "))
+            else {
+                continue;
+            };
+            seen += 1;
+            let (reference, comment) = rest.split_once('#').unwrap_or((rest, ""));
+            let hash = reference.trim().rsplit('@').next().unwrap_or("");
+            assert!(
+                hash.len() == 40 && hash.chars().all(|c| c.is_ascii_hexdigit()),
+                "{}:{}: `{}` is not pinned to a commit hash",
+                path.display(),
+                number + 1,
+                rest.trim()
+            );
+            assert!(
+                !comment.trim().is_empty(),
+                "{}:{}: the pinned action needs its version as a comment",
+                path.display(),
+                number + 1
+            );
+        }
+    }
+    assert!(seen >= 15, "{seen} action references found");
+}

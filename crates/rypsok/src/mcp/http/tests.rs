@@ -516,3 +516,45 @@ async fn req_ops_002_shutdown_closes_the_listener() {
         .await;
     assert!(refused.is_err(), "nothing listens any more");
 }
+
+/// REQ-SEC-022 and THR-26 (RFC 018): a client that sends its headers and
+/// then a body one byte at a time is answered 408 after LIM-H5, the
+/// connection permit is released, and the listener keeps serving.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn req_sec_022_a_slow_body_is_ended_with_408() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let s = Server::start(
+        "config_version = 1\n[fetch]\ndeadline_ms = 1000\n[service.http]\nbind = \"127.0.0.1:0\"\nrequest_timeout_s = 3\n[engines.w]\ntype = \"wikipedia\"\ncategories = [\"general\"]\n",
+    )
+    .await;
+    let address = s.url.trim_start_matches("http://").trim_end_matches(PATH);
+    let started = std::time::Instant::now();
+    let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
+    stream
+        .write_all(
+            format!(
+                "POST {PATH} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nAccept: application/json, text/event-stream\r\nMCP-Protocol-Version: 2026-07-28\r\nMcp-Method: tools/call\r\nMcp-Name: engine_status\r\nContent-Length: 400\r\n\r\n{{"
+            )
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+    let mut answer = Vec::new();
+    let read = tokio::time::timeout(Duration::from_secs(8), stream.read_to_end(&mut answer)).await;
+    assert!(read.is_ok(), "no answer within 8 s");
+    let elapsed = started.elapsed();
+    let text = String::from_utf8_lossy(&answer);
+    assert!(text.starts_with("HTTP/1.1 408"), "{text}");
+    assert!(elapsed >= Duration::from_secs(3), "{elapsed:?}");
+    assert!(elapsed < Duration::from_secs(6), "{elapsed:?}");
+    // The listener still serves: the permit was released.
+    let response = s
+        .request("server/discover", json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(s.service.counters().calls_of("engine_status", "ok"), 0);
+    s.stop().await;
+}

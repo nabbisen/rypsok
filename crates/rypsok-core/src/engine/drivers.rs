@@ -159,10 +159,22 @@ pub(crate) fn retry_after(headers: &HeaderMap, name: &str) -> Option<Duration> {
         .map(Duration::from_secs)
 }
 
-/// Logs provider error text at `debug`, truncated, and nothing else
-/// (REQ-PRIV-004, REQ-SEC-016).
+/// Most characters of a provider's error body a `debug` line may carry
+/// (external design §16 I5; RFC 018).
+pub const PROVIDER_TEXT_MAX_CHARS: usize = 200;
+
+/// The provider's error body cut to [`PROVIDER_TEXT_MAX_CHARS`].
+pub(crate) fn bounded_provider_text(body: &[u8]) -> String {
+    String::from_utf8_lossy(body)
+        .chars()
+        .take(PROVIDER_TEXT_MAX_CHARS)
+        .collect()
+}
+
+/// Logs provider error text at `debug`, bounded, and nothing else
+/// (REQ-PRIV-004, REQ-SEC-016; external design §16 I5).
 pub(crate) fn debug_provider_text(kind: &'static str, status: u16, body: &[u8]) {
-    let text: String = String::from_utf8_lossy(body).chars().take(200).collect();
+    let text = bounded_provider_text(body);
     tracing::debug!(event = "provider_error", driver = kind, status, provider_text = %text, "provider answered an error");
 }
 

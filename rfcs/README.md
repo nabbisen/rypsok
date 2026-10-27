@@ -58,6 +58,7 @@ _None yet._
 | 015 | [Scraping drivers as an opt-in engine type](./accepted/015-scraping-drivers.md) | M5 | [handoffs/015-scraping-drivers](./handoffs/015-scraping-drivers/README.md) |
 | 016 | [1.0.0: the stable contract](./accepted/016-stable-contract.md) | 1.0.0 | [handoffs/016-stable-contract](./handoffs/016-stable-contract/README.md) |
 | 017 | [User documentation, tutorials and checked examples](./accepted/017-user-documentation.md) | M6 | [handoffs/017-user-documentation](./handoffs/017-user-documentation/README.md) |
+| 018 | [Threat model revision and hardening](./accepted/018-threat-model-revision.md) | M7 | [handoffs/018-threat-model-revision](./handoffs/018-threat-model-revision/README.md) |
 
 ## Implemented
 

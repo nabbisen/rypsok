@@ -749,7 +749,20 @@ caller.
 ### REQ-SEC-020 Supply chain and hardening — M0 · T
 CI shall run a dependency vulnerability audit and a license check; project
 code shall forbid `unsafe`; types that hold secrets shall redact them in
-debug output. (M-21)
+debug output; every CI action shall be pinned to a commit hash. (M-21;
+RFC 018)
+
+### REQ-SEC-022 Request time and stream bounds — M7 · T
+In HTTP mode a request shall be ended with `408` after LIM-H5 whatever
+its state, body or handler, and one HTTP/2 connection shall open at most
+LIM-H4 streams. (THR-26; RFC 018)
+
+### REQ-SEC-023 Fuzzing — M7 · D
+Every parser that reads external bytes (the text cleaner, the content
+cleaner, charset decoding, the HTML document pipeline, the scraping
+reader, URL normalization, the secret check, configuration parsing) shall
+have a fuzz target that runs on the schedule of REQ-TEST-003, report only;
+a finding becomes a test. (RFC 018)
 
 ---
 

@@ -338,3 +338,40 @@ fn req_eng_013_scraping_drivers_run_only_with_the_switch() {
     );
     assert!(!defaults.scraping.enabled);
 }
+
+/// REQ-SEC-022 (RFC 018): the request bound must leave room for a fetch,
+/// and the stream bound has its range.
+#[test]
+fn req_sec_022_request_timeout_needs_room_for_a_fetch() {
+    let short =
+        Config::parse("config_version = 1\n[service.http]\nrequest_timeout_s = 5\n").unwrap();
+    let error = short.validate().unwrap_err();
+    assert!(
+        error
+            .problems
+            .iter()
+            .any(|p| p.starts_with("service.http.request_timeout_s") && p.contains("12000 ms")),
+        "{:?}",
+        error.problems
+    );
+    let enough =
+        Config::parse("config_version = 1\n[service.http]\nrequest_timeout_s = 12\n").unwrap();
+    assert!(enough.validate().is_ok(), "{:?}", enough.validate());
+    let tight = Config::parse(
+        "config_version = 1\n[fetch]\ndeadline_ms = 1000\n[service.http]\nrequest_timeout_s = 3\n",
+    )
+    .unwrap();
+    assert!(tight.validate().is_ok(), "{:?}", tight.validate());
+    let streams = Config::parse("config_version = 1\n[service.http]\nmax_streams = 0\n").unwrap();
+    assert!(
+        streams
+            .validate()
+            .unwrap_err()
+            .problems
+            .iter()
+            .any(|p| p.starts_with("service.http.max_streams"))
+    );
+    let defaults = Config::default();
+    assert_eq!(defaults.service.http.max_streams, 16);
+    assert_eq!(defaults.service.http.request_timeout_s, 30);
+}

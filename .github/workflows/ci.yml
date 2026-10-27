@@ -23,12 +23,12 @@ jobs:
           - os: ubuntu-latest
             toolchain: "1.88"
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-27
         with:
           toolchain: ${{ matrix.toolchain }}
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Format
         run: cargo fmt --all --check
       - name: Lints
@@ -42,17 +42,21 @@ jobs:
     name: Dependency rule, coverage, supply chain, book
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-27
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Dependency rule (REQ-ARCH-005)
         run: tools/check-core-dependencies
       - name: Requirement coverage (REQ-TEST-001)
         run: tools/check-requirements-coverage
-      - uses: taiki-e/install-action@cargo-deny
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: cargo-deny
       - name: Advisories, licenses, sources (REQ-SEC-020)
         run: cargo deny check advisories licenses sources
-      - uses: peaceiris/actions-mdbook@v2
+      - uses: peaceiris/actions-mdbook@ee69d230fe19748b7abf22df32acaa93833fad08 # v2.0.0
         with:
           mdbook-version: latest
       - name: Book
@@ -66,18 +70,20 @@ jobs:
     name: Semantic versioning of the crates
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Workspace major version
         id: version
         run: |
           major=$(sed -n 's/^version = "\([0-9]*\)\..*/\1/p' Cargo.toml | head -n 1)
           echo "major=$major" >> "$GITHUB_OUTPUT"
           echo "workspace major version: $major"
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-27
+        with:
+          toolchain: stable
         if: steps.version.outputs.major != '0'
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         if: steps.version.outputs.major != '0'
-      - uses: obi1kenobi/cargo-semver-checks-action@v2
+      - uses: obi1kenobi/cargo-semver-checks-action@6b69fcf40e9b5fb17adeb57e4b6ecd020649a239 # v2.9
         if: steps.version.outputs.major != '0'
         with:
           package: rypsok-core, rypsok

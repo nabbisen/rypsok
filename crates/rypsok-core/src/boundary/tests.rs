@@ -313,3 +313,21 @@ fn req_sec_015_content_cleaning_keeps_indentation() {
     assert_eq!(cleaned.text, "```\nfn a() {\n    inner();\n}\n```\n\ntail");
     assert_eq!(cleaned.removed, 1);
 }
+
+/// REQ-TEST-013 (RFC 005 amendment of 2026-10-28, found by fuzzing): a
+/// control character between `<` and a letter does not hide a tag from
+/// the first pass; both passes see the same characters.
+#[test]
+fn req_test_013_hidden_characters_do_not_hide_a_tag() {
+    let once = clean_text("<\u{0}y>hidden</y> shown", 50);
+    assert_eq!(
+        once.text, "hidden shown",
+        "both tags stripped, the text kept"
+    );
+    assert!(once.removed >= 1);
+    let twice = clean_text(&once.text, 50);
+    assert_eq!(twice.text, once.text);
+    assert_eq!(twice.removed, 0);
+    let plain = clean_text("a < b", 50);
+    assert_eq!(plain.text, "a < b", "a lone `<` is text");
+}

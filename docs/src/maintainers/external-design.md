@@ -538,7 +538,7 @@ host name of a fetch only after it passed the egress policy (REQ-PRIV-004). Refu
 | I2 | Every outbound request has a deadline and a byte limit enforced while streaming | REQ-SEC-010, REQ-SEC-011 |
 | I3 | The address validated is the address connected to | REQ-SEC-007 |
 | I4 | Every external string reaches the caller only in the external-data part of a response | REQ-SEC-001 |
-| I5 | No provider text appears in an envelope, error, status or log | REQ-SEC-016 |
+| I5 | No provider text appears in an envelope, error, status or log at `info` or above; at `debug` a driver may log at most 200 characters of a provider's error body (RFC 018) | REQ-SEC-016 |
 | I6 | No secret appears in a response or a log | REQ-ERR-004, REQ-PRIV-004 |
 | I7 | A call ends within LIM-S7, LIM-F5 or LIM-S13 with exactly one outcome | REQ-ERR-001 |
 | I8 | Identical engine responses give identical output | REQ-ARCH-004 |

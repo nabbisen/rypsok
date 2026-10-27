@@ -65,10 +65,18 @@ pub fn clean_text(raw: &str, max_chars: u32) -> Cleaned {
     // decision must see the form a second cleaning would see, so that
     // cleaning is idempotent (REQ-TEST-013).
     let normalized_raw: String = raw.nfc().collect();
-    let without_markup = strip_tags(&normalized_raw);
+    // Invisible and control characters go before the markup step too
+    // (RFC 005 amendment of 2026-10-28, found by the fuzz target): a NUL
+    // between `<` and a letter hid a tag from the first pass that the
+    // second pass then stripped. A filter that reads `<\0y>` as text while
+    // the next reader sees `<y>` is the classic bypass; both passes now
+    // see the same characters.
+    let (visible_raw, removed_before) = remove_invisible(&normalized_raw);
+    let without_markup = strip_tags(&visible_raw);
     let decoded = html_escape::decode_html_entities(&without_markup);
     let normalized: String = decoded.nfc().collect();
-    let (visible, removed) = remove_invisible(&normalized);
+    let (visible, removed_after) = remove_invisible(&normalized);
+    let removed = removed_before + removed_after;
     let collapsed = visible.split_whitespace().collect::<Vec<_>>().join(" ");
     let (text, truncated) = bound(&collapsed, max_chars as usize);
     Cleaned {

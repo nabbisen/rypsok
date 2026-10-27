@@ -27,6 +27,7 @@
 - [Requirements](./maintainers/requirements.md)
 - [External design](./maintainers/external-design.md)
 - [Limits and defaults](./maintainers/limits-and-defaults.md)
+- [Threat model](./maintainers/threat-model.md)
 - [Threat register](./maintainers/threat-register.md)
 - [Glossary](./maintainers/glossary.md)
 - [Engine admission records](./maintainers/engines/README.md)

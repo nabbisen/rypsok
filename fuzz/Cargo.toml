@@ -1,0 +1,76 @@
+# Fuzz targets on every parser that reads external bytes (RFC 018,
+# REQ-SEC-023). Its own workspace: built on nightly with cargo-fuzz by the
+# scheduled workflow, report only.
+[package]
+name = "rypsok-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+rypsok-core = { path = "../crates/rypsok-core" }
+
+[[bin]]
+name = "clean_text"
+path = "fuzz_targets/clean_text.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "clean_content"
+path = "fuzz_targets/clean_content.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "html_document"
+path = "fuzz_targets/html_document.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "charset_decode"
+path = "fuzz_targets/charset_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "scrape_read"
+path = "fuzz_targets/scrape_read.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "returned_url"
+path = "fuzz_targets/returned_url.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "privacy_check"
+path = "fuzz_targets/privacy_check.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "config_parse"
+path = "fuzz_targets/config_parse.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+
+[profile.release]
+debug = 1

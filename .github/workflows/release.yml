@@ -13,12 +13,12 @@ jobs:
   image:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Build the image
         run: docker build -t rypsok:${GITHUB_REF_NAME} .
       - name: Save the image
         run: docker save rypsok:${GITHUB_REF_NAME} | gzip > rypsok-${GITHUB_REF_NAME}-image.tar.gz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rypsok-${{ github.ref_name }}-image
           path: rypsok-*-image.tar.gz

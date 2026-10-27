@@ -114,6 +114,10 @@ pub struct HttpConfig {
     pub max_request_bytes: u64,
     /// LIM-H3.
     pub idle_timeout_s: u32,
+    /// LIM-H4 (RFC 018).
+    pub max_streams: u32,
+    /// LIM-H5 (RFC 018): at least `fetch.deadline_ms` + 2 s.
+    pub request_timeout_s: u32,
     /// `[service.http.auth]`.
     pub auth: HttpAuthConfig,
 }
@@ -128,6 +132,8 @@ impl Default for HttpConfig {
             max_connections: defaults::HTTP_MAX_CONNECTIONS,
             max_request_bytes: defaults::HTTP_MAX_REQUEST_BYTES,
             idle_timeout_s: defaults::HTTP_IDLE_TIMEOUT_S,
+            max_streams: defaults::HTTP_MAX_STREAMS,
+            request_timeout_s: defaults::HTTP_REQUEST_TIMEOUT_S,
             auth: HttpAuthConfig::default(),
         }
     }
@@ -756,6 +762,28 @@ impl Config {
             5,
             600,
         );
+        range(
+            &mut problems,
+            "service.http.max_streams",
+            h.max_streams,
+            1,
+            256,
+        );
+        range(
+            &mut problems,
+            "service.http.request_timeout_s",
+            h.request_timeout_s,
+            3,
+            600,
+        );
+        // A request bound shorter than a fetch would end tool calls, not
+        // slow clients (RFC 018, LIM-H5).
+        if u64::from(h.request_timeout_s) * 1000 < u64::from(self.fetch.deadline_ms) + 2000 {
+            problems.push(format!(
+                "service.http.request_timeout_s: must be at least fetch.deadline_ms + 2000 ms ({} ms)",
+                u64::from(self.fetch.deadline_ms) + 2000
+            ));
+        }
         let mut ids = std::collections::BTreeSet::new();
         for (i, caller) in h.auth.callers.iter().enumerate() {
             let key = format!("service.http.auth.callers[{i}]");
@@ -1104,6 +1132,8 @@ impl Config {
             http_max_connections: self.service.http.max_connections,
             http_max_request_bytes: self.service.http.max_request_bytes,
             http_idle_timeout_s: self.service.http.idle_timeout_s,
+            http_max_streams: self.service.http.max_streams,
+            http_request_timeout_s: self.service.http.request_timeout_s,
             failures_to_open: self.resilience.failures_to_open,
             first_cooldown_s: self.resilience.first_cooldown_s,
             max_cooldown_s: self.resilience.max_cooldown_s,

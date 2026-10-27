@@ -46,13 +46,37 @@ A systemd unit for network mode, with the egress restrictions of the
 ```ini
 [Service]
 ExecStart=/usr/local/bin/rypsok serve --transport http --config /etc/rypsok/rypsok.toml
-Environment=RYPSOK_TOKEN_MIMLYS=…        # or LoadCredential= and token_file
+LoadCredential=rypsok-mimlys:/etc/credentials/rypsok-mimlys   # token_file = "/run/credentials/rypsok.service/rypsok-mimlys"
 DynamicUser=yes
-IPAddressDeny=any
-IPAddressAllow=127.0.0.0/8 ::1 93.184.216.0/24
 NoNewPrivileges=yes
 ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=077
+MemoryMax=256M
+TasksMax=64
+IPAddressDeny=any
+IPAddressAllow=127.0.0.0/8 ::1 93.184.216.0/24
 ```
+
+Every line below `ProtectSystem` confines the process to what rypsok
+needs: a network socket, memory, no devices, no namespaces, no new
+privileges and no executable memory. `MemoryMax` and `TasksMax` turn a
+resource bomb that got past rypsok's own bounds into a restart instead
+of a host-wide problem. The `IPAddressAllow` list names the proxy, the
+engines and the sites the operator admits; keep it in step with
+`[egress]`.
 
 ## Container
 
@@ -62,9 +86,15 @@ image that runs as a non-root user and reads `/etc/rypsok/rypsok.toml`:
 ```sh
 docker build -t rypsok .
 docker run --rm -p 127.0.0.1:8737:8737 \
+  --read-only --cap-drop ALL --security-opt no-new-privileges \
+  --memory 256m --pids-limit 64 \
   -v "$PWD/rypsok.toml:/etc/rypsok/rypsok.toml:ro" \
   -e RYPSOK_TOKEN_MIMLYS=… rypsok
 ```
+
+The image is static and runs as a non-root user; the flags take away
+what it does not need: a writable root, every capability, privilege
+escalation, unbounded memory and processes.
 
 Inside the container the bind must be `0.0.0.0:8737`, so callers are
 required; publish the port on loopback or behind the proxy only. Restrict

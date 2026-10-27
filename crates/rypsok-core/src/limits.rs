@@ -115,6 +115,10 @@ pub mod defaults {
     pub const HTTP_MAX_REQUEST_BYTES: u64 = 65536; // LIM-H2
     /// Idle HTTP connection timeout, in seconds (RFC 013).
     pub const HTTP_IDLE_TIMEOUT_S: u32 = 60; // LIM-H3
+    /// Streams one HTTP/2 connection may open (RFC 018).
+    pub const HTTP_MAX_STREAMS: u32 = 16; // LIM-H4
+    /// Time one HTTP request may take, whatever its state, in seconds (RFC 018).
+    pub const HTTP_REQUEST_TIMEOUT_S: u32 = 30; // LIM-H5
 
     /// Lifetime of a cache entry, in seconds.
     pub const CACHE_TTL_S: u32 = 300; // LIM-K2
@@ -187,6 +191,10 @@ pub struct Limits {
     pub http_max_request_bytes: u64,
     /// LIM-H3.
     pub http_idle_timeout_s: u32,
+    /// LIM-H4.
+    pub http_max_streams: u32,
+    /// LIM-H5.
+    pub http_request_timeout_s: u32,
     /// LIM-C1.
     pub outbound_in_flight: u32,
     /// LIM-C2.
@@ -241,6 +249,8 @@ impl Limits {
         http_max_connections: defaults::HTTP_MAX_CONNECTIONS,
         http_max_request_bytes: defaults::HTTP_MAX_REQUEST_BYTES,
         http_idle_timeout_s: defaults::HTTP_IDLE_TIMEOUT_S,
+        http_max_streams: defaults::HTTP_MAX_STREAMS,
+        http_request_timeout_s: defaults::HTTP_REQUEST_TIMEOUT_S,
         outbound_in_flight: defaults::OUTBOUND_IN_FLIGHT,
         per_engine_in_flight: defaults::PER_ENGINE_IN_FLIGHT,
         fetches_in_flight: defaults::FETCHES_IN_FLIGHT,

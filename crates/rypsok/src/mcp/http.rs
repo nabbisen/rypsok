@@ -77,6 +77,10 @@ pub struct HttpSettings {
     pub max_request_bytes: u64,
     /// LIM-H3.
     pub idle_timeout: Duration,
+    /// LIM-H4.
+    pub max_streams: u32,
+    /// LIM-H5.
+    pub request_timeout: Duration,
 }
 
 impl HttpSettings {
@@ -145,6 +149,8 @@ impl HttpSettings {
             max_connections: http.max_connections,
             max_request_bytes: http.max_request_bytes,
             idle_timeout: Duration::from_secs(u64::from(http.idle_timeout_s)),
+            max_streams: http.max_streams,
+            request_timeout: Duration::from_secs(u64::from(http.request_timeout_s)),
         })
     }
 }
@@ -225,6 +231,7 @@ pub async fn run(
             callers: settings.callers,
         }),
         max_request_bytes: settings.max_request_bytes,
+        request_timeout: settings.request_timeout,
     };
     let permits = Arc::new(Semaphore::new(
         usize::try_from(settings.max_connections)
@@ -245,7 +252,9 @@ pub async fn run(
         .http2()
         .timer(TokioTimer::new())
         .keep_alive_interval(settings.idle_timeout)
-        .keep_alive_timeout(H2_PING_TIMEOUT);
+        .keep_alive_timeout(H2_PING_TIMEOUT)
+        // LIM-H4: one connection cannot flood the listener with streams.
+        .max_concurrent_streams(settings.max_streams);
     loop {
         let (stream, remote) = tokio::select! {
             _ = shutdown.cancelled() => break,
@@ -311,6 +320,8 @@ struct Gate {
     inner: Inner,
     auth: Arc<Auth>,
     max_request_bytes: u64,
+    /// LIM-H5: the whole request, body and handler, ends after this.
+    request_timeout: Duration,
 }
 
 impl Service<Request<Incoming>> for Gate {
@@ -347,10 +358,27 @@ impl Service<Request<Incoming>> for Gate {
         parts.extensions.insert(caller);
         let req = Request::from_parts(parts, body);
         let inner = self.inner.clone();
+        let request_timeout = self.request_timeout;
         Box::pin(async move {
-            match inner {
-                Inner::Local(mut service) => service.call(req).await,
-                Inner::Never(mut service) => service.call(req).await,
+            // LIM-H5 (RFC 018): a request that is still running after the
+            // bound is a slow client; the handler's own deadlines are
+            // shorter by the validation rule.
+            let served = async move {
+                match inner {
+                    Inner::Local(mut service) => service.call(req).await,
+                    Inner::Never(mut service) => service.call(req).await,
+                }
+            };
+            match tokio::time::timeout(request_timeout, served).await {
+                Ok(response) => response,
+                Err(_) => {
+                    tracing::warn!(
+                        event = "http_refused",
+                        reason = "request_timeout",
+                        "request ended: LIM-H5"
+                    );
+                    Ok(empty(StatusCode::REQUEST_TIMEOUT))
+                }
             }
         })
     }
