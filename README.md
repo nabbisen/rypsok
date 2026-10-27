@@ -72,8 +72,10 @@ prints what it means.
 
 ## More detail
 
-- [Documentation](docs/src/SUMMARY.md) (mdBook): getting started,
-  tools and responses, configuration, integration guide.
+- [Documentation](https://nabbisen.github.io/rypsok/) (the book, built
+  from `docs/`): getting started, tutorials, reading a response,
+  troubleshooting, tools and responses, configuration, integration guide,
+  deployment, stability.
 - [Requirements](docs/src/maintainers/requirements.md) and
   [external design](docs/src/maintainers/external-design.md).
 - [Roadmap](ROADMAP.md) and [RFCs](rfcs/README.md).
