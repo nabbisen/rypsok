@@ -145,3 +145,14 @@ output contains no removed code point; JSON round-trips.
   accepted and the property test is read with that exception.
 - `clean_content` (RFC 012) keeps spaces inside a line so that code blocks
   keep their indentation; it folds three or more newlines to two.
+
+## Amendment to RFC 005 (2026-10-27, after release 0.5.0)
+
+- The property of RFC 002 found a second gap: NFC reorders combining
+  marks, so `<` followed by two marks could become `<` followed by a mark
+  the earlier rule counted as a letter, and a second cleaning stripped
+  what the first had kept. Step 1 now runs on NFC-normalized text (NFC is
+  applied again after entity decoding, as before), and the tag start is
+  an ASCII letter, as the HTML tokenizer's tag-open state defines it. The
+  Kelvin-sign case of the M3 amendment is covered by the normalization
+  before the step; the entity-encoded residual stands.

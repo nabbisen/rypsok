@@ -59,7 +59,13 @@ pub struct Cleaned {
 /// Cleans a title or snippet: the five steps of RFC 005 in order, bounded
 /// at `max_chars` Unicode scalar values (LIM-U1).
 pub fn clean_text(raw: &str, max_chars: u32) -> Cleaned {
-    let without_markup = strip_tags(raw);
+    // NFC before the markup step as well as after entity decoding (RFC 005
+    // amendment of 2026-10-27): normalization can map a compatibility
+    // letter to ASCII or reorder combining marks after a `<`, and the tag
+    // decision must see the form a second cleaning would see, so that
+    // cleaning is idempotent (REQ-TEST-013).
+    let normalized_raw: String = raw.nfc().collect();
+    let without_markup = strip_tags(&normalized_raw);
     let decoded = html_escape::decode_html_entities(&without_markup);
     let normalized: String = decoded.nfc().collect();
     let (visible, removed) = remove_invisible(&normalized);
@@ -202,10 +208,13 @@ fn strip_tags(raw: &str) -> String {
     let mut chars = raw.char_indices().peekable();
     while let Some((i, c)) = chars.next() {
         if c == '<' {
+            // The HTML tokenizer's tag-open state: an ASCII letter starts
+            // a tag name; the input is NFC already, so a compatibility
+            // letter has become ASCII and a combining mark cannot pass.
             let starts_tag = raw[i + 1..]
                 .chars()
                 .next()
-                .is_some_and(|n| n.is_alphabetic() || matches!(n, '/' | '!' | '?'));
+                .is_some_and(|n| n.is_ascii_alphabetic() || matches!(n, '/' | '!' | '?'));
             if starts_tag {
                 let mut closed = false;
                 for (_, n) in chars.by_ref() {

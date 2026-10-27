@@ -39,6 +39,20 @@ fn req_ctx_004_steps_run_in_order() {
 
 /// REQ-SEC-015: every invisible and control class is removed and counted;
 /// one code point inside and one outside each range.
+/// REQ-TEST-013 (RFC 005 amendment of 2026-10-27): the tag decision sees
+/// normalized text, so a compatibility letter after `<` starts a tag and
+/// reordered combining marks after `<` never do; both clean the same way
+/// twice.
+#[test]
+fn req_test_013_markup_step_sees_normalized_text() {
+    let kelvin = clean_text("<\u{212A}b>x", 50);
+    assert_eq!(kelvin.text, "x");
+    assert_eq!(clean_text(&kelvin.text, 50).text, kelvin.text);
+    let marks = clean_text("<\u{EC8}\u{C55}", 50);
+    assert_eq!(marks.text, "<\u{C55}\u{EC8}");
+    assert_eq!(clean_text(&marks.text, 50).text, marks.text);
+}
+
 #[test]
 fn req_sec_015_invisible_and_control_characters_removed() {
     let cases: [(&str, u32); 9] = [
