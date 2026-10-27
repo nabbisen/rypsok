@@ -8,7 +8,7 @@ Until 1.0.0 the external contract (tool names, parameters, response fields,
 outcomes, error kinds) may change between minor versions; every such change
 is announced here.
 
-## [Unreleased] — Optimization (milestone M5, 0.5.0)
+## [0.5.0] — 2026-10-27 — Optimization (milestone M5)
 
 ### Added
 
@@ -160,7 +160,8 @@ Search deadline 2500 ms, engine timeout 2000 ms, reserve 200 ms, up to 8
 engines per request, 10 results per engine, snippets 300 and titles 150
 characters, query 400 characters, 60 `web_search` calls per minute.
 
-[Unreleased]: https://github.com/nabbisen/rypsok/compare/0.4.0...HEAD
+[Unreleased]: https://github.com/nabbisen/rypsok/compare/0.5.0...HEAD
+[0.5.0]: https://github.com/nabbisen/rypsok/releases/tag/0.5.0
 [0.4.0]: https://github.com/nabbisen/rypsok/releases/tag/0.4.0
 [0.3.0]: https://github.com/nabbisen/rypsok/releases/tag/0.3.0
 [0.2.0]: https://github.com/nabbisen/rypsok/releases/tag/0.2.0
