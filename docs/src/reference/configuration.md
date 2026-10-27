@@ -179,6 +179,20 @@ answer carries the notice `from_cache`.
 | `max_entries` | `1000` | 1–100000 | Entries held at most; the least recently used goes first (LIM-K3) |
 | `max_entry_bytes` | `32768` | 1024–1048576 | An answer above this size is not stored (LIM-K4); memory is at most `max_entries` × `max_entry_bytes` |
 
+## `[scraping]`
+
+Scraping drivers read a provider's human-facing page because no interface
+for programs exists. They are off by default; a table whose driver scrapes
+is refused at startup until this switch is on. Turning it on is your
+acceptance of the provider's terms: rypsok sends its standard User-Agent
+and never imitates a browser, so a provider that refuses it answers with
+a challenge and the engine reports `blocked`. The endpoint's robots.txt is
+recorded in the admission record, not consulted at run time.
+
+| Key | Default | Range | Meaning |
+|---|---|---|---|
+| `enabled` | `false` | boolean | Whether scraping drivers may run (LIM-G1) |
+
 ## `[engines.<id>]`
 
 One table per engine. The identifier is lowercase letters, digits and
@@ -188,7 +202,7 @@ two engines are configured: `wikipedia` (keyless) and `brave` (keyed by
 
 | Key | Default | Range | Meaning |
 |---|---|---|---|
-| `type` | required | `wikipedia`, `brave` | The driver |
+| `type` | required | `wikipedia`, `brave`, `duckduckgo` | The driver; `duckduckgo` scrapes and needs `[scraping] enabled = true` |
 | `enabled` | `true` | boolean | Whether the engine is used |
 | `categories` | required | `general`, `news`, `science`, `code` | The categories the engine serves; at least one |
 | `preference` | `100` | integer | Lower first when results tie |

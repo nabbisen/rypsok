@@ -3,7 +3,7 @@
 //! test in `fetch/tests.rs` covers whole pages; these cover the rules.
 
 use super::*;
-use crate::fetch::dom::parse;
+use crate::html::dom::parse;
 
 fn content_text(html: &str) -> (String, Extraction) {
     let dom = parse(html, 100_000);

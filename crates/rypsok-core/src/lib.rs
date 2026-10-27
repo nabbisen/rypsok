@@ -39,6 +39,7 @@ pub mod config;
 pub mod egress;
 pub mod engine;
 pub mod fetch;
+pub mod html;
 pub mod limits;
 pub mod model;
 pub mod privacy;
@@ -137,7 +138,23 @@ impl Rypsok {
             problems: vec![format!(
                 "fetch: the HTTP client could not be built: {error}"
             )],
-        })?;
+        })?
+        .with_parsing(Arc::clone(registry.parsing()));
+        // Scraping drivers run only by the operator's decision; the log
+        // names them at startup (RFC 015).
+        let scraping: Vec<&str> = registry
+            .engines()
+            .iter()
+            .filter(|e| e.properties().is_some_and(|p| p.scraping))
+            .map(|e| e.id.as_str())
+            .collect();
+        if !scraping.is_empty() {
+            tracing::warn!(
+                event = "scraping_enabled",
+                engines = %scraping.join(","),
+                "scraping drivers are enabled by [scraping]; the provider's terms are the operator's responsibility"
+            );
+        }
         let cache = config.cache.enabled.then(|| {
             let storable = registry
                 .engines()

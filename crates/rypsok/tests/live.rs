@@ -93,3 +93,41 @@ async fn live_brave_search() {
         .expect("brave answers");
     assert!(!response.results.is_empty(), "brave returned no result");
 }
+
+/// REQ-TEST-003 and RFC 015: the DuckDuckGo HTML driver against the real
+/// endpoint with the honest User-Agent. A `blocked` answer is the
+/// provider's decision and is reported as such, never worked around
+/// (REQ-ENG-014).
+#[tokio::test]
+#[ignore = "reaches the real provider; run by the scheduled workflow"]
+async fn live_duckduckgo_search() {
+    let config = config(
+        "[scraping]\nenabled = true\n[engines.ddg]\ntype = \"duckduckgo\"\ncategories = [\"general\"]\n",
+    );
+    let registry = Registry::build(&config, None, true);
+    let engine = registry
+        .select(Category::General, 1)
+        .into_iter()
+        .next()
+        .expect("duckduckgo active");
+    let driver = engine.driver.as_deref().unwrap();
+    match driver
+        .search(
+            &request("Rust programming language"),
+            CancellationToken::new(),
+        )
+        .await
+    {
+        Ok(response) => {
+            assert!(
+                !response.results.is_empty(),
+                "duckduckgo returned no result"
+            );
+            assert!(response.results[0].url.starts_with("http"));
+        }
+        Err(error) => panic!(
+            "duckduckgo answered {:?}: the provider refuses the honest agent or its format drifted",
+            error.class
+        ),
+    }
+}

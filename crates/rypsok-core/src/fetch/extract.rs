@@ -5,7 +5,7 @@
 
 use std::collections::HashSet;
 
-use super::dom::{DOCUMENT, Dom, Handle, Kind};
+use crate::html::dom::{DOCUMENT, Dom, Handle, Kind};
 
 /// Elements a browser never renders, and `head` once the title is taken
 /// (REQ-CTX-005, REQ-FETCH-009).

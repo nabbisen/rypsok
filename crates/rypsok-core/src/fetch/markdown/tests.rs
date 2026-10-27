@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 
 use super::*;
-use crate::fetch::dom::parse;
+use crate::html::dom::parse;
 
 fn md(html: &str) -> String {
     let dom = parse(html, 100_000);

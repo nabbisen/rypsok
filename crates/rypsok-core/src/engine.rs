@@ -12,6 +12,7 @@
 pub mod drivers;
 pub mod limiter;
 pub mod registry;
+pub mod scrape;
 
 use std::time::Duration;
 
@@ -177,6 +178,9 @@ pub struct EngineProperties {
     pub user_agent: UserAgentFormat,
     /// Most bytes read from one response.
     pub max_response_bytes: u64,
+    /// Whether the driver reads a human-facing interface (RFC 015): such
+    /// an engine runs only with `[scraping] enabled = true` (REQ-ENG-013).
+    pub scraping: bool,
 }
 
 impl EngineProperties {

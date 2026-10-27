@@ -8,12 +8,16 @@
 
 #[cfg(feature = "engine-brave")]
 pub mod brave;
+#[cfg(feature = "engine-duckduckgo")]
+pub mod duckduckgo;
 #[cfg(feature = "engine-wikipedia")]
 pub mod wikipedia;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use reqwest::header::HeaderMap;
+use tokio::sync::Semaphore;
 
 use super::Driver;
 use crate::config::{EngineTable, Secret};
@@ -27,6 +31,8 @@ pub fn declared_keys(kind: &str) -> Option<&'static [&'static str]> {
         "wikipedia" => Some(&["base_url"]),
         #[cfg(feature = "engine-brave")]
         "brave" => Some(&["api_key_env", "api_key_file", "endpoint"]),
+        #[cfg(feature = "engine-duckduckgo")]
+        "duckduckgo" => Some(&[]),
         _ => None,
     }
 }
@@ -34,6 +40,12 @@ pub fn declared_keys(kind: &str) -> Option<&'static [&'static str]> {
 /// Whether a driver type needs a credential.
 pub fn needs_credential(kind: &str) -> bool {
     kind == "brave"
+}
+
+/// Whether a driver type reads a human-facing interface (RFC 015): such
+/// a table is refused unless `[scraping] enabled = true` (REQ-ENG-013).
+pub fn is_scraping(kind: &str) -> bool {
+    kind == "duckduckgo"
 }
 
 /// What every driver gets when it is built.
@@ -51,6 +63,11 @@ pub struct DriverContext {
     pub https_only: bool,
     /// A base URL replacing the provider's, for tests.
     pub base_override: Option<url::Url>,
+    /// The process-wide parsing permits (LIM-C5), shared with the fetch
+    /// pipeline; scraping drivers parse under them (REQ-ENG-015).
+    pub parsing: Arc<Semaphore>,
+    /// LIM-F10, for scraping drivers.
+    pub html_max_nodes: u32,
 }
 
 impl DriverContext {
@@ -94,6 +111,8 @@ pub fn build(
         "wikipedia" => Ok(Box::new(wikipedia::Wikipedia::new(table, context)?)),
         #[cfg(feature = "engine-brave")]
         "brave" => Ok(Box::new(brave::Brave::new(table, secret, context)?)),
+        #[cfg(feature = "engine-duckduckgo")]
+        "duckduckgo" => Ok(Box::new(duckduckgo::DuckDuckGo::new(context)?)),
         _ => Err(DriverBuildError::UnknownKind),
     }
 }

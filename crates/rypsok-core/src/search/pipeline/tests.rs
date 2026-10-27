@@ -56,6 +56,7 @@ fn properties() -> EngineProperties {
         attribution_required: false,
         user_agent: UserAgentFormat::Standard,
         max_response_bytes: 1024,
+        scraping: false,
     }
 }
 

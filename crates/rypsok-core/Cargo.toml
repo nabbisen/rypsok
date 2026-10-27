@@ -12,11 +12,14 @@ repository.workspace = true
 authors.workspace = true
 
 [features]
-default = ["engine-wikipedia", "engine-brave"]
+default = ["engine-wikipedia", "engine-brave", "engine-duckduckgo"]
 ## The Wikipedia driver (keyless).
 engine-wikipedia = []
 ## The Brave Search driver (keyed).
 engine-brave = []
+## The DuckDuckGo HTML driver: a scraping driver, off unless
+## `[scraping] enabled = true` (RFC 015).
+engine-duckduckgo = []
 
 [dependencies]
 serde.workspace = true

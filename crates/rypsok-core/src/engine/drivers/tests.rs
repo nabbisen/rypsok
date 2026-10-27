@@ -13,9 +13,13 @@ fn req_eng_002_drivers_declare_their_keys() {
         declared_keys("brave"),
         Some(&["api_key_env", "api_key_file", "endpoint"][..])
     );
+    assert_eq!(declared_keys("duckduckgo"), Some(&[][..]));
     assert_eq!(declared_keys("altavista"), None);
     assert!(needs_credential("brave"));
     assert!(!needs_credential("wikipedia"));
+    assert!(!needs_credential("duckduckgo"));
+    assert!(is_scraping("duckduckgo"));
+    assert!(!is_scraping("wikipedia") && !is_scraping("brave"));
 }
 
 /// REQ-RES-002: `Retry-After` is read in seconds and bounded.

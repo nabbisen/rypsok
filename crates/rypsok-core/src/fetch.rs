@@ -6,8 +6,8 @@
 //! (REQ-PAGE-001). Nothing is kept between calls except the robots.txt
 //! cache and the strict-mode set.
 
-pub mod charset;
-pub mod dom;
+use crate::html::charset;
+use crate::html::dom;
 pub mod extract;
 pub mod markdown;
 pub mod robots;
@@ -144,6 +144,14 @@ impl FetchService {
             hosts: Mutex::new(HashMap::new()),
             fetches_in_flight: limits.fetches_in_flight as usize,
         })
+    }
+
+    /// The same service parsing under permits shared with the scraping
+    /// drivers, so that LIM-C5 bounds the process (RFC 015).
+    #[must_use]
+    pub fn with_parsing(mut self, parsing: Arc<Semaphore>) -> Self {
+        self.parsing = parsing;
+        self
     }
 
     /// The robots.txt cache.

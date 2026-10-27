@@ -62,6 +62,9 @@ pub struct Config {
     /// `[cache]` (RFC 014).
     #[serde(default)]
     pub cache: CacheConfig,
+    /// `[scraping]` (RFC 015).
+    #[serde(default)]
+    pub scraping: ScrapingConfig,
     /// `[engines.<id>]`, keyed by engine identifier.
     #[serde(default = "default_engines")]
     pub engines: BTreeMap<String, EngineTable>,
@@ -436,6 +439,17 @@ impl Default for StatusConfig {
     }
 }
 
+/// `[scraping]`: the switch of RFC 015 (LIM-G1). Off by default; a table
+/// whose driver reads a human-facing interface is refused while it is
+/// off (REQ-ENG-013). Turning it on is the operator's acceptance of the
+/// provider's terms.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ScrapingConfig {
+    /// LIM-G1.
+    pub enabled: bool,
+}
+
 /// `[cache]`: the result cache of RFC 014. Off by default (LIM-K1). When
 /// on, the queries of the last `ttl_s` seconds are retained in memory
 /// as cache keys (REQ-CACHE-007).
@@ -554,6 +568,7 @@ impl Default for Config {
             logging: LoggingConfig::default(),
             status: StatusConfig::default(),
             cache: CacheConfig::default(),
+            scraping: ScrapingConfig::default(),
             engines: default_engines(),
         }
     }
@@ -991,6 +1006,12 @@ impl Config {
         for (id, table) in &self.engines {
             if EngineId::new(id.as_str()).is_err() {
                 problems.push(format!("engines.{id}: not an engine identifier (lowercase letters, digits, underscores)"));
+            }
+            if crate::engine::drivers::is_scraping(&table.kind) && !self.scraping.enabled {
+                problems.push(format!(
+                    "engines.{id}: type \"{}\" scrapes a human-facing interface; it runs only with [scraping] enabled = true, at the operator's risk under the provider's terms",
+                    table.kind
+                ));
             }
             match crate::engine::drivers::declared_keys(&table.kind) {
                 None => problems.push(format!("engines.{id}.type: no such driver")),

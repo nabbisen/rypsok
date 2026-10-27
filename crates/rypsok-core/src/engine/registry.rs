@@ -5,6 +5,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use tokio::sync::Semaphore;
+
 use super::drivers::{self, DriverContext};
 use super::limiter::EngineLimiter;
 use super::{Driver, EngineProperties};
@@ -75,6 +77,9 @@ impl Engine {
 #[derive(Debug)]
 pub struct Registry {
     engines: Vec<Arc<Engine>>,
+    /// The parsing permits (LIM-C5) shared by the scraping drivers and
+    /// the fetch pipeline (RFC 015).
+    parsing: Arc<Semaphore>,
 }
 
 impl Registry {
@@ -84,6 +89,7 @@ impl Registry {
     /// (REQ-OPS-003).
     pub fn build(config: &Config, base_override: Option<url::Url>, https_only: bool) -> Registry {
         let limits = config.limits();
+        let parsing = Arc::new(Semaphore::new(limits.parsing_in_flight as usize));
         let context = DriverContext {
             user_agent: egress::standard_user_agent(&config.service.user_agent_contact),
             connect_timeout: Duration::from_millis(u64::from(limits.engine_connect_timeout_ms)),
@@ -91,6 +97,8 @@ impl Registry {
             proxy: Some(config.egress.proxy.clone()).filter(|p| !p.is_empty()),
             https_only,
             base_override,
+            parsing: Arc::clone(&parsing),
+            html_max_nodes: limits.html_max_nodes,
         };
         let engines: Vec<Engine> = config
             .engines
@@ -140,7 +148,9 @@ impl Registry {
                 }
             })
             .collect();
-        Registry::from_engines(engines)
+        let mut registry = Registry::from_engines(engines);
+        registry.parsing = parsing;
+        registry
     }
 
     /// A registry of these engines, ordered by preference and identifier.
@@ -152,7 +162,16 @@ impl Registry {
         });
         Registry {
             engines: engines.into_iter().map(Arc::new).collect(),
+            parsing: Arc::new(Semaphore::new(
+                crate::limits::defaults::PARSING_IN_FLIGHT as usize,
+            )),
         }
+    }
+
+    /// The parsing permits (LIM-C5) the scraping drivers were built with;
+    /// the fetch pipeline shares them (RFC 015).
+    pub fn parsing(&self) -> &Arc<Semaphore> {
+        &self.parsing
     }
 
     /// Every engine in preference order.

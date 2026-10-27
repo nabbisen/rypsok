@@ -26,6 +26,8 @@ fn context(server: &MockServer) -> DriverContext {
         proxy: None,
         https_only: false,
         base_override: Some(url::Url::parse(&format!("{}/", server.uri())).unwrap()),
+        parsing: std::sync::Arc::new(tokio::sync::Semaphore::new(2)),
+        html_max_nodes: 50_000,
     }
 }
 

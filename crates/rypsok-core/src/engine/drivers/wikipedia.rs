@@ -30,6 +30,7 @@ pub const PROPERTIES: EngineProperties = EngineProperties {
     attribution_required: false,
     user_agent: UserAgentFormat::Standard,
     max_response_bytes: 1_048_576,
+    scraping: false,
 };
 
 /// The Wikipedia driver.

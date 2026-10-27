@@ -5,7 +5,7 @@
 
 use std::collections::HashSet;
 
-use super::dom::{Dom, Handle, Kind};
+use crate::html::dom::{Dom, Handle, Kind};
 
 /// What the renderer needs besides the tree.
 #[derive(Debug, Clone, Copy)]

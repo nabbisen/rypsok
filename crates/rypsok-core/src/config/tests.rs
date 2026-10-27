@@ -301,3 +301,40 @@ fn req_res_008_proxy_comes_from_configuration_only() {
     let again = Config::parse("config_version = 1\n").unwrap();
     assert_eq!(again.egress.proxy, none.egress.proxy);
 }
+
+/// REQ-ENG-013 (RFC 015): a scraping driver's table is refused unless
+/// `[scraping] enabled = true`, with the sentence that names the engine,
+/// the type and the operator's responsibility; with the switch it is
+/// accepted; the default set never contains a scraping engine.
+#[test]
+fn req_eng_013_scraping_drivers_run_only_with_the_switch() {
+    let table = "[engines.ddg]\ntype = \"duckduckgo\"\ncategories = [\"general\"]\n";
+    let refused = Config::parse(&format!("config_version = 1\n{table}")).unwrap();
+    let error = refused.validate().unwrap_err();
+    assert_eq!(
+        error.problems,
+        vec![
+            "engines.ddg: type \"duckduckgo\" scrapes a human-facing interface; it runs only with [scraping] enabled = true, at the operator's risk under the provider's terms"
+                .to_owned()
+        ]
+    );
+    let accepted = Config::parse(&format!(
+        "config_version = 1\n[scraping]\nenabled = true\n{table}"
+    ))
+    .unwrap();
+    assert!(accepted.validate().is_ok(), "{:?}", accepted.validate());
+    let keyed = Config::parse(&format!(
+        "config_version = 1\n[scraping]\nenabled = true\n{table}base_url = \"https://x\"\n"
+    ))
+    .unwrap();
+    assert!(keyed.validate().unwrap_err().problems[0].contains("not a key of driver duckduckgo"));
+    let defaults = Config::default();
+    assert!(
+        defaults
+            .engines
+            .values()
+            .all(|t| !crate::engine::drivers::is_scraping(&t.kind)),
+        "the default set never scrapes"
+    );
+    assert!(!defaults.scraping.enabled);
+}

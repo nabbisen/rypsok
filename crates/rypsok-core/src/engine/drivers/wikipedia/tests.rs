@@ -29,6 +29,8 @@ fn context(server: &MockServer) -> DriverContext {
         proxy: None,
         https_only: false,
         base_override: Some(url::Url::parse(&format!("{}/", server.uri())).unwrap()),
+        parsing: std::sync::Arc::new(tokio::sync::Semaphore::new(2)),
+        html_max_nodes: 50_000,
     }
 }
 
@@ -228,6 +230,8 @@ fn req_sec_017_base_url_must_be_https_unless_loopback() {
         proxy: None,
         https_only: true,
         base_override: None,
+        parsing: std::sync::Arc::new(tokio::sync::Semaphore::new(2)),
+        html_max_nodes: 50_000,
     };
     let with = |base: &str| {
         let mut keys = BTreeMap::new();

@@ -11,6 +11,7 @@ is a change to the other.
 |---|---|---|---|
 | Wikipedia | `wikipedia` | none | [wikipedia.md](./wikipedia.md) |
 | Brave Search | `brave` | `X-Subscription-Token` | [brave.md](./brave.md) |
+| DuckDuckGo (HTML), a scraping driver behind `[scraping]` (RFC 015) | `duckduckgo` | none | [duckduckgo.md](./duckduckgo.md) |
 
 Live checks run on a schedule from `.github/workflows/scheduled.yml`,
 never on a pull request and never as a gate (REQ-TEST-003). They send one

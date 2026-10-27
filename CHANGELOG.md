@@ -19,6 +19,14 @@ is announced here.
   RFC 014). `web_fetch` is never cached.
 - `CallerId` is a core type; `Rypsok::search_as` searches on behalf of a
   caller (the caller of the HTTP gate, or `local`).
+- Scraping drivers as an opt-in engine type behind `[scraping] enabled`
+  (off by default; a scraping table is refused without it; never in the
+  default set); the standard User-Agent and no browser imitation; a
+  challenge is `blocked`; bounded like `web_fetch` and parsed under the
+  shared parsing permits (LIM-G1, RFC 015). First driver: `duckduckgo`
+  (the HTML endpoint), with its admission record.
+- `rypsok_core::html`: the bounded DOM and charset decoding, shared by
+  the fetch pipeline and the scraping drivers (moved out of `fetch`).
 
 ### Changed
 
