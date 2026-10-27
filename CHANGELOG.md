@@ -12,9 +12,19 @@ it: what it lists as frozen changes only with a major version, additions
 arrive in minor versions, and every change of a default value is
 announced here with both values.
 
-## [Unreleased]
+## [Unreleased] — Users (milestone M6, 0.6.0)
 
 ### Added
+
+- The book's part for new users: five tutorials (a first search by hand
+  and with a runtime, a keyed engine, reading a page in parts, network
+  mode behind a proxy, the scraping switch), "Reading a response" for
+  the author of a host's prompt, and "Troubleshooting" (RFC 017).
+- `examples/`: configurations, host entries and real call answers that
+  the tutorials include and CI checks; the first tutorial runs end to
+  end in CI.
+- A workflow that builds the book on every push and publishes it to
+  GitHub Pages once Pages is enabled.
 
 - The stability page: what is frozen from 1.0.0, what may be added in a
   minor version, and what may change with notice (defaults, logs, the

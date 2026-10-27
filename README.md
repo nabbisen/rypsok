@@ -43,26 +43,13 @@ Add an MCP server entry to your agent runtime, for example:
 { "mcpServers": { "rypsok": { "command": "rypsok", "args": ["serve"] } } }
 ```
 
-To add Brave Search, put a key in the environment and a file next to it:
-
-```toml
-# rypsok.toml
-config_version = 1
-
-[engines.brave]
-type = "brave"
-categories = ["general"]
-api_key_env = "BRAVE_API_KEY"
-```
-
-```sh
-rypsok check --config rypsok.toml   # validates and prints the effective settings
-rypsok serve --config rypsok.toml
-```
-
-See [Getting started](docs/src/getting-started.md), the
-[tools reference](docs/src/reference/tools.md) and the
-[configuration reference](docs/src/reference/configuration.md).
+That is a working setup with Wikipedia. From there, five tutorials take
+you to a keyed engine, reading pages, network mode and the scraping
+switch, each with a checked example:
+[Tutorial 1: your first search](docs/src/tutorials/01-first-search.md).
+The [configuration reference](docs/src/reference/configuration.md) lists
+every key, and `rypsok check --config rypsok.toml` validates a file and
+prints what it means.
 
 ## Design notes
 

@@ -5,6 +5,14 @@
 # For new users
 
 - [Getting started](./getting-started.md)
+- [Tutorials](./tutorials/README.md)
+  - [1. Your first search](./tutorials/01-first-search.md)
+  - [2. A keyed engine](./tutorials/02-keyed-engine.md)
+  - [3. Reading a page](./tutorials/03-reading-a-page.md)
+  - [4. Network mode](./tutorials/04-network-mode.md)
+  - [5. The scraping switch](./tutorials/05-scraping.md)
+- [Reading a response](./reading-a-response.md)
+- [Troubleshooting](./troubleshooting.md)
 
 # For integrators
 

@@ -1,8 +1,7 @@
 # Getting started
 
-rypsok is one binary that speaks the Model Context Protocol over standard
-input and output. An agent runtime starts it, lists its tools, and calls
-`web_search`.
+rypsok is one binary. An agent runtime starts it, or connects to it over
+HTTP, and calls three tools: `web_search`, `web_fetch` and `engine_status`.
 
 ## Install
 
@@ -12,78 +11,40 @@ rypsok --version
 ```
 
 Binaries for Linux, macOS and Windows are attached to each release on
-GitHub.
+GitHub, and a container image is built for each release.
 
-## Run without a file
+## Run
 
 ```sh
 rypsok serve
 ```
 
-With no configuration, rypsok serves `web_search` with the keyless engine
-(Wikipedia) and logs, on standard error, which keyed engines are inactive
-for lack of a credential. Logs are one JSON object per line; nothing but
-protocol messages is ever written to standard output.
+With no configuration file, rypsok serves `web_search` and `web_fetch`
+with the keyless engine, Wikipedia. Logs go to standard error, one JSON
+object per line; standard output carries protocol messages only. Stop it
+with Ctrl-C or by closing its input.
 
-## Add an engine with a key
+## Check a configuration
 
-Brave Search needs a subscription token. Give it by environment variable
-or by file, never inline:
+The smallest file is the same as no file:
 
 ```toml
-# rypsok.toml
-config_version = 1
-
-[search]
-languages = ["en", "ja"]
-
-[engines.wikipedia]
-type = "wikipedia"
-categories = ["general", "science"]
-
-[engines.brave]
-type = "brave"
-categories = ["general"]
-api_key_env = "BRAVE_API_KEY"
+{{#include ../../examples/configs/minimal.toml}}
 ```
 
 ```sh
-export BRAVE_API_KEY=...
 rypsok check --config rypsok.toml
-rypsok serve --config rypsok.toml
 ```
 
-`check` validates the file and prints the effective limits, the engines
-and whether each credential resolves. Every problem names its key. The
-file can also be named by `RYPSOK_CONFIG`.
+`check` says whether the file is valid, prints the effective settings and
+each engine with the reason it is inactive, if it is, and exits with 0 for
+a valid file, 1 for an invalid one. The file can also be named by the
+environment variable `RYPSOK_CONFIG`.
 
-## Call the tools
+## Where next
 
-From a runtime, the tool list is `web_search`, `web_fetch` and
-`engine_status`. A search:
-
-```json
-{ "name": "web_search", "arguments": { "query": "rust async runtime", "max_results": 5 } }
-```
-
-returns one structured object: an `outcome` (`ok`, `partial`, `empty`),
-`notices` from a fixed vocabulary, and bounded `results`. Everything in
-`title`, `snippet` and `url` is external data. The same object is returned
-as JSON text for hosts that read text only.
-
-A query that looks like it carries a credential is refused with a `denied`
-error that names the kind and position, never the value.
-
-## Budget note
-
-Text budgets count Unicode scalar values. Japanese and other CJK text costs
-several times more model tokens per character than English, so a 300
-character snippet in Japanese is a larger share of a context window than
-the same number of characters in English.
-
-## Next
-
-- [Tools and responses](./reference/tools.md): every field, notice and
-  error.
-- [Configuration](./reference/configuration.md): every key and its default.
-- [Integration guide for hosts](./reference/integration-guide.md).
+- [Tutorial 1: your first search](./tutorials/01-first-search.md) takes
+  ten minutes and needs nothing but the binary.
+- [Reading a response](./reading-a-response.md) is for the person who
+  writes the prompt of the agent that will call rypsok.
+- [Troubleshooting](./troubleshooting.md) when something does not work.

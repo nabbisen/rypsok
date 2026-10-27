@@ -1,0 +1,3 @@
+# The smallest file: the same as no file at all. Wikipedia (keyless) is
+# active; Brave is configured but inactive until BRAVE_API_KEY is set.
+config_version = 1

@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "rypsok": {
+      "url": "https://rypsok.example/mcp",
+      "headers": {
+        "Authorization": "Bearer ${RYPSOK_TOKEN_MIMLYS}"
+      }
+    }
+  }
+}

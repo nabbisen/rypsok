@@ -1,0 +1,17 @@
+# Tutorial 2: Wikipedia plus Brave Search. The key is read from the
+# environment variable named here; an inline key is refused at startup.
+config_version = 1
+
+[search]
+languages = ["en", "ja"]
+
+[engines.wikipedia]
+type = "wikipedia"
+categories = ["general", "science"]
+preference = 10
+
+[engines.brave]
+type = "brave"
+categories = ["general", "news"]
+preference = 20
+api_key_env = "BRAVE_API_KEY"

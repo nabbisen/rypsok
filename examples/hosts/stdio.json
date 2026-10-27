@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "rypsok": {
+      "command": "rypsok",
+      "args": ["serve", "--config", "/etc/rypsok/rypsok.toml"]
+    }
+  }
+}

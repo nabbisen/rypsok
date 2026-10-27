@@ -10,7 +10,8 @@ its core is a Rust library that any host can use.
 
 This book has three parts:
 
-- **New users:** install and run rypsok with an MCP host.
+- **New users:** install rypsok, follow five tutorials from a first search
+  to network mode, learn to read a response, and fix what does not work.
 - **Integrators:** the tools, their responses, the configuration, and what a
   host must do on its side.
 - **Maintainers:** the requirements, the external design, the limits, the

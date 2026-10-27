@@ -1105,6 +1105,29 @@ response field, an outcome or an error kind is a breaking change of the
 external contract and shall be announced in the changelog before 1.0.0 and
 carried by a major version after it. (M-22)
 
+Documentation for users (milestone M6, RFC 017):
+
+### REQ-DOC-001 Tutorials — M6 · I
+The book shall carry tutorials a new user can follow from the book alone,
+in the order the features are met; every command and file shown shall be
+the checked example.
+
+### REQ-DOC-002 Checked examples — M6 · T
+Every example configuration shall validate and pass `check`, every host
+entry shall parse with the shape a runtime reads, every example call
+shall match the tool contract, and the first tutorial shall run end to
+end, all in CI.
+
+### REQ-DOC-003 Reading a response — M6 · I
+The book shall explain outcomes, notices and errors to the author of a
+host's prompt, with the action each suggests, and shall state the
+external-data rule in words a prompt can carry.
+
+### REQ-DOC-004 Troubleshooting — M6 · I
+The book shall map the symptoms a user meets to their causes and fixes,
+using `check`, `engine_status`, the logs, the HTTP statuses and the exit
+codes.
+
 ---
 
 ## 23. Platforms, deployment and operation
