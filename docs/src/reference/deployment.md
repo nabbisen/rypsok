@@ -14,13 +14,27 @@ mode for a host on the same machine, and the default.
 `rypsok serve --transport http` listens on `[service.http].bind`, loopback
 by default, and serves MCP on `/mcp`. The 2026-07-28 revision is served
 statelessly; the handshake-based revisions keep their sessions in memory
-until `legacy_revisions = false`.
+until `legacy_revisions = false`, which refuses them.
+
+A stateless request carries the standard headers of the revision beside
+the metadata in its body; without them the answer is 400:
+
+```sh
+curl -sS http://127.0.0.1:8737/mcp \
+  -H 'Content-Type: application/json' -H 'Accept: application/json' \
+  -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: engine_status' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"engine_status","arguments":{},
+       "_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28",
+                "io.modelcontextprotocol/clientInfo":{"name":"probe","version":"0"},
+                "io.modelcontextprotocol/clientCapabilities":{}}}}'
+```
 
 - **Off loopback, callers are required.** Each caller has an identifier
   and a token read from the environment or a file, presented as
   `Authorization: Bearer <token>`; rate limits apply per caller.
 - **TLS is terminated in front of rypsok**, by a reverse proxy or a
-  tunnel. List the name the proxy forwards in `allowed_hosts`.
+  tunnel. List the name the proxy forwards in `allowed_hosts`; a bind on
+  `0.0.0.0` or `::` requires that list.
 - `Host` and `Origin` are validated; a foreign `Host` is refused, and any
   `Origin` is refused unless listed.
 - Connections, request bodies and idle time are bounded (LIM-H1 to

@@ -34,12 +34,12 @@ chooses it on the command line, where the launching host can see it.
 | Key | Default | Range | Meaning |
 |---|---|---|---|
 | `bind` | `"127.0.0.1:8737"` | address and port | Listener of `serve --transport http`; off loopback it needs callers |
-| `allowed_hosts` | `[]` | host names, `host:port` | `Host` values accepted; empty means loopback names and the bind host |
+| `allowed_hosts` | `[]` | host names, `host:port` | `Host` values accepted; empty means loopback names and the bind host; required for a bind on `0.0.0.0` or `::` |
 | `allowed_origins` | `[]` | origins with a scheme, `:*` for any port, `null` | `Origin` values accepted; empty means every present `Origin` is refused |
-| `legacy_revisions` | `true` | boolean | Serve the handshake-based revisions with sessions in memory; the 2026-07-28 revision is always stateless |
+| `legacy_revisions` | `true` | boolean | Serve the handshake-based revisions with sessions in memory; `false` refuses them (`initialize` gets error `-32022`); the 2026-07-28 revision is always stateless |
 | `max_connections` | `64` | 1–4096 | Connections accepted at once (LIM-H1) |
-| `max_request_bytes` | `65536` | 4096–1048576 | Size of a request body (LIM-H2) |
-| `idle_timeout_s` | `60` | 5–600 | Idle connection timeout (LIM-H3) |
+| `max_request_bytes` | `65536` | 4096–1048576 | Size of a request body (LIM-H2); the same 413 whether declared or streamed |
+| `idle_timeout_s` | `60` | 5–600 | Idle connection timeout (LIM-H3): HTTP/1 closes after it; HTTP/2 pings after it and closes when the ping goes unanswered |
 
 rypsok does not terminate TLS: off loopback, put a reverse proxy or a
 tunnel in front and list its host in `allowed_hosts`. Browsers never call

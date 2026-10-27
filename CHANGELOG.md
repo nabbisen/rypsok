@@ -8,6 +8,23 @@ Until 1.0.0 the external contract (tool names, parameters, response fields,
 outcomes, error kinds) may change between minor versions; every such change
 is announced here.
 
+## [Unreleased]
+
+### Changed
+
+- `legacy_revisions = false` now refuses the handshake-based revisions:
+  `initialize` gets the JSON-RPC error `-32022` and `server/discover`
+  lists the 2026-07-28 revision alone (RFC 013 amendment).
+- A bind on an unspecified address (`0.0.0.0`, `::`) requires
+  `allowed_hosts`; the bind host is no longer admitted as a `Host`.
+- HTTP/2 connections get a keep-alive ping after `idle_timeout_s` and are
+  closed when it goes unanswered (LIM-H3 on both HTTP versions).
+
+### Documentation
+
+- The headers a host must send over HTTP (`MCP-Protocol-Version`,
+  `Mcp-Method`, `Mcp-Name`) with a complete example.
+
 ## [0.4.0] — 2026-10-27 — Network transport (milestone M4)
 
 ### Added

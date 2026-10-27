@@ -10,6 +10,14 @@ This page is for the author of an agent runtime that embeds rypsok.
 - rypsok implements MCP revision 2026-07-28 (`server/discover`, stateless
   requests with `_meta`) and keeps serving the handshake-based revisions
   the SDK supports. Either works; use what your client library sends.
+- Over HTTP (`serve --transport http`, see [deployment](./deployment.md)),
+  every request of the 2026-07-28 revision carries the standard headers
+  beside the `_meta` of the body: `MCP-Protocol-Version: 2026-07-28`,
+  `Mcp-Method` with the JSON-RPC method, and `Mcp-Name` with the tool
+  name on `tools/call`. A request without them is refused with 400. With
+  `legacy_revisions = false` the handshake-based revisions are refused:
+  `initialize` gets the JSON-RPC error `-32022` and `server/discover`
+  lists the 2026-07-28 revision alone.
 - Closing stdin or sending `SIGTERM` starts a graceful shutdown; the
   process exits within 3 seconds and aborts in-flight calls.
 - Cancel a call with `notifications/cancelled`; rypsok aborts its engine

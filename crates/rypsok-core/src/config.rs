@@ -638,6 +638,16 @@ impl Config {
             }
             Some(_) => {}
         }
+        // An unspecified address is not a name a client sends in `Host`,
+        // so the default host list would admit nothing useful: the
+        // operator names the hosts instead of discovering 400s (RFC 013
+        // amendment of 2026-10-27).
+        if h.bind_address().is_some_and(|a| a.ip().is_unspecified()) && h.allowed_hosts.is_empty() {
+            problems.push(
+                "service.http.bind: a bind on an unspecified address (0.0.0.0, ::) needs service.http.allowed_hosts"
+                    .to_owned(),
+            );
+        }
         for (i, host) in h.allowed_hosts.iter().enumerate() {
             if host.trim().is_empty()
                 || host.chars().any(char::is_whitespace)

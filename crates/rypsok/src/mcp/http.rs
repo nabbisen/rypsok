@@ -43,6 +43,10 @@ pub const PATH: &str = "/mcp";
 /// The shortest token accepted, in bytes (RFC 013).
 pub const TOKEN_MIN_BYTES: usize = 32;
 
+/// How long an HTTP/2 keep-alive ping may go unanswered before the
+/// connection is closed (LIM-H3 on HTTP/2).
+const H2_PING_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// One authenticated caller: an identifier and its token by reference.
 #[derive(Debug, Clone)]
 pub struct Caller {
@@ -120,8 +124,10 @@ impl HttpSettings {
                 "127.0.0.1".to_owned(),
                 "::1".to_owned(),
             ];
+            // An unspecified address is never a `Host` a client sends;
+            // validation requires `allowed_hosts` for such a bind.
             let bind_host = bind.ip().to_string();
-            if !hosts.contains(&bind_host) {
+            if !bind.ip().is_unspecified() && !hosts.contains(&bind_host) {
                 hosts.push(bind_host);
             }
             hosts
@@ -187,6 +193,15 @@ pub async fn run(
         config.with_allowed_origins(settings.allowed_origins.clone())
     };
     config.cancellation_token = shutdown.child_token();
+    // With legacy revisions off, the adapter advertises the 2026-07-28
+    // revision alone: `server/discover` lists one revision and the SDK
+    // answers `initialize` with `UNSUPPORTED_PROTOCOL_VERSION` (RFC 013
+    // amendment of 2026-10-27). Over stdio the adapter is unchanged.
+    let adapter = if settings.legacy_revisions {
+        adapter
+    } else {
+        adapter.without_legacy_revisions()
+    };
     let inner = if settings.legacy_revisions {
         let factory_adapter = adapter;
         Inner::Local(StreamableHttpService::new(
@@ -216,10 +231,19 @@ pub async fn run(
     ));
     let graceful = GracefulShutdown::new();
     let mut builder = auto::Builder::new(TokioExecutor::new());
+    // LIM-H3: on HTTP/1 the time a connection may sit between requests;
+    // on HTTP/2 a keep-alive ping after the same idle time, and the
+    // connection is closed when the ping goes unanswered, so that a dead
+    // peer frees its LIM-H1 permit.
     builder
         .http1()
         .timer(TokioTimer::new())
         .header_read_timeout(settings.idle_timeout);
+    builder
+        .http2()
+        .timer(TokioTimer::new())
+        .keep_alive_interval(settings.idle_timeout)
+        .keep_alive_timeout(H2_PING_TIMEOUT);
     loop {
         let (stream, remote) = tokio::select! {
             _ = shutdown.cancelled() => break,

@@ -2,7 +2,7 @@
 //! validation, the mapping of core responses and errors to protocol
 //! results, per-tool rate limits and cancellation (external design §2;
 //! RFC 003). The stdio transport lives in [`stdio`]; the Streamable HTTP
-//! transport arrives in milestone M4.
+//! transport in [`http`] (RFC 013).
 //!
 //! The SDK `rmcp` is pinned to an exact version in the workspace manifest
 //! (REQ-ARCH-008) and is used only from this crate (REQ-ARCH-005).
@@ -12,11 +12,13 @@ pub mod rate;
 pub mod stdio;
 pub mod tools;
 
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
-    ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig, Tool,
+    ListToolsResult, PaginatedRequestParams, ProtocolVersion, ServerCapabilities, ServerConfig,
+    Tool,
 };
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData as McpError, RoleServer, ServerHandler};
@@ -36,9 +38,22 @@ pub struct Adapter {
     structured_content: bool,
     status_enabled: bool,
     limiters: Arc<CallerLimiters>,
+    /// Whether the handshake-based revisions are advertised and served;
+    /// off only over HTTP with `legacy_revisions = false` (RFC 013).
+    legacy_revisions: bool,
 }
 
 impl Adapter {
+    /// The same adapter advertising the 2026-07-28 revision alone: the
+    /// SDK then refuses `initialize` with `UNSUPPORTED_PROTOCOL_VERSION`
+    /// and `server/discover` lists one revision (REQ-MCP-006 over HTTP
+    /// with `legacy_revisions = false`).
+    #[must_use]
+    pub fn without_legacy_revisions(mut self) -> Self {
+        self.legacy_revisions = false;
+        self
+    }
+
     /// Builds the adapter from a service; the tool list is fixed here and
     /// never varies per connection (REQ-MCP-009).
     pub fn new(service: Arc<Rypsok>) -> Self {
@@ -58,6 +73,7 @@ impl Adapter {
             status_enabled,
             limiters: Arc::new(CallerLimiters::new(limits)),
             service,
+            legacy_revisions: true,
         }
     }
 
@@ -89,6 +105,14 @@ impl ServerHandler for Adapter {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("rypsok", env!("CARGO_PKG_VERSION")))
             .with_instructions(tools::INSTRUCTIONS)
+    }
+
+    fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
+        if self.legacy_revisions {
+            Cow::Borrowed(ProtocolVersion::KNOWN_VERSIONS)
+        } else {
+            Cow::Borrowed(&[ProtocolVersion::V_2026_07_28])
+        }
     }
 
     async fn list_tools(

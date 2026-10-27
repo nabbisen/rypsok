@@ -158,8 +158,10 @@ async fn req_mcp_003_stateless_discover_and_call_as_json() {
 }
 
 /// REQ-MCP-006: the legacy `initialize` handshake works over HTTP with a
-/// session; with `legacy_revisions = false` no session is created and the
-/// stateless revision keeps working.
+/// session; with `legacy_revisions = false` it is refused with the SDK's
+/// `UNSUPPORTED_PROTOCOL_VERSION` error, no session is created,
+/// `server/discover` lists the 2026-07-28 revision alone and the stateless
+/// revision keeps working.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn req_mcp_006_legacy_handshake_over_http_until_disabled() {
     let initialize = json!({
@@ -200,12 +202,27 @@ async fn req_mcp_006_legacy_handshake_over_http_until_disabled() {
         "no session without legacy revisions: {}",
         response.status()
     );
+    let text = response.text().await.unwrap();
+    assert!(
+        text.contains("-32022"),
+        "initialize refused as unsupported protocol version: {text}"
+    );
     let response = s
         .request("server/discover", json!({}))
         .send()
         .await
         .unwrap();
     assert_eq!(response.status(), 200);
+    let discovered: Value = response.json().await.unwrap();
+    let versions = discovered["result"]["supportedVersions"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(
+        versions,
+        vec![json!("2026-07-28")],
+        "one revision advertised: {discovered}"
+    );
     s.stop().await;
 }
 
@@ -275,6 +292,26 @@ fn req_sec_018_non_loopback_bind_needs_callers() {
     let bad_bind =
         Config::parse("config_version = 1\n[service.http]\nbind = \"not an address\"\n").unwrap();
     assert!(bad_bind.validate().is_err());
+    // An unspecified address needs `allowed_hosts`: the default host list
+    // would admit no name a client sends (RFC 013 amendment).
+    let unspecified = Config::parse(
+        "config_version = 1\n[service.http]\nbind = \"0.0.0.0:8737\"\n[[service.http.auth.callers]]\nid = \"a\"\ntoken_env = \"RYPSOK_TEST_TOKEN\"\n",
+    )
+    .unwrap();
+    let error = unspecified.validate().unwrap_err();
+    assert!(
+        error
+            .problems
+            .iter()
+            .any(|p| p.starts_with("service.http.bind") && p.contains("allowed_hosts")),
+        "{:?}",
+        error.problems
+    );
+    let named = Config::parse(
+        "config_version = 1\n[service.http]\nbind = \"0.0.0.0:8737\"\nallowed_hosts = [\"rypsok.example\"]\n[[service.http.auth.callers]]\nid = \"a\"\ntoken_env = \"RYPSOK_TEST_TOKEN\"\n",
+    )
+    .unwrap();
+    assert!(named.validate().is_ok(), "{:?}", named.validate());
     let auth = Auth {
         callers: Vec::new(),
     };

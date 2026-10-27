@@ -186,3 +186,40 @@ array `[[service.http.auth.callers]]`.
 - Whether the container image should be published to a registry by CI or
   only built. Decided here: built on a tag and attached as a workflow
   artifact; publication needs the owner's registry decision.
+
+## Amendment to RFC 013 (2026-10-27, M4 review)
+
+Decided by the architect under the owner's two principles (a clean, safe,
+robust design; interfaces that cannot be misread), after the review of
+the M4 implementation and release 0.4.0.
+
+- **The standard headers are part of the contract over HTTP.** A request
+  of the 2026-07-28 revision carries `MCP-Protocol-Version`, `Mcp-Method`
+  and, on `tools/call`, `Mcp-Name` beside the `_meta` of its body; the SDK
+  refuses a request without them with 400. The integration guide and the
+  deployment page state it with a complete example.
+- **`legacy_revisions = false` refuses, as the design said.** The SDK
+  answers `initialize` statelessly on its own; rypsok therefore advertises
+  the 2026-07-28 revision alone when the switch is off
+  (`ServerHandler::supported_protocol_versions`), so that `initialize`
+  gets the SDK's `UNSUPPORTED_PROTOCOL_VERSION` (`-32022`) and
+  `server/discover` lists one revision. Over stdio nothing changes. A key
+  named "legacy revisions" whose `false` still served them would be a
+  misreading waiting to happen.
+- **LIM-H3 on both HTTP versions.** HTTP/1: the header read timeout, the
+  time a connection may sit between requests. HTTP/2: a keep-alive ping
+  after the same idle time, the connection closed when the ping goes
+  unanswered within 10 s, so a dead peer frees its LIM-H1 permit; an idle
+  peer that answers pings holds its permit, which only an authenticated
+  caller (or a loopback client) can do.
+- **LIM-H2 is judged twice, with one answer.** The gate refuses a declared
+  `Content-Length` above the bound and the SDK refuses a streamed body
+  that grows past it; both answer 413. Confirmed as the split.
+- **The image stays a workflow artifact.** Publication to a registry
+  needs the owner's registry and account; nothing in the design depends
+  on it.
+- **An unspecified bind names its hosts.** A bind on `0.0.0.0` or `::`
+  is refused at startup unless `allowed_hosts` is set: the default list
+  would admit no name a client sends, and every request would end in a
+  400 that looks like a client fault. The bind host is no longer added to
+  the default list when it is unspecified.
