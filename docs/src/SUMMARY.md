@@ -11,6 +11,7 @@
 - [Tools and responses](./reference/tools.md)
 - [Configuration](./reference/configuration.md)
 - [Integration guide for hosts](./reference/integration-guide.md)
+- [Deployment](./reference/deployment.md)
 
 # For maintainers
 

@@ -109,11 +109,11 @@ pub mod defaults {
     /// Time until a cancelled call has aborted its outbound requests.
     pub const CANCEL_MAX_MS: u32 = 500; // LIM-O2
 
-    /// HTTP connections accepted at once (RFC 013; used from milestone M4).
+    /// HTTP connections accepted at once (RFC 013).
     pub const HTTP_MAX_CONNECTIONS: u32 = 64; // LIM-H1
-    /// Size of an HTTP request body, in bytes (RFC 013; used from M4).
+    /// Size of an HTTP request body, in bytes (RFC 013).
     pub const HTTP_MAX_REQUEST_BYTES: u64 = 65536; // LIM-H2
-    /// Idle HTTP connection timeout, in seconds (RFC 013; used from M4).
+    /// Idle HTTP connection timeout, in seconds (RFC 013).
     pub const HTTP_IDLE_TIMEOUT_S: u32 = 60; // LIM-H3
 
     /// Lifetime of a cache entry, in seconds.
@@ -179,6 +179,12 @@ pub struct Limits {
     pub strict_mode_urls: u32,
     /// LIM-F15.
     pub robots_cache_entries: u32,
+    /// LIM-H1.
+    pub http_max_connections: u32,
+    /// LIM-H2.
+    pub http_max_request_bytes: u64,
+    /// LIM-H3.
+    pub http_idle_timeout_s: u32,
     /// LIM-C1.
     pub outbound_in_flight: u32,
     /// LIM-C2.
@@ -230,6 +236,9 @@ impl Limits {
         robots_max_bytes: defaults::ROBOTS_MAX_BYTES,
         strict_mode_urls: defaults::STRICT_MODE_URLS,
         robots_cache_entries: defaults::ROBOTS_CACHE_ENTRIES,
+        http_max_connections: defaults::HTTP_MAX_CONNECTIONS,
+        http_max_request_bytes: defaults::HTTP_MAX_REQUEST_BYTES,
+        http_idle_timeout_s: defaults::HTTP_IDLE_TIMEOUT_S,
         outbound_in_flight: defaults::OUTBOUND_IN_FLIGHT,
         per_engine_in_flight: defaults::PER_ENGINE_IN_FLIGHT,
         fetches_in_flight: defaults::FETCHES_IN_FLIGHT,

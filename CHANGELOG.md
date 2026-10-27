@@ -8,7 +8,25 @@ Until 1.0.0 the external contract (tool names, parameters, response fields,
 outcomes, error kinds) may change between minor versions; every such change
 is announced here.
 
-## [Unreleased]
+## [Unreleased] — Network transport (milestone M4, 0.4.0)
+
+### Added
+
+- `serve --transport http`: MCP over Streamable HTTP on `/mcp`, loopback
+  by default; the 2026-07-28 revision served statelessly, the
+  handshake-based revisions 2024-11-05 to 2025-11-25 with sessions in
+  memory until `legacy_revisions = false` (RFC 013).
+- `Host` and `Origin` validation; a bind off loopback requires callers.
+- Static bearer tokens per caller, read from the environment or a file,
+  compared in constant time; rate limits per caller.
+- Bounds on connections, request bodies and idle time (LIM-H1 to LIM-H3).
+- A `Dockerfile` (static binary, distroless, non-root) and the deployment
+  page.
+
+### Supported protocol revisions
+
+2026-07-28 (current, stateless) and the handshake-based revisions the SDK
+serves: 2025-11-25, 2025-06-18, 2025-03-26, 2024-11-05.
 
 ## [0.3.0] — 2026-10-27 — Secure fetch (milestone M3)
 

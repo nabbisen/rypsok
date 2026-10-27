@@ -15,7 +15,7 @@ use rypsok_core::config::{Config, ConfigError, ConfigSource};
 use rypsok_core::limits::defaults::SHUTDOWN_MAX_MS;
 use rypsok_core::{CancellationToken, Rypsok, telemetry};
 
-use crate::mcp::{Adapter, stdio};
+use crate::mcp::{Adapter, http, stdio};
 
 /// Exit code of a successful run.
 pub const EXIT_SUCCESS: u8 = 0;
@@ -86,15 +86,7 @@ where
         }
     };
     match cli.command {
-        Command::Serve {
-            transport: Transport::Http,
-        } => {
-            diagnostic("rypsok: `serve --transport http` is not available in this release");
-            ExitCode::from(EXIT_USAGE)
-        }
-        Command::Serve {
-            transport: Transport::Stdio,
-        } => serve(cli.config.as_deref()),
+        Command::Serve { transport } => serve(cli.config.as_deref(), transport),
         Command::Check => check(cli.config.as_deref()),
     }
 }
@@ -201,9 +193,10 @@ fn check(flag: Option<&std::path::Path>) -> ExitCode {
     ExitCode::from(EXIT_SUCCESS)
 }
 
-/// `rypsok serve --transport stdio`: validate, build the service, serve
-/// until end of input or a signal, exit within LIM-O1 (REQ-OPS-002).
-fn serve(flag: Option<&std::path::Path>) -> ExitCode {
+/// `rypsok serve --transport stdio|http`: validate, build the service,
+/// serve until end of input (stdio) or a signal, exit within LIM-O1
+/// (REQ-OPS-002).
+fn serve(flag: Option<&std::path::Path>, transport: Transport) -> ExitCode {
     let (config, source) = match Config::locate(flag) {
         Ok(found) => found,
         Err(error) => return report(&error),
@@ -223,6 +216,13 @@ fn serve(flag: Option<&std::path::Path>) -> ExitCode {
         Ok(service) => Arc::new(service),
         Err(error) => return report(&error),
     };
+    let http_settings = match transport {
+        Transport::Http => match http::HttpSettings::from_config(service.config()) {
+            Ok(settings) => Some(settings),
+            Err(error) => return report(&error),
+        },
+        Transport::Stdio => None,
+    };
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -241,7 +241,15 @@ fn serve(flag: Option<&std::path::Path>) -> ExitCode {
             tracing::info!(event = "signal", "shutdown requested");
             signals.cancel();
         });
-        stdio::serve(Adapter::new(service), shutdown).await
+        let adapter = Adapter::new(service);
+        match http_settings {
+            Some(settings) => http::serve(adapter, settings, shutdown)
+                .await
+                .map_err(|e| e.to_string()),
+            None => stdio::serve(adapter, shutdown)
+                .await
+                .map_err(|e| e.to_string()),
+        }
     });
     // Everything still running was cancelled through its token; the runtime
     // is dropped without waiting for the blocking stdin reader, so that the

@@ -7,6 +7,7 @@
 //! The SDK `rmcp` is pinned to an exact version in the workspace manifest
 //! (REQ-ARCH-008) and is used only from this crate (REQ-ARCH-005).
 
+pub mod http;
 pub mod rate;
 pub mod stdio;
 pub mod tools;
@@ -23,18 +24,18 @@ use rypsok_core::Rypsok;
 use rypsok_core::model::{CallError, ToolError};
 use serde::Serialize;
 
-use rate::ToolLimiter;
+use rate::{CallerId, CallerLimiters};
 
 /// The adapter: one per process, holding the service and the tool list.
-#[derive(Debug)]
+/// Clones share everything, so the HTTP transport can hand one to every
+/// session and the limiters stay per caller, not per connection.
+#[derive(Debug, Clone)]
 pub struct Adapter {
     service: Arc<Rypsok>,
-    tools: Vec<Tool>,
+    tools: Arc<Vec<Tool>>,
     structured_content: bool,
     status_enabled: bool,
-    search_limiter: ToolLimiter,
-    fetch_limiter: ToolLimiter,
-    status_limiter: ToolLimiter,
+    limiters: Arc<CallerLimiters>,
 }
 
 impl Adapter {
@@ -52,12 +53,10 @@ impl Adapter {
             "tool definitions built"
         );
         Adapter {
-            tools: tool_list,
+            tools: Arc::new(tool_list),
             structured_content: config.service.structured_content,
             status_enabled,
-            search_limiter: ToolLimiter::per_minute(limits.web_search_per_minute),
-            fetch_limiter: ToolLimiter::per_minute(limits.web_fetch_per_minute),
-            status_limiter: ToolLimiter::per_minute(limits.engine_status_per_minute),
+            limiters: Arc::new(CallerLimiters::new(limits)),
             service,
         }
     }
@@ -97,7 +96,7 @@ impl ServerHandler for Adapter {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, McpError> {
-        Ok(ListToolsResult::with_all_items(self.tools.clone()))
+        Ok(ListToolsResult::with_all_items(self.tools.as_ref().clone()))
     }
 
     async fn call_tool(
@@ -105,11 +104,20 @@ impl ServerHandler for Adapter {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, McpError> {
+        // The caller: the identity the HTTP gate attached, else `local`
+        // (REQ-SEC-019).
+        let caller = context
+            .extensions
+            .get::<::http::request::Parts>()
+            .and_then(|parts| parts.extensions.get::<CallerId>().cloned())
+            .unwrap_or_else(CallerId::local);
+        let limiters = self.limiters.for_caller(&caller);
         let result = match request.name.as_ref() {
             tools::WEB_SEARCH => {
-                if let Err(retry_after_ms) = self.search_limiter.admit() {
+                if let Err(retry_after_ms) = limiters.search.admit() {
                     tracing::warn!(
                         tool = tools::WEB_SEARCH,
+                        caller = caller.as_str(),
                         reason = "rate_limited",
                         "call refused"
                     );
@@ -134,9 +142,10 @@ impl ServerHandler for Adapter {
                 }
             }
             tools::WEB_FETCH => {
-                if let Err(retry_after_ms) = self.fetch_limiter.admit() {
+                if let Err(retry_after_ms) = limiters.fetch.admit() {
                     tracing::warn!(
                         tool = tools::WEB_FETCH,
+                        caller = caller.as_str(),
                         reason = "rate_limited",
                         "call refused"
                     );
@@ -159,7 +168,7 @@ impl ServerHandler for Adapter {
                 }
             }
             tools::ENGINE_STATUS if self.status_enabled => {
-                if let Err(retry_after_ms) = self.status_limiter.admit() {
+                if let Err(retry_after_ms) = limiters.status.admit() {
                     self.render_error(ToolError::rate_limited(retry_after_ms))
                 } else if request.arguments.as_ref().is_some_and(|a| !a.is_empty()) {
                     self.render_error(ToolError::unknown_parameter(&[]))

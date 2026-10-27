@@ -86,18 +86,83 @@ impl Default for ServiceConfig {
     }
 }
 
-/// `[service.http]` (milestone M4).
+/// `[service.http]` (RFC 013).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct HttpConfig {
-    /// The address to bind.
+    /// The address and port to bind; loopback by default (REQ-SEC-018).
     pub bind: String,
+    /// `Host` values accepted; empty means loopback names and the bind host.
+    pub allowed_hosts: Vec<String>,
+    /// `Origin` values accepted; empty means every present `Origin` is refused.
+    pub allowed_origins: Vec<String>,
+    /// Serve the handshake-based revisions with sessions in memory
+    /// (REQ-MCP-006).
+    pub legacy_revisions: bool,
+    /// LIM-H1.
+    pub max_connections: u32,
+    /// LIM-H2.
+    pub max_request_bytes: u64,
+    /// LIM-H3.
+    pub idle_timeout_s: u32,
+    /// `[service.http.auth]`.
+    pub auth: HttpAuthConfig,
 }
 
 impl Default for HttpConfig {
     fn default() -> Self {
         HttpConfig {
             bind: "127.0.0.1:8737".to_owned(),
+            allowed_hosts: Vec::new(),
+            allowed_origins: Vec::new(),
+            legacy_revisions: true,
+            max_connections: defaults::HTTP_MAX_CONNECTIONS,
+            max_request_bytes: defaults::HTTP_MAX_REQUEST_BYTES,
+            idle_timeout_s: defaults::HTTP_IDLE_TIMEOUT_S,
+            auth: HttpAuthConfig::default(),
+        }
+    }
+}
+
+impl HttpConfig {
+    /// The bind address, when it parses.
+    pub fn bind_address(&self) -> Option<std::net::SocketAddr> {
+        self.bind.parse().ok()
+    }
+}
+
+/// `[service.http.auth]` (RFC 013, D-27).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct HttpAuthConfig {
+    /// `[[service.http.auth.callers]]`: the callers and their tokens by
+    /// reference.
+    pub callers: Vec<CallerConfig>,
+}
+
+/// One caller: an identifier and a token read from the environment or a
+/// file, never inline (REQ-CFG-004).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CallerConfig {
+    /// The identifier: lowercase letters, digits and underscores, starting
+    /// with a letter.
+    pub id: String,
+    /// The environment variable that holds the token.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_env: Option<String>,
+    /// The file whose trimmed content is the token.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_file: Option<String>,
+}
+
+impl CallerConfig {
+    /// Where the token is read from.
+    pub fn secret_source(&self) -> Option<SecretSource> {
+        match (&self.token_env, &self.token_file) {
+            (Some(env), _) => Some(SecretSource::Env(env.clone())),
+            (None, Some(file)) => Some(SecretSource::File(PathBuf::from(file))),
+            (None, None) => None,
         }
     }
 }
@@ -559,6 +624,88 @@ impl Config {
                 "config_version: only {CONFIG_VERSION} is supported"
             ));
         }
+        let h = &self.service.http;
+        match h.bind_address() {
+            None => problems.push(
+                "service.http.bind: must be an address and a port, such as 127.0.0.1:8737"
+                    .to_owned(),
+            ),
+            Some(address) if !address.ip().is_loopback() && h.auth.callers.is_empty() => {
+                problems.push(
+                    "service.http.bind: a non-loopback bind needs [service.http.auth] callers"
+                        .to_owned(),
+                );
+            }
+            Some(_) => {}
+        }
+        for (i, host) in h.allowed_hosts.iter().enumerate() {
+            if host.trim().is_empty()
+                || host.chars().any(char::is_whitespace)
+                || host.contains("://")
+            {
+                problems.push(format!(
+                    "service.http.allowed_hosts[{i}]: a host name or host:port, without a scheme"
+                ));
+            }
+        }
+        for (i, origin) in h.allowed_origins.iter().enumerate() {
+            if origin != "null" && !origin.contains("://") {
+                problems.push(format!(
+                    "service.http.allowed_origins[{i}]: an origin with its scheme, such as https://app.example:443"
+                ));
+            }
+        }
+        range(
+            &mut problems,
+            "service.http.max_connections",
+            h.max_connections,
+            1,
+            4096,
+        );
+        range(
+            &mut problems,
+            "service.http.max_request_bytes",
+            h.max_request_bytes,
+            4096,
+            1_048_576,
+        );
+        range(
+            &mut problems,
+            "service.http.idle_timeout_s",
+            h.idle_timeout_s,
+            5,
+            600,
+        );
+        let mut ids = std::collections::BTreeSet::new();
+        for (i, caller) in h.auth.callers.iter().enumerate() {
+            let key = format!("service.http.auth.callers[{i}]");
+            let id_ok = caller
+                .id
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_lowercase())
+                && caller
+                    .id
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+            if !id_ok {
+                problems.push(format!(
+                    "{key}.id: lowercase letters, digits and underscores, starting with a letter"
+                ));
+            }
+            if !ids.insert(caller.id.clone()) {
+                problems.push(format!("{key}.id: duplicate"));
+            }
+            match (&caller.token_env, &caller.token_file) {
+                (Some(_), Some(_)) => {
+                    problems.push(format!("{key}: give token_env or token_file, not both"));
+                }
+                (None, None) => {
+                    problems.push(format!("{key}: token_env or token_file is required"));
+                }
+                _ => {}
+            }
+        }
         let s = &self.search;
         if s.languages.is_empty() {
             problems.push("search.languages: at least one language is required".to_owned());
@@ -853,6 +1000,9 @@ impl Config {
             engine_status_per_minute: self.limits.engine_status_per_minute,
             strict_mode_urls: self.limits.strict_mode_urls,
             robots_cache_entries: self.limits.robots_cache_entries,
+            http_max_connections: self.service.http.max_connections,
+            http_max_request_bytes: self.service.http.max_request_bytes,
+            http_idle_timeout_s: self.service.http.idle_timeout_s,
             failures_to_open: self.resilience.failures_to_open,
             first_cooldown_s: self.resilience.first_cooldown_s,
             max_cooldown_s: self.resilience.max_cooldown_s,

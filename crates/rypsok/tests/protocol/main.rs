@@ -793,3 +793,100 @@ mod fetch_end_to_end {
         .unwrap();
     }
 }
+
+/// REQ-OPS-002 and REQ-MCP-003: `serve --transport http` logs where it
+/// listens, answers over HTTP, and `SIGTERM` closes the listener and ends
+/// the process within LIM-O1.
+#[cfg(unix)]
+#[test]
+fn req_ops_002_sigterm_closes_the_http_listener() {
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+    let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = probe.local_addr().unwrap().port();
+    drop(probe);
+    let config = config_file(&format!(
+        "config_version = 1\n[service.http]\nbind = \"127.0.0.1:{port}\"\n[engines.w]\ntype = \"wikipedia\"\ncategories = [\"general\"]\n"
+    ));
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rypsok"))
+        .args(["serve", "--transport", "http", "--config"])
+        .arg(&config)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let stderr = child.stderr.take().unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            let _ = tx.send(line);
+        }
+    });
+    let mut listening = None;
+    while let Ok(line) = rx.recv_timeout(std::time::Duration::from_secs(10)) {
+        if line.contains("\"event\":\"listening\"") {
+            listening = Some(line);
+            break;
+        }
+    }
+    let listening = listening.expect("the listener announces itself");
+    assert!(
+        listening.contains(&format!("127.0.0.1:{port}")),
+        "{listening}"
+    );
+    let response = ureq_get(&format!("http://127.0.0.1:{port}/nothing"));
+    assert_eq!(
+        response,
+        Some(404),
+        "the listener answers; only /mcp exists"
+    );
+    let status = Command::new("kill")
+        .arg("-TERM")
+        .arg(child.id().to_string())
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let started = std::time::Instant::now();
+    let exit = loop {
+        if let Some(exit) = child.try_wait().unwrap() {
+            break exit;
+        }
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(3000),
+            "did not exit within LIM-O1"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    assert!(exit.success(), "{exit:?}");
+    assert_eq!(
+        ureq_get(&format!("http://127.0.0.1:{port}/nothing")),
+        None,
+        "nothing listens"
+    );
+}
+
+/// A minimal HTTP GET: the status code, or `None` when nothing answers.
+#[cfg(unix)]
+fn ureq_get(url: &str) -> Option<u16> {
+    use std::io::{Read, Write};
+    let rest = url.strip_prefix("http://")?;
+    let (authority, path) = rest
+        .split_once('/')
+        .map_or((rest, "/"), |(a, _)| (a, &rest[a.len()..]));
+    let mut stream = std::net::TcpStream::connect(authority).ok()?;
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+        .ok()?;
+    write!(
+        stream,
+        "GET {path} HTTP/1.1\r\nHost: {authority}\r\nConnection: close\r\n\r\n"
+    )
+    .ok()?;
+    let mut buffer = String::new();
+    stream.read_to_string(&mut buffer).ok()?;
+    buffer
+        .split_whitespace()
+        .nth(1)
+        .and_then(|code| code.parse().ok())
+}

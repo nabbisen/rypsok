@@ -27,9 +27,16 @@ tracing.workspace = true
 governor.workspace = true
 thiserror.workspace = true
 serde.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+http.workspace = true
+http-body-util.workspace = true
+tower-service.workspace = true
+bytes.workspace = true
 
 [dev-dependencies]
 wiremock.workspace = true
+reqwest = { workspace = true, features = ["json"] }
 
 [lints]
 workspace = true
