@@ -25,7 +25,9 @@ fn token_file(name: &str, token: &str) -> String {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
     }
-    path.to_str().unwrap().to_owned()
+    // Forward slashes: the path is written into a TOML basic string, where a
+    // backslash would start an escape (Windows accepts both separators).
+    path.to_str().unwrap().replace('\\', "/")
 }
 
 fn meta() -> Value {
