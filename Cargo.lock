@@ -1503,7 +1503,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "rypsok"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "bytes",
  "clap",
@@ -1528,7 +1528,7 @@ dependencies = [
 
 [[package]]
 name = "rypsok-core"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "async-trait",
  "chardetng",

@@ -12,7 +12,7 @@ it: what it lists as frozen changes only with a major version, additions
 arrive in minor versions, and every change of a default value is
 announced here with both values.
 
-## [Unreleased] — Users (milestone M6, 0.6.0)
+## [0.6.0] — 2026-10-27 — Users (milestone M6)
 
 ### Added
 
@@ -201,7 +201,8 @@ Search deadline 2500 ms, engine timeout 2000 ms, reserve 200 ms, up to 8
 engines per request, 10 results per engine, snippets 300 and titles 150
 characters, query 400 characters, 60 `web_search` calls per minute.
 
-[Unreleased]: https://github.com/nabbisen/rypsok/compare/0.5.0...HEAD
+[Unreleased]: https://github.com/nabbisen/rypsok/compare/0.6.0...HEAD
+[0.6.0]: https://github.com/nabbisen/rypsok/releases/tag/0.6.0
 [0.5.0]: https://github.com/nabbisen/rypsok/releases/tag/0.5.0
 [0.4.0]: https://github.com/nabbisen/rypsok/releases/tag/0.4.0
 [0.3.0]: https://github.com/nabbisen/rypsok/releases/tag/0.3.0
