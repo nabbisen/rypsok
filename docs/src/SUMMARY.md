@@ -12,6 +12,7 @@
 - [Configuration](./reference/configuration.md)
 - [Integration guide for hosts](./reference/integration-guide.md)
 - [Deployment](./reference/deployment.md)
+- [Stability and versioning](./reference/stability.md)
 
 # For maintainers
 

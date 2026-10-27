@@ -23,6 +23,7 @@ use crate::privacy::Sensitive;
 
 /// What one engine is asked for.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct EngineRequest {
     /// The query, validated and checked for secrets. A driver reads it
     /// with `expose()`; it cannot reach a log field (REQ-PRIV-004).
@@ -39,9 +40,26 @@ pub struct EngineRequest {
     pub time_range: Option<TimeRange>,
 }
 
+impl EngineRequest {
+    /// A request for `query` in `language` with the defaults a driver test
+    /// wants: LIM-S3 results, region `US`, moderate safe search, no
+    /// period. Set the public fields afterwards.
+    pub fn new(query: &str, language: Language) -> Self {
+        EngineRequest {
+            query: Sensitive::new(query.to_owned()),
+            max_results: crate::limits::defaults::RESULTS_PER_ENGINE,
+            language,
+            region: "US".to_owned(),
+            safe_search: SafeSearch::Moderate,
+            time_range: None,
+        }
+    }
+}
+
 /// One result as a provider returned it: raw text that has not passed the
 /// content boundary (REQ-ENG-012).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct RawResult {
     /// The title, raw.
     pub title: String,
@@ -53,8 +71,42 @@ pub struct RawResult {
     pub date: Option<Date>,
 }
 
+impl RawResult {
+    /// A result without a date.
+    ///
+    /// ```
+    /// use rypsok_core::engine::RawResult;
+    /// use rypsok_core::model::Date;
+    ///
+    /// let result = RawResult::new("Title", "https://example.org/", "snippet")
+    ///     .with_date(Date::new("2026-10-27").unwrap());
+    /// assert_eq!(result.url, "https://example.org/");
+    /// assert!(result.date.is_some());
+    /// ```
+    pub fn new(
+        title: impl Into<String>,
+        url: impl Into<String>,
+        snippet: impl Into<String>,
+    ) -> Self {
+        RawResult {
+            title: title.into(),
+            url: url.into(),
+            snippet: snippet.into(),
+            date: None,
+        }
+    }
+
+    /// The same result with a date.
+    #[must_use]
+    pub fn with_date(mut self, date: Date) -> Self {
+        self.date = Some(date);
+        self
+    }
+}
+
 /// What an engine answered.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct EngineResponse {
     /// The raw results in the provider's order.
     pub results: Vec<RawResult>,
@@ -62,6 +114,7 @@ pub struct EngineResponse {
 
 /// The classes of REQ-ENG-006.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum EngineErrorClass {
     /// The request timed out.
     Timeout,
@@ -106,6 +159,7 @@ impl EngineErrorClass {
 /// A classified failure. It carries no provider text (REQ-SEC-016); a
 /// driver logs such text at `debug` only, truncated.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct EngineError {
     /// The class.
     pub class: EngineErrorClass,
@@ -125,6 +179,7 @@ impl EngineError {
 
 /// Which languages a driver honors (REQ-SEARCH-004).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum LanguageSupport {
     /// Every language.
     All,
@@ -137,6 +192,7 @@ pub enum LanguageSupport {
 
 /// Whether a driver honors `time_range` (REQ-SEARCH-005).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TimeRangeSupport {
     /// Every value.
     All,
@@ -146,6 +202,7 @@ pub enum TimeRangeSupport {
 
 /// The User-Agent a driver sends (REQ-CMP-004).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum UserAgentFormat {
     /// The standard rypsok User-Agent.
     Standard,
@@ -157,6 +214,7 @@ pub enum UserAgentFormat {
 /// What the admission record allows and what the driver can honor
 /// (REQ-ENG-010, REQ-CMP-001).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct EngineProperties {
     /// Longest query the provider accepts, in characters.
     pub max_query_chars: u32,
@@ -183,7 +241,101 @@ pub struct EngineProperties {
     pub scraping: bool,
 }
 
+impl EngineResponse {
+    /// An answer with these results.
+    pub fn new(results: Vec<RawResult>) -> Self {
+        EngineResponse { results }
+    }
+}
+
 impl EngineProperties {
+    /// Properties with the values a driver author must decide and
+    /// conservative defaults for the rest: every language, no period,
+    /// not cacheable, no attribution, the standard User-Agent, a 1 MiB
+    /// response bound, no scraping. The `with_*` setters change them.
+    ///
+    /// ```
+    /// use rypsok_core::engine::{EngineProperties, TimeRangeSupport};
+    ///
+    /// let properties = EngineProperties::new(250, 100, 1)
+    ///     .with_time_ranges(TimeRangeSupport::All)
+    ///     .with_cacheable(true);
+    /// assert_eq!(properties.max_query_chars, 250);
+    /// assert!(properties.cacheable);
+    /// assert!(!properties.scraping);
+    /// ```
+    pub fn new(max_query_chars: u32, requests_per_minute: u32, max_in_flight: u8) -> Self {
+        EngineProperties {
+            max_query_chars,
+            max_query_words: None,
+            languages: LanguageSupport::All,
+            time_ranges: TimeRangeSupport::None,
+            requests_per_minute,
+            max_in_flight,
+            cacheable: false,
+            attribution_required: false,
+            user_agent: UserAgentFormat::Standard,
+            max_response_bytes: 1_048_576,
+            scraping: false,
+        }
+    }
+
+    /// Most words the provider accepts.
+    #[must_use]
+    pub fn with_max_query_words(mut self, words: u32) -> Self {
+        self.max_query_words = Some(words);
+        self
+    }
+
+    /// The languages honored.
+    #[must_use]
+    pub fn with_languages(mut self, languages: LanguageSupport) -> Self {
+        self.languages = languages;
+        self
+    }
+
+    /// The periods honored.
+    #[must_use]
+    pub fn with_time_ranges(mut self, time_ranges: TimeRangeSupport) -> Self {
+        self.time_ranges = time_ranges;
+        self
+    }
+
+    /// Whether the admission record allows storage (RFC 014).
+    #[must_use]
+    pub fn with_cacheable(mut self, cacheable: bool) -> Self {
+        self.cacheable = cacheable;
+        self
+    }
+
+    /// Whether results must name the engine (REQ-CMP-003).
+    #[must_use]
+    pub fn with_attribution_required(mut self, required: bool) -> Self {
+        self.attribution_required = required;
+        self
+    }
+
+    /// The User-Agent format the provider requires.
+    #[must_use]
+    pub fn with_user_agent(mut self, format: UserAgentFormat) -> Self {
+        self.user_agent = format;
+        self
+    }
+
+    /// Most bytes read from one response.
+    #[must_use]
+    pub fn with_max_response_bytes(mut self, bytes: u64) -> Self {
+        self.max_response_bytes = bytes;
+        self
+    }
+
+    /// Whether the driver reads a human-facing interface (RFC 015).
+    #[must_use]
+    pub fn with_scraping(mut self, scraping: bool) -> Self {
+        self.scraping = scraping;
+        self
+    }
+
     /// Why the engine cannot serve this request, if it cannot
     /// (REQ-ENG-007): the request is checked before any limiter.
     pub fn skip_reason(

@@ -57,3 +57,30 @@ jobs:
           mdbook-version: latest
       - name: Book
         run: mdbook build docs
+
+  semver:
+    # The stable contract (RFC 016): from 1.0.0 a breaking change of the
+    # public interface of either crate needs a major version. The job
+    # compares against the latest published version and is skipped while
+    # the workspace is still 0.x, where the changelog announces breaks.
+    name: Semantic versioning of the crates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Workspace major version
+        id: version
+        run: |
+          major=$(sed -n 's/^version = "\([0-9]*\)\..*/\1/p' Cargo.toml | head -n 1)
+          echo "major=$major" >> "$GITHUB_OUTPUT"
+          echo "workspace major version: $major"
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.version.outputs.major != '0'
+      - uses: Swatinem/rust-cache@v2
+        if: steps.version.outputs.major != '0'
+      - uses: obi1kenobi/cargo-semver-checks-action@v2
+        if: steps.version.outputs.major != '0'
+        with:
+          package: rypsok-core, rypsok
+      - name: Skipped before 1.0.0
+        if: steps.version.outputs.major == '0'
+        run: echo "semver gate starts at 1.0.0 (RFC 016)"

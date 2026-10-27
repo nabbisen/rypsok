@@ -10,14 +10,10 @@ use rypsok_core::engine::registry::Registry;
 use rypsok_core::model::{Category, Language};
 
 fn request(query: &str) -> EngineRequest {
-    EngineRequest {
-        query: query.into(),
-        max_results: 5,
-        language: Language::new("en").unwrap(),
-        region: "US".into(),
-        safe_search: SafeSearch::Moderate,
-        time_range: None,
-    }
+    let mut request = EngineRequest::new(query, Language::new("en").unwrap());
+    request.max_results = 5;
+    request.safe_search = SafeSearch::Moderate;
+    request
 }
 
 fn config(text: &str) -> Config {

@@ -36,6 +36,7 @@ pub use outcome::{Decision, decide};
     schemars::JsonSchema,
 )]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Category {
     /// General web search; the default.
     General,
@@ -113,6 +114,7 @@ impl TimeRange {
 /// the core, so that every host gets the same defaults (REQ-CFG-003).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct SearchRequest {
     /// What to search for (REQ-SEARCH-001).
     pub query: String,
@@ -146,6 +148,7 @@ impl SearchRequest {
 /// A `web_fetch` request (external design §3.2; milestone M3).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct FetchRequest {
     /// The page to read.
     pub url: String,
@@ -155,6 +158,18 @@ pub struct FetchRequest {
     /// Continue from this character; 0 when absent.
     #[serde(default)]
     pub start_char: Option<u32>,
+}
+
+impl FetchRequest {
+    /// A request for `url` with the defaults for everything else; set the
+    /// public fields afterwards.
+    pub fn new(url: impl Into<String>) -> Self {
+        FetchRequest {
+            url: url.into(),
+            max_chars: None,
+            start_char: None,
+        }
+    }
 }
 
 /// The outcome of a successful call (REQ-ERR-001).
@@ -172,6 +187,7 @@ pub enum Outcome {
 /// A notice code (external design §3.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum NoticeCode {
     /// An engine failed; `reason` is its error class.
     EngineUnavailable,
@@ -200,6 +216,7 @@ pub enum NoticeCode {
 /// reasons share one closed vocabulary (external design §3.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Reason {
     /// Engine error class: the request timed out (REQ-ENG-006).
     Timeout,
@@ -231,6 +248,7 @@ pub enum Reason {
 
 /// A notice: something rypsok did or could not do, from a fixed vocabulary.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[non_exhaustive]
 pub struct Notice {
     /// What happened.
     pub code: NoticeCode,
@@ -300,6 +318,7 @@ impl Notice {
 /// One result of `web_search`. The title, URL, snippet and date are external
 /// data, cleaned and bounded by the content boundary (REQ-CTX-002).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[non_exhaustive]
 pub struct SearchResult {
     /// The page title, cleaned and bounded by LIM-S10.
     pub title: String,
@@ -328,6 +347,7 @@ pub struct Cleaned;
 
 /// The response of `web_search` (external design §3.1).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[non_exhaustive]
 pub struct SearchResponse {
     /// The outcome.
     pub outcome: Outcome,
@@ -339,6 +359,7 @@ pub struct SearchResponse {
 
 /// The response of `web_fetch` (external design §3.2; milestone M3).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[non_exhaustive]
 pub struct FetchResponse {
     /// The outcome.
     pub outcome: Outcome,
@@ -373,6 +394,7 @@ pub enum EngineState {
 
 /// The state of one engine as `engine_status` reports it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[non_exhaustive]
 pub struct EngineStatus {
     /// The configured identifier.
     pub id: EngineId,
@@ -384,6 +406,7 @@ pub struct EngineStatus {
 
 /// The response of `engine_status` (external design §3.3).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[non_exhaustive]
 pub struct StatusResponse {
     /// Always `ok`.
     pub outcome: Outcome,

@@ -77,6 +77,11 @@ See [Getting started](docs/src/getting-started.md), the
 - **Specification first.** Requirements, external design, limits and the
   threat register are baselined in `docs/src/maintainers/`; every test
   names the requirement it verifies.
+- **A stable contract.** From 1.0.0 the tools, responses, configuration
+  and command line change only with a major version; additions arrive in
+  minor versions and are announced. The
+  [stability page](docs/src/reference/stability.md) says exactly what is
+  frozen and what may change.
 
 ## More detail
 

@@ -85,8 +85,10 @@ impl HttpSettings {
     /// configuration error naming the key.
     pub fn from_config(config: &Config) -> Result<Self, ConfigError> {
         let http = &config.service.http;
-        let bind: SocketAddr = http.bind.parse().map_err(|_| ConfigError {
-            problems: vec!["service.http.bind: must be an address and a port".to_owned()],
+        let bind: SocketAddr = http.bind.parse().map_err(|_| {
+            ConfigError::new(vec![
+                "service.http.bind: must be an address and a port".to_owned(),
+            ])
         })?;
         let mut problems = Vec::new();
         let mut callers = Vec::new();
@@ -116,7 +118,7 @@ impl HttpSettings {
             }
         }
         if !problems.is_empty() {
-            return Err(ConfigError { problems });
+            return Err(ConfigError::new(problems));
         }
         let allowed_hosts = if http.allowed_hosts.is_empty() {
             let mut hosts = vec![

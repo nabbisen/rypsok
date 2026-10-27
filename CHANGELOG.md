@@ -4,9 +4,38 @@ All notable changes to rypsok are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/). Release tags carry no `v` prefix.
 
-Until 1.0.0 the external contract (tool names, parameters, response fields,
-outcomes, error kinds) may change between minor versions; every such change
-is announced here.
+From 1.0.0 the external contract is stable as the
+[stability page](docs/src/reference/stability.md) defines it: what it
+lists as frozen changes only with a major version, additions arrive in
+minor versions, and every change of a default value is announced here
+with both values.
+
+## [Unreleased] — Stable contract (1.0.0)
+
+### Added
+
+- The stability page: what is frozen from 1.0.0, what may be added in a
+  minor version, and what may change with notice (defaults, logs, the
+  output of `check`) (RFC 016).
+- A CI job running `cargo semver-checks` on both crates from the first
+  commit after 1.0.0.
+- `rypsok-core`: constructors for the driver interface
+  (`EngineProperties::new` and `with_*`, `RawResult::new`,
+  `EngineRequest::new`, `EngineResponse::new`, `DriverContext::new`),
+  `FetchRequest::new`, `ConfigError::new`.
+
+### Changed
+
+- `rypsok-core`: the requests, responses, driver types, configuration
+  tables and the growable vocabularies (`NoticeCode`, `Reason`,
+  `DetailReason`, `SecretKind`, `Category`, `EngineErrorClass`,
+  `LanguageSupport`, `TimeRangeSupport`, `UserAgentFormat`) are
+  `#[non_exhaustive]`: build them through their constructors and match
+  them with a wildcard arm. The frozen vocabularies (`Outcome`,
+  `ErrorKind`, `CallError`, `EngineState`, `TimeRange`) stay exhaustive.
+- A `max_results` outside 1 to 255 is refused with the operator's
+  ceiling in the message, as a value within that range already was.
+- `serve --help` no longer mentions a milestone.
 
 ## [0.5.0] — 2026-10-27 — Optimization (milestone M5)
 

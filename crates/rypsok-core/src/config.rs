@@ -29,6 +29,7 @@ pub const CONFIG_VERSION: u32 = 1;
 /// Every operational setting of a process (external design §13.2).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct Config {
     /// Schema version; must be [`CONFIG_VERSION`].
     pub config_version: u32,
@@ -73,6 +74,7 @@ pub struct Config {
 /// `[service]`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
 pub struct ServiceConfig {
     /// Whether tool results carry `structuredContent` (REQ-MCP-011).
     pub structured_content: bool,
@@ -95,6 +97,7 @@ impl Default for ServiceConfig {
 /// `[service.http]` (RFC 013).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
 pub struct HttpConfig {
     /// The address and port to bind; loopback by default (REQ-SEC-018).
     pub bind: String,
@@ -140,6 +143,7 @@ impl HttpConfig {
 /// `[service.http.auth]` (RFC 013, D-27).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
 pub struct HttpAuthConfig {
     /// `[[service.http.auth.callers]]`: the callers and their tokens by
     /// reference.
@@ -150,6 +154,7 @@ pub struct HttpAuthConfig {
 /// file, never inline (REQ-CFG-004).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
 pub struct CallerConfig {
     /// The identifier: lowercase letters, digits and underscores, starting
     /// with a letter.
@@ -188,6 +193,7 @@ pub enum SafeSearch {
 /// `[search]`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
 pub struct SearchConfig {
     /// Languages offered to callers; the first is the default (REQ-SEARCH-004).
     pub languages: Vec<Language>,
@@ -246,6 +252,7 @@ impl Default for SearchConfig {
 /// `[fetch]` (milestone M3; keys accepted from M1).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
 pub struct FetchConfig {
     /// LIM-F1.
     pub max_chars: u32,
@@ -289,6 +296,7 @@ impl Default for FetchConfig {
 /// `[egress]`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
 pub struct EgressConfig {
     /// Allow plain HTTP fetches (REQ-FETCH-010).
     pub allow_http: bool,
@@ -303,6 +311,7 @@ pub struct EgressConfig {
 /// `[limits]`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
 pub struct LimitsConfig {
     /// LIM-C1.
     pub outbound_in_flight: u32,
@@ -343,6 +352,7 @@ impl Default for LimitsConfig {
 /// `[resilience]` (RFC 010).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
 pub struct ResilienceConfig {
     /// LIM-B1.
     pub failures_to_open: u8,
@@ -379,6 +389,7 @@ pub enum SecretDetection {
 /// `[privacy]`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
 pub struct PrivacyConfig {
     /// LIM-P1.
     pub secret_detection: SecretDetection,
@@ -409,6 +420,7 @@ pub enum LogLevel {
 /// `[logging]`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
 pub struct LoggingConfig {
     /// LIM-P2.
     pub level: LogLevel,
@@ -428,6 +440,7 @@ impl Default for LoggingConfig {
 /// `[status]`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
 pub struct StatusConfig {
     /// Whether `engine_status` is offered (REQ-STATUS-003).
     pub enabled: bool,
@@ -445,6 +458,7 @@ impl Default for StatusConfig {
 /// provider's terms.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
 pub struct ScrapingConfig {
     /// LIM-G1.
     pub enabled: bool,
@@ -455,6 +469,7 @@ pub struct ScrapingConfig {
 /// as cache keys (REQ-CACHE-007).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
 pub struct CacheConfig {
     /// LIM-K1.
     pub enabled: bool,
@@ -479,6 +494,7 @@ impl Default for CacheConfig {
 
 /// `[engines.<id>]`: the common keys and the keys the driver declares.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct EngineTable {
     /// The driver: `wikipedia` or `brave`.
     #[serde(rename = "type")]
@@ -577,9 +593,17 @@ impl Default for Config {
 /// Why a configuration was refused: one line per problem, each naming the
 /// key (REQ-CFG-005).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ConfigError {
     /// The problems, in the order found.
     pub problems: Vec<String>,
+}
+
+impl ConfigError {
+    /// An error with these problems, in the order found.
+    pub fn new(problems: Vec<String>) -> Self {
+        ConfigError { problems }
+    }
 }
 
 impl fmt::Display for ConfigError {

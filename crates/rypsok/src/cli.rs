@@ -58,7 +58,7 @@ enum Command {
 enum Transport {
     /// The Model Context Protocol over standard input and output.
     Stdio,
-    /// The Model Context Protocol over Streamable HTTP (milestone M4).
+    /// The Model Context Protocol over Streamable HTTP.
     Http,
 }
 

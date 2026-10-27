@@ -50,6 +50,7 @@ pub fn is_scraping(kind: &str) -> bool {
 
 /// What every driver gets when it is built.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct DriverContext {
     /// The standard User-Agent (REQ-CMP-004).
     pub user_agent: String,
@@ -71,6 +72,23 @@ pub struct DriverContext {
 }
 
 impl DriverContext {
+    /// A context with this User-Agent and the defaults of the limits
+    /// table: for a driver author's tests. Set the public fields
+    /// afterwards (`base_override`, `https_only`).
+    pub fn new(user_agent: impl Into<String>) -> Self {
+        use crate::limits::defaults;
+        DriverContext {
+            user_agent: user_agent.into(),
+            connect_timeout: Duration::from_millis(u64::from(defaults::ENGINE_CONNECT_TIMEOUT_MS)),
+            timeout: Duration::from_millis(u64::from(defaults::ENGINE_TIMEOUT_MS)),
+            proxy: None,
+            https_only: true,
+            base_override: None,
+            parsing: Arc::new(Semaphore::new(defaults::PARSING_IN_FLIGHT as usize)),
+            html_max_nodes: defaults::HTML_MAX_NODES,
+        }
+    }
+
     /// The client settings for a driver with these headers.
     pub fn client_settings(&self, headers: HeaderMap) -> EngineClientSettings {
         EngineClientSettings {

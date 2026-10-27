@@ -43,6 +43,7 @@ impl ErrorKind {
 /// `unsupported_content` errors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum DetailReason {
     /// Denied: the egress policy.
     Egress,
@@ -105,6 +106,7 @@ impl DetailReason {
 /// The kind of credential the secret check found (RFC 009).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum SecretKind {
     /// An AWS access key identifier.
     AwsAccessKey,
@@ -149,6 +151,7 @@ impl SecretKind {
 /// The `detail` object: fixed keys, each present only when the kind
 /// defines it (external design §4).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, schemars::JsonSchema)]
+#[non_exhaustive]
 pub struct ErrorDetail {
     /// The parameter that failed validation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -190,6 +193,7 @@ pub struct ErrorDetail {
 
 /// A tool execution error (REQ-ERR-002, REQ-ERR-003).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[non_exhaustive]
 pub struct ToolError {
     /// The kind.
     pub kind: ErrorKind,

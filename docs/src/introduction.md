@@ -17,5 +17,7 @@ This book has three parts:
   threat register and the glossary. These are the source of truth for every
   design decision and every test.
 
-The maintainers' part is baselined; the other parts are written as the
-milestones deliver their features (see `ROADMAP.md`).
+The maintainers' part is baselined; the other parts describe the delivered
+features. From 1.0.0 the external contract is stable; the
+[stability page](./reference/stability.md) says what is frozen and what
+may change.

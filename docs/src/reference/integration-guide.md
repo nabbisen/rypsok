@@ -89,5 +89,8 @@ return), or with `CallError::Cancelled` when the host cancelled it and
 there is nothing to return. A host that assembles its own `Registry` and
 `FetchService` shares the parsing permits between them with
 `FetchService::with_parsing`, as `Rypsok::from_parts` does, so that one
-bound (LIM-C5) holds for the process. The interface is unstable until
-1.0.0.
+bound (LIM-C5) holds for the process. From 1.0.0 the interface follows
+the [stability page](./stability.md): the public types are
+`#[non_exhaustive]` and grow through new fields, variants and setters,
+so match them with a wildcard arm and build requests and driver types
+through their constructors.

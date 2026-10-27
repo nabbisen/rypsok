@@ -147,7 +147,10 @@ impl ServerHandler for Adapter {
                     );
                     self.render_error(ToolError::rate_limited(retry_after_ms))
                 } else {
-                    match tools::parse_search_arguments(request.arguments.as_ref()) {
+                    match tools::parse_search_arguments(
+                        request.arguments.as_ref(),
+                        self.service.search_policy().max_results_ceiling,
+                    ) {
                         Err(error) => self.render_error(error),
                         Ok(req) => match self
                             .service

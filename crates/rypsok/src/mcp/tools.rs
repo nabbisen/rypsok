@@ -192,17 +192,19 @@ pub fn parse_fetch_arguments(arguments: Option<&JsonObject>) -> Result<FetchRequ
             Some(_) => Err(ToolError::wrong_type(name, "an integer")),
         }
     };
-    Ok(FetchRequest {
-        url,
-        max_chars: integer("max_chars")?,
-        start_char: integer("start_char")?,
-    })
+    let mut request = FetchRequest::new(url);
+    request.max_chars = integer("max_chars")?;
+    request.start_char = integer("start_char")?;
+    Ok(request)
 }
 
 /// Turns the arguments of a `web_search` call into a request. Every
 /// failure is `invalid_request` with the parameter name; an unknown
 /// argument is reported without repeating it (REQ-MCP-004).
-pub fn parse_search_arguments(arguments: Option<&JsonObject>) -> Result<SearchRequest, ToolError> {
+pub fn parse_search_arguments(
+    arguments: Option<&JsonObject>,
+    max_results_ceiling: u8,
+) -> Result<SearchRequest, ToolError> {
     let empty = Map::new();
     let args = arguments.unwrap_or(&empty);
     for key in args.keys() {
@@ -237,7 +239,15 @@ pub fn parse_search_arguments(arguments: Option<&JsonObject>) -> Result<SearchRe
         None | Some(Value::Null) => None,
         Some(Value::Number(n)) => match n.as_u64() {
             Some(v) if v >= 1 && v <= u64::from(u8::MAX) => Some(v as u8),
-            _ => return Err(ToolError::out_of_range("max_results", 1, 20)),
+            // The core checks the ceiling again; the message names the
+            // operator's value here too (contract audit of RFC 016).
+            _ => {
+                return Err(ToolError::out_of_range(
+                    "max_results",
+                    1,
+                    u32::from(max_results_ceiling),
+                ));
+            }
         },
         Some(_) => return Err(ToolError::wrong_type("max_results", "an integer")),
     };
@@ -267,13 +277,12 @@ pub fn parse_search_arguments(arguments: Option<&JsonObject>) -> Result<SearchRe
         ),
         Some(_) => return Err(ToolError::wrong_type("time_range", "a string")),
     };
-    Ok(SearchRequest {
-        query,
-        category,
-        max_results,
-        language,
-        time_range,
-    })
+    let mut request = SearchRequest::new(query);
+    request.category = category;
+    request.max_results = max_results;
+    request.language = language;
+    request.time_range = time_range;
+    Ok(request)
 }
 
 #[cfg(test)]

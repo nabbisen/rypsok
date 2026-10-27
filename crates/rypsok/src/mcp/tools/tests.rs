@@ -105,28 +105,34 @@ fn req_search_002_schema_enumerates_served_categories_and_languages() {
 #[test]
 fn req_mcp_004_arguments_are_validated_per_parameter() {
     let args = |v: Value| -> Option<JsonObject> { v.as_object().cloned() };
-    let err = parse_search_arguments(args(json!({})).as_ref()).unwrap_err();
+    let err = parse_search_arguments(args(json!({})).as_ref(), 20).unwrap_err();
     assert_eq!(
         (err.kind, err.detail.parameter.as_deref()),
         (ErrorKind::InvalidRequest, Some("query"))
     );
     let err =
-        parse_search_arguments(args(json!({ "query": "x", "page": 2 })).as_ref()).unwrap_err();
+        parse_search_arguments(args(json!({ "query": "x", "page": 2 })).as_ref(), 20).unwrap_err();
     assert!(!err.message.contains("page"));
     assert_eq!(err.detail.allowed.as_ref().map(Vec::len), Some(5));
-    let err = parse_search_arguments(args(json!({ "query": 5 })).as_ref()).unwrap_err();
+    let err = parse_search_arguments(args(json!({ "query": 5 })).as_ref(), 20).unwrap_err();
     assert_eq!(err.message, "query must be a string");
-    let err = parse_search_arguments(args(json!({ "query": "x", "max_results": "many" })).as_ref())
-        .unwrap_err();
+    let err = parse_search_arguments(
+        args(json!({ "query": "x", "max_results": "many" })).as_ref(),
+        20,
+    )
+    .unwrap_err();
     assert_eq!(err.detail.parameter.as_deref(), Some("max_results"));
-    let err =
-        parse_search_arguments(args(json!({ "query": "x", "category": "shopping" })).as_ref())
-            .unwrap_err();
+    let err = parse_search_arguments(
+        args(json!({ "query": "x", "category": "shopping" })).as_ref(),
+        20,
+    )
+    .unwrap_err();
     assert_eq!(err.detail.parameter.as_deref(), Some("category"));
     assert!(!err.message.contains("shopping"));
     let ok = parse_search_arguments(
         args(json!({ "query": "x", "max_results": 3, "time_range": "week", "language": "ja" }))
             .as_ref(),
+        20,
     )
     .unwrap();
     assert_eq!(ok.max_results, Some(3));
@@ -168,4 +174,23 @@ fn req_mcp_011_output_schemas_match_the_fixtures() {
             "{name} declares outcome"
         );
     }
+}
+
+/// Contract audit of RFC 016: an out-of-range `max_results` names the
+/// operator's ceiling, never a constant, whether the value fits a byte or
+/// not.
+#[test]
+fn req_main_006_max_results_errors_name_the_configured_ceiling() {
+    let args = |v: Value| -> Option<JsonObject> { v.as_object().cloned() };
+    let huge = parse_search_arguments(
+        args(json!({ "query": "x", "max_results": 300 })).as_ref(),
+        10,
+    )
+    .unwrap_err();
+    assert_eq!(huge.detail.parameter.as_deref(), Some("max_results"));
+    assert_eq!(huge.detail.max, Some(10));
+    assert!(huge.message.contains("10"), "{}", huge.message);
+    let zero = parse_search_arguments(args(json!({ "query": "x", "max_results": 0 })).as_ref(), 7)
+        .unwrap_err();
+    assert_eq!(zero.detail.max, Some(7));
 }
