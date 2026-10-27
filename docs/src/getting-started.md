@@ -59,8 +59,8 @@ file can also be named by `RYPSOK_CONFIG`.
 
 ## Call the tools
 
-From a runtime, the tool list is `web_search` and `engine_status`
-(`web_fetch` arrives in release 0.3.0). A search:
+From a runtime, the tool list is `web_search`, `web_fetch` and
+`engine_status`. A search:
 
 ```json
 { "name": "web_search", "arguments": { "query": "rust async runtime", "max_results": 5 } }
