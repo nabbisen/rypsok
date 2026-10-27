@@ -3,7 +3,10 @@
 //! have the shape a runtime reads, every call matches the tool contract,
 //! and the first tutorial runs end to end against a mock provider.
 
+// The protocol tests' session helper, shared by path; this test uses a
+// part of it.
 #[path = "protocol/session.rs"]
+#[allow(dead_code)]
 mod session;
 
 use std::path::{Path, PathBuf};
