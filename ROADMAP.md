@@ -1,7 +1,8 @@
 # rypsok — Roadmap
 
 **Status:** Authorized by the owner on 2026-09-30; milestones M6 to M8
-added on 2026-10-27 at the owner's direction, with 1.0.0 moved after them.
+added on 2026-10-27 at the owner's direction and accepted the same day;
+1.0.0 is unscheduled and the owner's explicit decision.
 Milestones are defined by content and exit criteria, not by dates. Each
 milestone becomes one minor release; release tags carry no `v` prefix.
 
@@ -20,7 +21,7 @@ requirement names its milestone.
 | **M6** | Users | Documentation a user can follow without the maintainers' part: tutorials (first search over stdio; adding a keyed engine; network mode behind a proxy with a token; the scraping switch and what it means); worked examples checked by CI (host configurations, `rypsok.toml` files validated by `check`, example calls and answers); a page on reading a response (outcomes, notices, errors) written for the person who writes the host's prompt; troubleshooting with `check` and `engine_status`; the README and the book's user part revised against what a new user asks first | 0.6.0 |
 | **M7** | Security | The threat model revisited end to end against the delivered system: every data flow and trust boundary, the register extended or corrected, each threat tied to a control and a test; hardening that the revision calls for (candidates: fuzz targets wired into the scheduled job, decompression and body bounds re-verified, the HTTP gate under slow and malformed clients, resolver and connect-time judgment over time, secret handling and logging re-audited, the container and systemd profiles tightened); a security review recorded as a release-readiness report | 0.7.0 |
 | **M8** | Audit | A careful audit of the project as built: the data models (the model, configuration and driver types against the external design), the networking (clients, resolver, timeouts, pools, proxies, redirects, every bound), the test adequacy per requirement, the measurements of REQ-PERF, the dependency tree, dead code and drift from the RFCs; findings as an audit report with a fix list, the fixes as handoffs | 0.8.0 |
-| **1.0.0** | Stable contract | After M8, on the owner's decision: the external contract is declared stable (RFC 016 prepared it: the stability page, growth-safe types, a semver gate); breaking changes need a major version from then on | 1.0.0 |
+| **1.0.0** | Stable contract | Not scheduled. The owner declares 1.0.0 by an explicit decision once actual use cases have been achieved with rypsok, not at the end of a milestone; RFC 016 prepared the contract (the stability page, growth-safe types, a semver gate), and breaking changes need a major version from then on | 1.0.0 |
 
 ## Exit criteria
 
