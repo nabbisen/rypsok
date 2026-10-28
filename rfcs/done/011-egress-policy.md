@@ -1,6 +1,6 @@
 # RFC 011 — Egress policy and SSRF defense: the agent-directed profile
 
-**Status.** Accepted (2026-10-25) — implementer may start after M2 closes
+**Status.** Implemented (0.3.0); accepted 2026-10-25.
 (release 0.2.0).
 **Tracks.** Milestone M3; requirements REQ-SEC-005 (agent-directed half),
 REQ-SEC-006, REQ-SEC-007, REQ-SEC-008, REQ-SEC-009, REQ-SEC-021,

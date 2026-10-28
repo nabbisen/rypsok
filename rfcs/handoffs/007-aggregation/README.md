@@ -1,6 +1,6 @@
 # Handoff — RFC 007: Aggregation
 
-**RFC.** [`../../accepted/007-aggregation.md`](../../accepted/007-aggregation.md)
+**RFC.** [`../../done/007-aggregation.md`](../../done/007-aggregation.md)
 (the design; this handoff never overrides it).
 **Specifications.** `docs/src/maintainers/requirements.md` (REQ-AGG-001 to
 -009, REQ-MCP-007, REQ-SEC-011, -014, REQ-ERR-001, -005, REQ-TEST-004, -011,

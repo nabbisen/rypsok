@@ -1,6 +1,6 @@
 # Handoff — RFC 005: Content boundary
 
-**RFC.** [`../../accepted/005-content-boundary.md`](../../accepted/005-content-boundary.md)
+**RFC.** [`../../done/005-content-boundary.md`](../../done/005-content-boundary.md)
 (the design; this handoff never overrides it).
 **Specifications.** `docs/src/maintainers/requirements.md` (REQ-SEC-001 to
 -004, -015, -016, REQ-CTX-002 to -007, -010, REQ-TEST-007, -013),

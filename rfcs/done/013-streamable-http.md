@@ -1,6 +1,6 @@
 # RFC 013 — Streamable HTTP, listener protections, authentication, per-caller limits
 
-**Status.** Accepted (2026-10-27) — implementer may start after M3 closes
+**Status.** Implemented (0.4.0); accepted 2026-10-27.
 (release 0.3.0).
 **Tracks.** Milestone M4; requirements REQ-MCP-003, REQ-MCP-006 (served
 revisions over HTTP), REQ-MCP-007 (cancellation over HTTP), REQ-MCP-010

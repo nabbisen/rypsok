@@ -1,6 +1,6 @@
 # Handoff — RFC 012: Fetch pipeline, extraction, robots.txt
 
-**RFC.** [`../../accepted/012-fetch-pipeline.md`](../../accepted/012-fetch-pipeline.md)
+**RFC.** [`../../done/012-fetch-pipeline.md`](../../done/012-fetch-pipeline.md)
 (the design; this handoff never overrides it).
 **Specifications.** `docs/src/maintainers/requirements.md` (REQ-FETCH-001
 to -011, REQ-PAGE-001 to -008, REQ-CTX-005, REQ-CMP-005, REQ-CMP-006,

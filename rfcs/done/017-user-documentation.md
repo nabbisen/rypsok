@@ -1,6 +1,6 @@
 # RFC 017 — User documentation, tutorials and checked examples
 
-**Status.** Accepted (2026-10-27) — implementer may start at once.
+**Status.** Implemented (0.6.0); accepted 2026-10-27.
 **Tracks.** Milestone M6 (`ROADMAP.md`, accepted 2026-10-27); requirements
 REQ-DOC-001 to REQ-DOC-004 (new, below), REQ-OPS-001 (`check`),
 REQ-MCP-011 (the text form of a response), REQ-CTX-002; external design

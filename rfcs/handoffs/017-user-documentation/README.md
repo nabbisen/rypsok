@@ -1,6 +1,6 @@
 # Handoff — RFC 017: User documentation, tutorials and checked examples
 
-**RFC.** [`../../accepted/017-user-documentation.md`](../../accepted/017-user-documentation.md)
+**RFC.** [`../../done/017-user-documentation.md`](../../done/017-user-documentation.md)
 (the design; this handoff never overrides it).
 **Specifications.** `docs/src/maintainers/requirements.md` (REQ-DOC-001
 to -004, REQ-OPS-001, REQ-MCP-011, REQ-CTX-002),

@@ -12,6 +12,15 @@ it: what it lists as frozen changes only with a major version, additions
 arrive in minor versions, and every change of a default value is
 announced here with both values.
 
+## [Unreleased] — Corrections from the first independent review (0.7.1)
+
+RFC 019: the fixes of handoffs 019a to 019c are listed here as they land.
+
+### Changed
+
+- RFCs 001 to 018 moved to `rfcs/done/` with the release each shipped in,
+  as RFC 000 prescribes; no design changed.
+
 ## [0.7.0] — 2026-10-28 — Security (milestone M7)
 
 ### Added

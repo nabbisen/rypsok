@@ -1,6 +1,6 @@
 # RFC 007 — Aggregation: deadlines, concurrency, cancellation, partial results
 
-**Status.** Accepted (2026-09-30) — implementer may start after RFC 006.
+**Status.** Implemented (0.1.0); accepted 2026-09-30.
 **Tracks.** Milestone M1; requirements REQ-AGG-001 to -009, REQ-MCP-007,
 REQ-SEC-011, REQ-SEC-014, REQ-ERR-001, -005, REQ-TEST-004, REQ-TEST-011,
 REQ-PERF-004, REQ-PERF-005; external design §6, §7.

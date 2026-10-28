@@ -1,6 +1,6 @@
 # RFC 002 — Test strategy and CI gates
 
-**Status.** Accepted (2026-09-30) — implementer may start.
+**Status.** Implemented (0.1.0); accepted 2026-09-30.
 **Tracks.** Milestone M0 of `ROADMAP.md`; requirements REQ-TEST-001,
 REQ-TEST-012, REQ-TEST-013 (from M1), REQ-SEC-020, REQ-ARCH-005,
 REQ-MAIN-005, REQ-RUST-002; the project rule "design specifications serve

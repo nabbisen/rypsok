@@ -1,6 +1,6 @@
 # Handoff — RFC 010: Health, circuit breaking, provider limits, `engine_status`
 
-**RFC.** [`../../accepted/010-health-and-circuit.md`](../../accepted/010-health-and-circuit.md)
+**RFC.** [`../../done/010-health-and-circuit.md`](../../done/010-health-and-circuit.md)
 (the design; this handoff never overrides it).
 **Specifications.** `docs/src/maintainers/requirements.md` (REQ-STATUS-001
 to -003, REQ-RES-004, -005, -009, REQ-OBS-001 to -004, -008, REQ-TEST-003,

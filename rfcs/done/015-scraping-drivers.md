@@ -1,6 +1,6 @@
 # RFC 015 — Scraping drivers as an opt-in engine type
 
-**Status.** Accepted (2026-10-27) — implementer may start after RFC 014
+**Status.** Implemented (0.5.0); accepted 2026-10-27.
 PR 2 (the parsing module is shared).
 **Tracks.** Milestone M5; deferred requirement DR-006; requirements
 REQ-ENG-008 (official interfaces first), REQ-ENG-009 (anti-bot responses),

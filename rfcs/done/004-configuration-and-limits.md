@@ -1,6 +1,6 @@
 # RFC 004 — Configuration schema and limits
 
-**Status.** Accepted (2026-09-30) — implementer may start after RFC 001.
+**Status.** Implemented (0.1.0); accepted 2026-09-30.
 **Tracks.** Milestone M1; requirements REQ-CFG-001, -003, -004, -005,
 REQ-MAIN-003, REQ-OPS-001, -002, -003, REQ-SEARCH-008, REQ-ENG-003;
 external design §13; `docs/src/maintainers/limits-and-defaults.md`.

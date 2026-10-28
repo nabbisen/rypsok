@@ -1,6 +1,6 @@
 # Handoff — RFC 014: Result cache
 
-**RFC.** [`../../accepted/014-result-cache.md`](../../accepted/014-result-cache.md)
+**RFC.** [`../../done/014-result-cache.md`](../../done/014-result-cache.md)
 (the design; this handoff never overrides it).
 **Specifications.** `docs/src/maintainers/requirements.md` (REQ-CACHE-001
 to -007, REQ-CMP-007, REQ-TEST-010, REQ-PRIV-003, REQ-ENG-010, REQ-OBS-001),

@@ -1,6 +1,6 @@
 # RFC 016 — 1.0.0: the stable contract
 
-**Status.** Accepted (2026-10-27) — implementer may start after the M5
+**Status.** Implemented (0.6.0); the 1.0.0 declaration it prepares is the owner's decision after real use; accepted 2026-10-27.
 review decisions.
 **Tracks.** The 1.0.0 row of `ROADMAP.md`; requirements REQ-MAIN-006
 (contract versioning), REQ-ARCH-007 (the core interface, unstable until

@@ -1,6 +1,6 @@
 # RFC 014 — Result cache
 
-**Status.** Accepted (2026-10-27) — implementer may start after the M4
+**Status.** Implemented (0.5.0); accepted 2026-10-27.
 review decisions (`f869eaf`).
 **Tracks.** Milestone M5; requirements REQ-CACHE-001 to REQ-CACHE-007,
 REQ-CMP-007, REQ-TEST-010, REQ-PRIV-003, REQ-ENG-010 (cacheability),

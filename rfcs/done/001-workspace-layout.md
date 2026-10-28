@@ -1,6 +1,6 @@
 # RFC 001 — Workspace layout and crate boundaries
 
-**Status.** Accepted (2026-09-30) — implementer may start.
+**Status.** Implemented (0.1.0); accepted 2026-09-30.
 **Tracks.** Milestone M0 of `ROADMAP.md`; requirements REQ-ARCH-001,
 REQ-ARCH-005, REQ-ARCH-007, REQ-ARCH-008, REQ-RUST-001, REQ-RUST-004,
 REQ-DEP-005, REQ-MAIN-006.

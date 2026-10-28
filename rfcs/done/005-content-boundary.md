@@ -1,6 +1,6 @@
 # RFC 005 — Content boundary
 
-**Status.** Accepted (2026-09-30) — implementer may start after RFC 003.
+**Status.** Implemented (0.1.0); accepted 2026-09-30.
 **Tracks.** Milestone M1 (titles, snippets, renderings); M3 adds page
 content (RFC 012). Requirements REQ-SEC-001 to -004, REQ-SEC-015, -016,
 REQ-CTX-002 to -007, REQ-CTX-010, REQ-TEST-007, REQ-TEST-013; external

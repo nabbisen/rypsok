@@ -1,6 +1,6 @@
 # Handoff — RFC 009: Query privacy and logging
 
-**RFC.** [`../../accepted/009-privacy-and-logging.md`](../../accepted/009-privacy-and-logging.md)
+**RFC.** [`../../done/009-privacy-and-logging.md`](../../done/009-privacy-and-logging.md)
 (the design; this handoff never overrides it).
 **Specifications.** `docs/src/maintainers/requirements.md` (REQ-PRIV-001 to
 -005, REQ-OBS-003, -005 to -007, REQ-SEC-020, REQ-TEST-008),

@@ -1,6 +1,6 @@
 # Handoff — RFC 018: Threat model revision and hardening
 
-**RFC.** [`../../accepted/018-threat-model-revision.md`](../../accepted/018-threat-model-revision.md)
+**RFC.** [`../../done/018-threat-model-revision.md`](../../done/018-threat-model-revision.md)
 (the design; this handoff never overrides it).
 **Specifications.** `docs/src/maintainers/requirements.md` (REQ-SEC-018,
 REQ-SEC-020, REQ-SEC-022, REQ-SEC-023, REQ-SEC-013, REQ-SEC-016,

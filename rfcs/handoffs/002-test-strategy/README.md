@@ -1,6 +1,6 @@
 # Handoff — RFC 002: Test strategy and CI gates
 
-**RFC.** [`../../accepted/002-test-strategy.md`](../../accepted/002-test-strategy.md)
+**RFC.** [`../../done/002-test-strategy.md`](../../done/002-test-strategy.md)
 (the design; this handoff never overrides it).
 **Specifications.** `docs/src/maintainers/requirements.md` (REQ-TEST-001,
 -012; REQ-SEC-020; REQ-ARCH-005; REQ-RUST-002), `ROADMAP.md` M0.

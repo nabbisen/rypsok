@@ -1,6 +1,6 @@
 # RFC 006 — Engine abstraction, registry, admission; Wikipedia and Brave
 
-**Status.** Accepted (2026-09-30) — implementer may start after RFC 004.
+**Status.** Implemented (0.1.0); accepted 2026-09-30.
 **Tracks.** Milestone M1; requirements REQ-ENG-001 to -012, REQ-CMP-001
 to -004, REQ-SEC-017, REQ-RES-002, REQ-RES-008, REQ-TEST-002, REQ-TEST-015,
 REQ-TEST-016; external design §8 (engine profile), §11; threats THR-08,

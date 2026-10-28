@@ -1,6 +1,6 @@
 # RFC 018 — Threat model revision and hardening
 
-**Status.** Accepted (2026-10-27) — implementer may start at once.
+**Status.** Implemented (0.7.0); accepted 2026-10-27.
 **Tracks.** Milestone M7 (`ROADMAP.md`, accepted 2026-10-27); requirements
 REQ-SEC-018, REQ-SEC-020 (amended), REQ-SEC-022 and REQ-SEC-023 (new),
 REQ-SEC-013, REQ-SEC-016, REQ-PRIV-004, REQ-TEST-013, REQ-DEP-003;

@@ -1,6 +1,6 @@
 # RFC 010 — Health, circuit breaking, provider limits, `engine_status`
 
-**Status.** Accepted (2026-10-03) — implementer may start after M1 closes.
+**Status.** Implemented (0.2.0); accepted 2026-10-03.
 **Tracks.** Milestone M2; requirements REQ-STATUS-001 to -003, REQ-RES-004,
 -005, -009, REQ-OBS-001 to -004, -008, REQ-TEST-003, REQ-TEST-017; external
 design §3.3, §6, §14; threats THR-04, THR-13, THR-15; decisions D-26, D-33.

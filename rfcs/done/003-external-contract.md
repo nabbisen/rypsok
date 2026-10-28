@@ -1,6 +1,6 @@
 # RFC 003 — External contract: tools, schemas, envelope, errors, tool profiles
 
-**Status.** Accepted (2026-09-30) — implementer may start after RFC 001.
+**Status.** Implemented (0.1.0); accepted 2026-09-30.
 **Tracks.** Milestone M1; requirements REQ-MCP-001 to REQ-MCP-011,
 REQ-SEARCH-001 to -008, REQ-STATUS-001 to -003, REQ-CTX-001, -002, -003,
 -006, -007, -009, REQ-ERR-001 to -005, REQ-SEC-016; external design §2, §3,

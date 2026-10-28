@@ -1,6 +1,6 @@
 # Handoff — RFC 008: URL comparison keys, deduplication, rank fusion
 
-**RFC.** [`../../accepted/008-urls-dedup-ranking.md`](../../accepted/008-urls-dedup-ranking.md)
+**RFC.** [`../../done/008-urls-dedup-ranking.md`](../../done/008-urls-dedup-ranking.md)
 (the design; this handoff never overrides it).
 **Specifications.** `docs/src/maintainers/requirements.md` (REQ-RANK-001 to
 -007, REQ-ARCH-004, REQ-CTX-001), `docs/src/maintainers/external-design.md`

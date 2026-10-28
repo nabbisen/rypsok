@@ -1,6 +1,6 @@
 # Handoff — RFC 004: Configuration schema and limits
 
-**RFC.** [`../../accepted/004-configuration-and-limits.md`](../../accepted/004-configuration-and-limits.md)
+**RFC.** [`../../done/004-configuration-and-limits.md`](../../done/004-configuration-and-limits.md)
 (the design; this handoff never overrides it).
 **Specifications.** `docs/src/maintainers/requirements.md` (REQ-CFG-001 to
 -006, REQ-OPS-001 to -004, REQ-MAIN-004), `docs/src/maintainers/external-design.md`

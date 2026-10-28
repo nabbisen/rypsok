@@ -1,6 +1,6 @@
 # Handoff — RFC 015: Scraping drivers as an opt-in engine type
 
-**RFC.** [`../../accepted/015-scraping-drivers.md`](../../accepted/015-scraping-drivers.md)
+**RFC.** [`../../done/015-scraping-drivers.md`](../../done/015-scraping-drivers.md)
 (the design; this handoff never overrides it).
 **Specifications.** `docs/src/maintainers/requirements.md` (REQ-ENG-008,
 REQ-ENG-009, REQ-ENG-013 to -015, REQ-CMP-001, REQ-CMP-002, REQ-CMP-004,

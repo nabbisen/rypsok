@@ -1,6 +1,6 @@
 # Handoff — RFC 003: External contract
 
-**RFC.** [`../../accepted/003-external-contract.md`](../../accepted/003-external-contract.md)
+**RFC.** [`../../done/003-external-contract.md`](../../done/003-external-contract.md)
 (the design; this handoff never overrides it).
 **Specifications.** `docs/src/maintainers/requirements.md` (REQ-MCP-001 to
 -011, REQ-SEARCH-001 to -006, REQ-STATUS-001 to -003, REQ-CTX-002, -003,

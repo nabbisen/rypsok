@@ -1,6 +1,6 @@
 # Handoff — RFC 011: Egress policy and SSRF defense
 
-**RFC.** [`../../accepted/011-egress-policy.md`](../../accepted/011-egress-policy.md)
+**RFC.** [`../../done/011-egress-policy.md`](../../done/011-egress-policy.md)
 (the design; this handoff never overrides it).
 **Specifications.** `docs/src/maintainers/requirements.md` (REQ-SEC-005 to
 -009, REQ-SEC-021, REQ-FETCH-007, REQ-FETCH-010, REQ-RES-008, REQ-TEST-005,

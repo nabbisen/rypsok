@@ -1,6 +1,6 @@
 # Handoff — RFC 001: Workspace layout and crate boundaries
 
-**RFC.** [`../../accepted/001-workspace-layout.md`](../../accepted/001-workspace-layout.md)
+**RFC.** [`../../done/001-workspace-layout.md`](../../done/001-workspace-layout.md)
 (the design; this handoff never overrides it).
 **Specifications.** `docs/src/maintainers/requirements.md` (REQ-ARCH-001,
 -005, -007, -008; REQ-RUST-001, -004; REQ-DEP-005; REQ-MAIN-006),

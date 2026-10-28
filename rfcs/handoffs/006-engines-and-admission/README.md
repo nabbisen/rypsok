@@ -1,6 +1,6 @@
 # Handoff — RFC 006: Engine abstraction, registry, admission; Wikipedia and Brave
 
-**RFC.** [`../../accepted/006-engines-and-admission.md`](../../accepted/006-engines-and-admission.md)
+**RFC.** [`../../done/006-engines-and-admission.md`](../../done/006-engines-and-admission.md)
 (the design; this handoff never overrides it).
 **Specifications.** `docs/src/maintainers/requirements.md` (REQ-ENG-001 to
 -012, REQ-CMP-001 to -004, REQ-SEC-017, REQ-RES-002, -008, REQ-TEST-002,

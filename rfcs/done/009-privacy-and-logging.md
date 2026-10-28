@@ -1,6 +1,6 @@
 # RFC 009 — Query privacy and logging
 
-**Status.** Accepted (2026-09-30) — implementer may start after RFC 003.
+**Status.** Implemented (0.1.0); accepted 2026-09-30.
 **Tracks.** Milestone M1; requirements REQ-PRIV-001 to -005, REQ-OBS-005 to
 -007, REQ-SEC-020 (redaction), REQ-TEST-008; external design §10, §13.3;
 threats THR-09, THR-10, THR-16.

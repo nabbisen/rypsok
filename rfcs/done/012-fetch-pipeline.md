@@ -1,6 +1,6 @@
 # RFC 012 — Fetch pipeline: `web_fetch`, extraction, robots.txt
 
-**Status.** Accepted (2026-10-25) — implementer may start after RFC 011.
+**Status.** Implemented (0.3.0); accepted 2026-10-25.
 **Tracks.** Milestone M3; requirements REQ-FETCH-001 to -011, REQ-PAGE-001
 to -008, REQ-CTX-005, REQ-CMP-005, REQ-CMP-006, REQ-SEC-012, REQ-PERF-003,
 REQ-TEST-006; external design §3.2, §4, §9, §14; threats THR-01, THR-03,

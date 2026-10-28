@@ -41,30 +41,33 @@ _None yet._
 
 | ID | Title | Milestone | Handoff |
 |----|-------|-----------|---------|
-| 001 | [Workspace layout and crate boundaries](./accepted/001-workspace-layout.md) | M0 | [handoffs/001-workspace-layout](./handoffs/001-workspace-layout/README.md) |
-| 002 | [Test strategy and CI gates](./accepted/002-test-strategy.md) | M0 | [handoffs/002-test-strategy](./handoffs/002-test-strategy/README.md) |
-| 003 | [External contract](./accepted/003-external-contract.md) | M1 | [handoffs/003-external-contract](./handoffs/003-external-contract/README.md) |
-| 004 | [Configuration schema and limits](./accepted/004-configuration-and-limits.md) | M1 | [handoffs/004-configuration-and-limits](./handoffs/004-configuration-and-limits/README.md) |
-| 005 | [Content boundary](./accepted/005-content-boundary.md) | M1 | [handoffs/005-content-boundary](./handoffs/005-content-boundary/README.md) |
-| 006 | [Engine abstraction, registry, admission; Wikipedia and Brave](./accepted/006-engines-and-admission.md) | M1 | [handoffs/006-engines-and-admission](./handoffs/006-engines-and-admission/README.md) |
-| 007 | [Aggregation](./accepted/007-aggregation.md) | M1 | [handoffs/007-aggregation](./handoffs/007-aggregation/README.md) |
-| 008 | [URL comparison keys, deduplication, rank fusion](./accepted/008-urls-dedup-ranking.md) | M1 | [handoffs/008-urls-dedup-ranking](./handoffs/008-urls-dedup-ranking/README.md) |
-| 009 | [Query privacy and logging](./accepted/009-privacy-and-logging.md) | M1 | [handoffs/009-privacy-and-logging](./handoffs/009-privacy-and-logging/README.md) |
-| 010 | [Health, circuit breaking, provider limits, `engine_status`](./accepted/010-health-and-circuit.md) | M2 | [handoffs/010-health-and-circuit](./handoffs/010-health-and-circuit/README.md) |
-| 011 | [Egress policy and SSRF defense](./accepted/011-egress-policy.md) | M3 | [handoffs/011-egress-policy](./handoffs/011-egress-policy/README.md) |
-| 012 | [Fetch pipeline: `web_fetch`, extraction, robots.txt](./accepted/012-fetch-pipeline.md) | M3 | [handoffs/012-fetch-pipeline](./handoffs/012-fetch-pipeline/README.md) |
-| 013 | [Streamable HTTP, listener protections, authentication, per-caller limits](./accepted/013-streamable-http.md) | M4 | [handoffs/013-streamable-http](./handoffs/013-streamable-http/README.md) |
-| 014 | [Result cache](./accepted/014-result-cache.md) | M5 | [handoffs/014-result-cache](./handoffs/014-result-cache/README.md) |
-| 015 | [Scraping drivers as an opt-in engine type](./accepted/015-scraping-drivers.md) | M5 | [handoffs/015-scraping-drivers](./handoffs/015-scraping-drivers/README.md) |
-| 016 | [1.0.0: the stable contract](./accepted/016-stable-contract.md) | 1.0.0 | [handoffs/016-stable-contract](./handoffs/016-stable-contract/README.md) |
-| 017 | [User documentation, tutorials and checked examples](./accepted/017-user-documentation.md) | M6 | [handoffs/017-user-documentation](./handoffs/017-user-documentation/README.md) |
-| 018 | [Threat model revision and hardening](./accepted/018-threat-model-revision.md) | M7 | [handoffs/018-threat-model-revision](./handoffs/018-threat-model-revision/README.md) |
+| 019 | [Corrections from the first independent review](./accepted/019-first-independent-review.md) | 0.7.1 | [019a](./handoffs/019a-core-corrections/README.md), [019b](./handoffs/019b-listener-and-http-docs/README.md), [019c](./handoffs/019c-release-ci-records/README.md) |
+
+Review records are not in the repository: the owner keeps review requests and reviewed packages under a private directory, which earlier handoffs name as `.git-exclude/reviews/`, today `.git-exclude/review-requests/` and `.git-exclude/reviewed/`.
 
 ## Implemented
 
 | ID | Title | Shipped in |
 |----|-------|------------|
 | 000 | [RFC lifecycle policy](./done/000-rfc-lifecycle-policy.md) | Project start (pre-release) |
+| 001 | [Workspace layout and crate boundaries](./done/001-workspace-layout.md) | 0.1.0 |
+| 002 | [Test strategy and CI gates](./done/002-test-strategy.md) | 0.1.0 |
+| 003 | [External contract](./done/003-external-contract.md) | 0.1.0 |
+| 004 | [Configuration schema and limits](./done/004-configuration-and-limits.md) | 0.1.0 |
+| 005 | [Content boundary](./done/005-content-boundary.md) | 0.1.0 |
+| 006 | [Engine abstraction, registry, admission; Wikipedia and Brave](./done/006-engines-and-admission.md) | 0.1.0 |
+| 007 | [Aggregation](./done/007-aggregation.md) | 0.1.0 |
+| 008 | [URL comparison keys, deduplication, rank fusion](./done/008-urls-dedup-ranking.md) | 0.1.0 |
+| 009 | [Query privacy and logging](./done/009-privacy-and-logging.md) | 0.1.0 |
+| 010 | [Health, circuit breaking, provider limits, `engine_status`](./done/010-health-and-circuit.md) | 0.2.0 |
+| 011 | [Egress policy and SSRF defense](./done/011-egress-policy.md) | 0.3.0 |
+| 012 | [Fetch pipeline: `web_fetch`, extraction, robots.txt](./done/012-fetch-pipeline.md) | 0.3.0 |
+| 013 | [Streamable HTTP, listener protections, authentication, per-caller limits](./done/013-streamable-http.md) | 0.4.0 |
+| 014 | [Result cache](./done/014-result-cache.md) | 0.5.0 |
+| 015 | [Scraping drivers as an opt-in engine type](./done/015-scraping-drivers.md) | 0.5.0 |
+| 016 | [1.0.0: the stable contract](./done/016-stable-contract.md) | 0.6.0 |
+| 017 | [User documentation, tutorials and checked examples](./done/017-user-documentation.md) | 0.6.0 |
+| 018 | [Threat model revision and hardening](./done/018-threat-model-revision.md) | 0.7.0 |
 
 ## Archive
 

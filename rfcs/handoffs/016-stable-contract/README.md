@@ -1,6 +1,6 @@
 # Handoff — RFC 016: 1.0.0, the stable contract
 
-**RFC.** [`../../accepted/016-stable-contract.md`](../../accepted/016-stable-contract.md)
+**RFC.** [`../../done/016-stable-contract.md`](../../done/016-stable-contract.md)
 (the design; this handoff never overrides it).
 **Specifications.** `docs/src/maintainers/requirements.md` (REQ-MAIN-006,
 REQ-ARCH-007, REQ-MAIN-003, REQ-CTX-002, REQ-OPS-001, REQ-MCP-006),

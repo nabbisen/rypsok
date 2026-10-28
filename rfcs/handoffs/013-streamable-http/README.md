@@ -1,6 +1,6 @@
 # Handoff — RFC 013: Streamable HTTP, listener protections, authentication
 
-**RFC.** [`../../accepted/013-streamable-http.md`](../../accepted/013-streamable-http.md)
+**RFC.** [`../../done/013-streamable-http.md`](../../done/013-streamable-http.md)
 (the design; this handoff never overrides it).
 **Specifications.** `docs/src/maintainers/requirements.md` (REQ-MCP-003,
 REQ-MCP-006, REQ-MCP-007, REQ-MCP-010, REQ-SEC-018, REQ-SEC-019,

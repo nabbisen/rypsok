@@ -1,6 +1,6 @@
 # RFC 008 — URL comparison keys, deduplication, rank fusion
 
-**Status.** Accepted (2026-09-30) — implementer may start after RFC 007.
+**Status.** Implemented (0.1.0); accepted 2026-09-30.
 **Tracks.** Milestone M1; requirements REQ-RANK-001 to -007, REQ-ARCH-004,
 REQ-CTX-001; external design §3.1, §6; threat THR-24.
 **Touches.** `rypsok-core::search::{normalize, dedup, rank}`.
