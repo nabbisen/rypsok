@@ -178,7 +178,11 @@ proptest! {
             let key = comparison_key(&once);
             prop_assert!(key.as_str().starts_with("https://"));
             prop_assert!(!key.as_str().contains("utm_"));
-            prop_assert!(!key.as_str().contains("www."));
+            // The `www.` label is removed; a host that merely contains the
+            // letters (`awww.org`) keeps them (CI found the broader assertion
+            // on 2026-10-29).
+            let key_host = Url::parse(key.as_str()).unwrap().host_str().unwrap().to_owned();
+            prop_assert!(!key_host.starts_with("www."));
             prop_assert!(Url::parse(&once).unwrap().host_str().unwrap().ends_with(&host));
         }
     }
