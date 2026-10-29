@@ -604,10 +604,10 @@ Every requirement of the baseline and the section of this document that
 satisfies it. A row maps one requirement to the sections that, together,
 specify its group: the same cell is repeated for the requirements of a
 group (all `REQ-FETCH-*` rows name the same sections), and a row does not say
-which sentence of those sections satisfies the requirement. Where no
-section of this document specifies a requirement, the cell says
-"Internal" and names what does. "Internal" marks requirements that have no externally visible
-form; they are verified by tests and inspection. Deferred requirements
+which sentence of those sections satisfies the requirement. "Internal"
+marks requirements that have no externally visible form, or that no section
+of this document specifies; the cell then names what does. They are
+verified by tests and inspection. Deferred requirements
 (DR-001 to DR-011) are listed in requirements §24 and have no design yet.
 
 Contract versioning (REQ-MAIN-006): every name, parameter, field, outcome,
