@@ -39,11 +39,24 @@ creates nothing and replaces nothing. The run's workflow artifacts
 (`archive-*` and `checksums`) are the binaries the workflow built from the
 tag. To attach them by hand:
 
-1. Download the artifacts of the tag's run (the run page, "Artifacts", or
-   `gh run download <run id>`) into one empty directory, so that the three
-   archives and `SHA256SUMS` lie side by side.
-2. Check each archive against `SHA256SUMS` (`sha256sum --check
-   SHA256SUMS`); upload nothing that does not match.
+1. Download the artifacts `archive-*` and `checksums` of the tag's run, and
+   not the container image, which the run also holds. `gh` puts each
+   artifact in a directory of its own (the run page's "Artifacts" gives one
+   zip each), so move the files into one directory afterwards, in an empty
+   directory:
+
+   ```sh
+   gh run download <run id> --repo nabbisen/rypsok --pattern 'archive-*' --pattern checksums --dir artifacts
+   mv artifacts/*/* .
+   rmdir artifacts/* artifacts
+   ```
+
+   The three archives and `SHA256SUMS` now lie side by side.
+2. Check them: `sha256sum --check SHA256SUMS` must print `OK` for all three
+   archives and exit 0. It fails when an archive is missing; do not add
+   `--ignore-missing`, which passes with a file absent. All three archives
+   must be there before the upload, and nothing that does not match is
+   uploaded.
 3. Upload the three archives and `SHA256SUMS` to the release (the release
    page, "Edit", or `gh release upload X.Y.Z <files>`).
 4. Say in the release notes that the files were attached by hand from the
