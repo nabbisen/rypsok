@@ -48,9 +48,21 @@ struct Server {
 
 impl Server {
     async fn start(config_text: &str) -> Server {
+        Self::start_with(config_text, None).await
+    }
+
+    /// Starts a listener whose service counts into `counters` when given.
+    async fn start_with(
+        config_text: &str,
+        counters: Option<Arc<rypsok_core::telemetry::Counters>>,
+    ) -> Server {
         let config = Config::parse(config_text).unwrap();
         config.validate().unwrap();
-        let service = Arc::new(Rypsok::new(config).unwrap());
+        let mut service = Rypsok::new(config).unwrap();
+        if let Some(counters) = counters {
+            service = service.with_counters(counters);
+        }
+        let service = Arc::new(service);
         let settings = HttpSettings::from_config(service.config()).unwrap();
         let listener = bind(&settings).await.unwrap();
         let url = format!("http://{}{PATH}", listener.local_addr().unwrap());
@@ -263,10 +275,10 @@ async fn req_sec_018_host_and_origin_are_validated() {
         .send()
         .await
         .unwrap();
-    assert!(
-        foreign_host.status().is_client_error(),
-        "{}",
-        foreign_host.status()
+    assert_eq!(
+        foreign_host.status(),
+        403,
+        "the SDK answers a foreign Host with 403 (RFC 019 D6)"
     );
     let origin = s
         .request("server/discover", json!({}))
@@ -342,7 +354,7 @@ fn req_sec_018_non_loopback_bind_needs_callers() {
         callers: Vec::new(),
     };
     assert_eq!(
-        auth.check(&http::HeaderMap::new()).unwrap(),
+        auth.check(&http::HeaderMap::new(), "ipv4").unwrap(),
         CallerId::local()
     );
 }
@@ -596,6 +608,11 @@ async fn req_sec_022_a_slow_body_is_ended_with_408() {
         .unwrap();
     assert_eq!(response.status(), 200);
     assert_eq!(s.service.counters().calls_of("engine_status", "ok"), 0);
+    assert_eq!(
+        s.service.counters().refusals_of("http", "request_timeout"),
+        1,
+        "the 408 is counted (RFC 019 D6)"
+    );
     s.stop().await;
 }
 
@@ -737,4 +754,190 @@ fn capture_log() -> (
         .with_writer(sink)
         .finish();
     (buffer, tracing::subscriber::set_default(subscriber))
+}
+
+/// The events of one name in captured JSON log lines.
+fn events(log: &Arc<std::sync::Mutex<Vec<u8>>>, name: &str) -> Vec<Value> {
+    let text = String::from_utf8(log.lock().unwrap().clone()).unwrap();
+    text.lines()
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .filter(|v| v["event"] == name)
+        .collect()
+}
+
+/// A request of the 2026-07-28 revision without its `MCP-Protocol-Version`
+/// header.
+fn without_protocol_header(s: &Server) -> reqwest::RequestBuilder {
+    s.client()
+        .post(&s.url)
+        .header("accept", "application/json, text/event-stream")
+        .header("mcp-method", "server/discover")
+        .json(&json!({
+            "jsonrpc": "2.0", "id": 1, "method": "server/discover",
+            "params": { META: meta() }
+        }))
+}
+
+/// REQ-SEC-018 and REQ-OBS-007 (RFC 019 D6): the four answers the SDK gives
+/// behind the gate, pinned. A foreign `Host` and a refused `Origin` are 403,
+/// the signature of THR-18, and leave one `http_refused` event
+/// (`sdk_forbidden`, the status, the address family and no header value);
+/// a missing protocol header is 400 and an `Accept` without both media
+/// types is 406, counted and not logged per request.
+#[tokio::test]
+async fn req_sec_018_sdk_refusals_are_pinned_logged_and_counted() {
+    let (log, _guard) = capture_log();
+    let s = Server::start(LOOPBACK).await;
+    let counters = s.service.counters();
+
+    let host = s
+        .request("server/discover", json!({}))
+        .header("host", "evil.example")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(host.status(), 403);
+    let origin = s
+        .request("server/discover", json!({}))
+        .header("origin", "https://evil.example")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(origin.status(), 403);
+    let forbidden = events(&log, "http_refused");
+    assert_eq!(forbidden.len(), 2, "{forbidden:?}");
+    for event in &forbidden {
+        assert_eq!(event["reason"], "sdk_forbidden");
+        assert_eq!(event["status"], 403);
+        assert_eq!(event["family"], "ipv4");
+    }
+    // The gate's own event carries no header value. (The SDK writes its own
+    // warning for the same request, with the value; that line is the SDK's.)
+    assert!(
+        !serde_json::to_string(&forbidden)
+            .unwrap()
+            .contains("evil.example"),
+        "no header value in the gate's event"
+    );
+    assert_eq!(counters.refusals_of("http", "sdk_forbidden"), 2);
+
+    log.lock().unwrap().clear();
+    let bad = without_protocol_header(&s).send().await.unwrap();
+    assert_eq!(bad.status(), 400);
+    let not_acceptable = s
+        .client()
+        .post(&s.url)
+        .header("accept", "application/json")
+        .header("mcp-protocol-version", "2026-07-28")
+        .header("mcp-method", "server/discover")
+        .json(&json!({
+            "jsonrpc": "2.0", "id": 1, "method": "server/discover",
+            "params": { META: meta() }
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(not_acceptable.status(), 406);
+    assert!(
+        events(&log, "http_refused").is_empty(),
+        "400 and 406 are counted, not logged"
+    );
+    assert_eq!(counters.refusals_of("http", "sdk_bad_request"), 1);
+    assert_eq!(counters.refusals_of("http", "sdk_not_acceptable"), 1);
+    s.stop().await;
+}
+
+/// REQ-OBS-007 (RFC 019 D6): the gate's own refusals are counted per
+/// reason: 401, a declared body over LIM-H2 (413) and a refused handshake.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn req_obs_007_gate_refusals_are_counted_per_reason() {
+    let token = token_file("counted", "token-c-0123456789-0123456789-0123456789");
+    let s = Server::start(&LOOPBACK.replace(
+        "bind = \"127.0.0.1:0\"\n[engines.w]",
+        &format!(
+            "bind = \"127.0.0.1:0\"\nmax_request_bytes = 4096\nmax_sessions = 1\n[[service.http.auth.callers]]\nid = \"alpha\"\ntoken_file = \"{token}\"\n[engines.w]"
+        ),
+    ))
+    .await;
+    let counters = s.service.counters();
+    let auth = "token-c-0123456789-0123456789-0123456789";
+    assert_eq!(
+        s.request("server/discover", json!({}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    let padding = "x".repeat(5000);
+    let big = s
+        .client()
+        .post(&s.url)
+        .bearer_auth(auth)
+        .header("accept", "application/json, text/event-stream")
+        .header("content-type", "application/json")
+        .body(format!("{{\"pad\":\"{padding}\"}}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(big.status(), 413);
+    let initialize = |s: &Server| {
+        s.client()
+            .post(&s.url)
+            .bearer_auth(auth)
+            .header("accept", "application/json, text/event-stream")
+            .json(&json!({
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": { "protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": { "name": "t", "version": "0" } }
+            }))
+            .send()
+    };
+    assert_eq!(initialize(&s).await.unwrap().status(), 200);
+    assert_eq!(initialize(&s).await.unwrap().status(), 503);
+    assert_eq!(counters.refusals_of("http", "unauthorized"), 1);
+    assert_eq!(counters.refusals_of("http", "body_too_large"), 1);
+    assert_eq!(counters.refusals_of("http", "session_limit"), 1);
+    s.stop().await;
+}
+
+/// REQ-OBS-007 (RFC 019 D6): a flood of refused requests with no tool call
+/// is still logged: counting a refusal runs the flush check a call runs.
+/// Three foreign-`Host` requests inside the interval leave no event; once
+/// the interval has passed, the next refusal, whatever its reason, makes
+/// one `counters` event that lists the three. (A current-thread runtime,
+/// so that the test's subscriber sees the listener's tasks.)
+#[tokio::test]
+async fn req_obs_007_a_flood_of_refusals_is_logged_without_a_tool_call() {
+    use rypsok_core::telemetry::Counters;
+    let (log, _guard) = capture_log();
+    let counters = Arc::new(Counters::with_flush_interval(Duration::from_millis(300)));
+    let s = Server::start_with(LOOPBACK, Some(counters)).await;
+    for _ in 0..3 {
+        let response = s
+            .request("server/discover", json!({}))
+            .header("host", "evil.example")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 403);
+    }
+    assert!(
+        events(&log, "counters").is_empty(),
+        "inside the interval nothing is flushed"
+    );
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert_eq!(
+        without_protocol_header(&s).send().await.unwrap().status(),
+        400
+    );
+    let flushed = events(&log, "counters");
+    assert_eq!(flushed.len(), 1, "{flushed:?}");
+    let refusals = flushed[0]["refusals"].as_str().unwrap();
+    assert!(refusals.contains("http.sdk_forbidden=3"), "{refusals}");
+    assert!(
+        s.service.counters().calls_of("engine_status", "ok") == 0
+            && s.service.counters().calls_of("web_search", "ok") == 0,
+        "no tool call was made"
+    );
+    s.stop().await;
 }

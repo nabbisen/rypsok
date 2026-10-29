@@ -51,19 +51,29 @@ ever goes to standard output except protocol messages.
 
 | Status | Cause | Fix |
 |---|---|---|
-| 400 | The `Host` header is not in `allowed_hosts`, or a protocol header (`MCP-Protocol-Version`, `Mcp-Method`, `Mcp-Name`) is missing | List the host; send the headers ([Tutorial 4](./tutorials/04-network-mode.md)) |
-| 401 | The bearer token is missing or wrong | The token of a configured caller, at least 32 bytes |
-| 403 | The request carried an `Origin` that is not allowed | Browsers never call rypsok; if yours must, list the origin in `allowed_origins` |
-| 404 | A path other than `/mcp` | `/mcp` |
-| 413 | The body is above `max_request_bytes` | A tool call is small; check what the client sends |
+| 400 | A protocol header (`MCP-Protocol-Version`, `Mcp-Method`, `Mcp-Name`) is missing (answered by the SDK; counted, not logged per request) | Send the headers ([Tutorial 4](./tutorials/04-network-mode.md)) |
+| 401 | The bearer token is missing or wrong (the gate) | The token of a configured caller, at least 32 bytes |
+| 403 | The `Host` header is not in `allowed_hosts`, or the request carried an `Origin` that is not allowed (answered by the SDK; logged as `sdk_forbidden`) | List the host in `allowed_hosts`. Browsers never call rypsok; if yours must, list the origin in `allowed_origins` |
+| 404 | A path other than `/mcp` (the gate) | `/mcp` |
+| 406 | `Accept` does not list both `application/json` and `text/event-stream`; the protocol requires a client to list both (answered by the SDK; counted, not logged per request) | Send `Accept: application/json, text/event-stream` |
+| 408 | A request was still running after `request_timeout_s` (the gate) | A slow client or proxy: raise `request_timeout_s`, or fix the link |
+| 413 | The body is above `max_request_bytes` (the gate, or the SDK for a streamed body) | A tool call is small; check what the client sends |
+| 503 with `Retry-After: 30` | The handshake-based revisions hold `max_sessions` live sessions already (the gate); the 30 s is a hint, sessions expire after 300 s without traffic | Retry later, use the 2026-07-28 revision (it keeps no session), or raise `max_sessions` |
 | JSON-RPC error `-32022` on `initialize` | `legacy_revisions = false` and the client uses the handshake-based revisions | Use the current revision, or set `legacy_revisions = true` |
 
 ## Logs
 
 Each line has an `event`. The ones you will look for: `call` (one per
 tool call with its outcome and latency), `engine_failed` (engine and
-class), `refused` (what was refused and why), `http_refused` (host,
-origin, unauthorized, too many connections, body too large),
+class), `refused` (what was refused and why), `http_refused`,
 `circuit_opened` and `circuit_closed`, `counters` (every minute). The
+gate logs `http_refused` with a `reason` for `too_many_connections`,
+`body_too_large`, `unauthorized`, `request_timeout`, `session_limit` and
+`sdk_forbidden` (a foreign `Host` or `Origin`), with the address family and
+never the address or a header value. A missing protocol header (400) and a
+wrong `Accept` (406) are not logged per request; every refusal of the gate
+and of the SDK behind it is counted, per reason, in the `counters` event
+(`refusals`, under `http`). The SDK writes its own warning for a refused
+`Host` or `Origin`, and one error line for each refused handshake. The
 query text never appears in a log unless `[logging] log_queries = true`
 at level `debug`, which you turn on only to diagnose and turn off again.

@@ -29,6 +29,7 @@ use rmcp::transport::streamable_http_server::session::never::NeverSessionManager
 use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
 use rypsok_core::config::{Config, ConfigError, Secret};
 use rypsok_core::limits::defaults::SHUTDOWN_MAX_MS;
+use rypsok_core::telemetry::Counters;
 use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
@@ -203,6 +204,9 @@ pub async fn run_with(
     shutdown: CancellationToken,
     sessions: Arc<BoundedSessions<LocalSessionManager>>,
 ) -> std::io::Result<()> {
+    // The tool handlers' counters, so that one log line reports both the
+    // calls and the refusals of the gate (RFC 019 D6).
+    let counters = adapter.service.shared_counters();
     let local = listener.local_addr()?;
     tracing::info!(
         event = "listening",
@@ -256,6 +260,7 @@ pub async fn run_with(
         max_request_bytes: settings.max_request_bytes,
         request_timeout: settings.request_timeout,
         family: "ipv4",
+        counters: Arc::clone(&counters),
     };
     let permits = Arc::new(Semaphore::new(
         usize::try_from(settings.max_connections)
@@ -291,6 +296,7 @@ pub async fn run_with(
             },
         };
         let Ok(permit) = Arc::clone(&permits).try_acquire_owned() else {
+            counters.refused_http("too_many_connections");
             tracing::warn!(
                 event = "http_refused",
                 reason = "too_many_connections",
@@ -352,6 +358,8 @@ struct Gate {
     /// The address family of the connection, for the log (never the
     /// address).
     family: &'static str,
+    /// Where every refusal the gate makes or sees is counted.
+    counters: Arc<Counters>,
 }
 
 impl Service<Request<Incoming>> for Gate {
@@ -374,6 +382,7 @@ impl Service<Request<Incoming>> for Gate {
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.parse::<u64>().ok());
         if declared.is_some_and(|len| len > self.max_request_bytes) {
+            self.counters.refused_http("body_too_large");
             tracing::warn!(
                 event = "http_refused",
                 reason = "body_too_large",
@@ -382,15 +391,19 @@ impl Service<Request<Incoming>> for Gate {
             );
             return ready(empty(StatusCode::PAYLOAD_TOO_LARGE));
         }
-        let caller = match self.auth.check(&parts.headers) {
+        let caller = match self.auth.check(&parts.headers, self.family) {
             Ok(caller) => caller,
-            Err(response) => return ready(*response),
+            Err(response) => {
+                self.counters.refused_http("unauthorized");
+                return ready(*response);
+            }
         };
         parts.extensions.insert(caller);
         let req = Request::from_parts(parts, body);
         let inner = self.inner.clone();
         let request_timeout = self.request_timeout;
         let family = self.family;
+        let counters = Arc::clone(&self.counters);
         Box::pin(async move {
             // LIM-H5 (RFC 018): a request that is still running after the
             // bound is a slow client; the handler's own deadlines are
@@ -405,6 +418,7 @@ impl Service<Request<Incoming>> for Gate {
             });
             match tokio::time::timeout(request_timeout, served).await {
                 Ok((_, true)) => {
+                    counters.refused_http("session_limit");
                     tracing::warn!(
                         event = "http_refused",
                         reason = "session_limit",
@@ -413,8 +427,14 @@ impl Service<Request<Incoming>> for Gate {
                     );
                     Ok(session_limit_response())
                 }
-                Ok((response, false)) => response,
+                Ok((response, false)) => {
+                    if let Ok(answered) = &response {
+                        note_sdk_refusal(&counters, family, answered.status());
+                    }
+                    response
+                }
                 Err(_) => {
+                    counters.refused_http("request_timeout");
                     tracing::warn!(
                         event = "http_refused",
                         reason = "request_timeout",
@@ -426,6 +446,31 @@ impl Service<Request<Incoming>> for Gate {
             }
         })
     }
+}
+
+/// Counts a refusal that the SDK behind the gate answered (RFC 019 D6): a
+/// foreign `Host` or `Origin` is 403 and the signature of THR-18, so it is
+/// logged too (the status and the address family, never a header value);
+/// 400 and 406 are client mistakes, counted and not logged per request.
+fn note_sdk_refusal(counters: &Counters, family: &'static str, status: StatusCode) {
+    let reason = match status {
+        StatusCode::FORBIDDEN => {
+            tracing::warn!(
+                event = "http_refused",
+                reason = "sdk_forbidden",
+                status = status.as_u16(),
+                family,
+                "request refused: Host or Origin not allowed"
+            );
+            "sdk_forbidden"
+        }
+        StatusCode::BAD_REQUEST => "sdk_bad_request",
+        StatusCode::NOT_ACCEPTABLE => "sdk_not_acceptable",
+        // The SDK's twin of the gate's own check of LIM-H2: a streamed body.
+        StatusCode::PAYLOAD_TOO_LARGE => "body_too_large",
+        _ => return,
+    };
+    counters.refused_http(reason);
 }
 
 /// 503 with an empty body and the fixed `Retry-After` hint (RFC 019 D5).
@@ -457,7 +502,11 @@ struct Auth {
 impl Auth {
     /// The caller of a request: `local` when no caller is configured;
     /// otherwise the one whose token matches in constant time, or a 401.
-    fn check(&self, headers: &http::HeaderMap) -> Result<CallerId, Box<GateResponse>> {
+    fn check(
+        &self,
+        headers: &http::HeaderMap,
+        family: &'static str,
+    ) -> Result<CallerId, Box<GateResponse>> {
         if self.callers.is_empty() {
             return Ok(CallerId::local());
         }
@@ -487,6 +536,7 @@ impl Auth {
                 tracing::warn!(
                     event = "http_refused",
                     reason = "unauthorized",
+                    family,
                     "request refused"
                 );
                 let mut response = empty(StatusCode::UNAUTHORIZED);

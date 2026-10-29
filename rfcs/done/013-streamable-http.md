@@ -223,3 +223,24 @@ the M4 implementation and release 0.4.0.
   would admit no name a client sends, and every request would end in a
   400 that looks like a client fault. The bind host is no longer added to
   the default list when it is unspecified.
+
+## Amendment to RFC 013 (2026-10-29, RFC 019 D6)
+
+The statuses and the logging as delivered, which the text above states
+otherwise.
+
+- **Tests.** A request with a foreign `Host` is **403**, not 400: the SDK
+  answers it, as it answers a refused `Origin` (403). A missing protocol
+  header is 400 and an `Accept` that does not list both media types is 406,
+  also the SDK's. The gate answers 401, 404, 408, 413 (declared bodies) and
+  503. The tests pin all of them.
+- **Logging.** The gate logs `warn` `http_refused` with `reason` in
+  `too_many_connections`, `body_too_large`, `unauthorized`,
+  `request_timeout`, `session_limit` and `sdk_forbidden` (an inner 403: a
+  foreign `Host` or `Origin`, the signature of THR-18), with the address
+  family and the status where there is one, never the token, an `Origin`
+  value or any header value. The list "`host`, `origin`" above is replaced
+  by `sdk_forbidden`. A 400 and a 406 are counted, not logged per request.
+  Every refusal is counted under `http` and the reason and counting runs
+  the flush check of a call, so that a flood of refusals with no tool call
+  is still logged within the minute.

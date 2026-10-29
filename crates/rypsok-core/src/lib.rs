@@ -76,7 +76,7 @@ pub struct Rypsok {
     egress: Arc<EgressPolicy>,
     returned: ReturnedUrls,
     fetch_service: FetchService,
-    counters: Counters,
+    counters: Arc<Counters>,
     outbound: Arc<tokio::sync::Semaphore>,
     /// The result cache when the operator enabled it (RFC 014). Only the
     /// search pipeline receives a handle (REQ-CACHE-002).
@@ -181,7 +181,7 @@ impl Rypsok {
             egress: egress_policy,
             returned,
             fetch_service,
-            counters: Counters::new(),
+            counters: Arc::new(Counters::new()),
             outbound,
             cache,
         })
@@ -287,6 +287,22 @@ impl Rypsok {
     /// The counters.
     pub fn counters(&self) -> &Counters {
         &self.counters
+    }
+
+    /// The same counters as a shared handle, for an adapter that counts its
+    /// own refusals into them so that one log line reports both (RFC 019
+    /// D6).
+    pub fn shared_counters(&self) -> Arc<Counters> {
+        Arc::clone(&self.counters)
+    }
+
+    /// The service with these counters in place of its own: for a host that
+    /// builds them first, and for tests that want a short flush interval.
+    /// Call it before the service is shared.
+    #[must_use]
+    pub fn with_counters(mut self, counters: Arc<Counters>) -> Self {
+        self.counters = counters;
+        self
     }
 
     /// `web_fetch`: read the main content of one public page as Markdown

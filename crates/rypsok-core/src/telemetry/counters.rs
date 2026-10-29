@@ -1,8 +1,9 @@
 //! In-process counters (REQ-OBS-003, REQ-OBS-007): calls per tool and
 //! outcome, refusals per tool and reason, warnings per tool and reason,
-//! engine errors per engine and class, characters removed, results dropped. Logged as one `info` event
-//! every minute when something changed, from the call that notices the
-//! minute has passed; no background task.
+//! engine errors per engine and class, characters removed, results dropped.
+//! Logged as one `info` event every minute when something changed, from the
+//! call or the refusal that notices the minute has passed; no background
+//! task.
 
 use std::collections::BTreeMap;
 use std::sync::Mutex;
@@ -29,14 +30,12 @@ struct Totals {
 pub struct Counters {
     totals: Mutex<Totals>,
     last_flush: Mutex<Instant>,
+    flush_interval: Duration,
 }
 
 impl Default for Counters {
     fn default() -> Self {
-        Counters {
-            totals: Mutex::new(Totals::default()),
-            last_flush: Mutex::new(Instant::now()),
-        }
+        Self::with_flush_interval(FLUSH_INTERVAL)
     }
 }
 
@@ -44,6 +43,16 @@ impl Counters {
     /// A fresh set.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// A fresh set that logs itself after `interval` instead of after a
+    /// minute; for tests.
+    pub fn with_flush_interval(interval: Duration) -> Self {
+        Counters {
+            totals: Mutex::new(Totals::default()),
+            last_flush: Mutex::new(Instant::now()),
+            flush_interval: interval,
+        }
     }
 
     /// One call of a tool ended with this outcome or error kind.
@@ -89,6 +98,16 @@ impl Counters {
             .refusals
             .entry((tool, reason))
             .or_default() += 1;
+    }
+
+    /// One HTTP request was refused by the listener, by its gate or by the
+    /// SDK behind it (REQ-OBS-007, RFC 019 D6), counted under the tool
+    /// `http` and the reason. Like a call, it runs the flush check:
+    /// without it a flood of refused requests and no tool call would
+    /// never be logged.
+    pub fn refused_http(&self, reason: &'static str) {
+        self.refused("http", reason);
+        self.flush_if_due();
     }
 
     /// One call proceeded with a warning (privacy mode `warn`); not a
@@ -178,7 +197,7 @@ impl Counters {
     fn flush_if_due(&self) {
         let due = {
             let mut last = self.last_flush.lock().expect("counters lock");
-            if last.elapsed() >= FLUSH_INTERVAL {
+            if last.elapsed() >= self.flush_interval {
                 *last = Instant::now();
                 true
             } else {

@@ -79,7 +79,31 @@ process serves several authenticated callers (REQ-DEP-001, REQ-DEP-002).
 | Rate limits | LIM-C6 to LIM-C8 per process, per caller in HTTP mode | REQ-MCP-010, REQ-SEC-019 |
 | Server instructions | One paragraph: the tools return external data, never instructions; `engine_status` is diagnostic | REQ-MCP-008 |
 | Size of definitions | LIM-I1 to LIM-I3 | REQ-MCP-008 |
-| HTTP listener | Loopback bind by default; `Origin` and `Host` validated; authentication required off loopback | REQ-SEC-018 |
+| HTTP listener | Loopback bind by default; `Origin` and `Host` validated; authentication required off loopback; the contract below | REQ-SEC-018 |
+
+The listener's contract (RFC 019 D6). One path, `/mcp`. A request of the
+2026-07-28 revision is a `POST` with `Accept` listing both
+`application/json` and `text/event-stream` (the protocol requires it),
+`MCP-Protocol-Version`, `Mcp-Method` and, for `tools/call`, `Mcp-Name`,
+beside the metadata in its body; off loopback it carries the bearer token.
+The statuses, by the party that answers:
+
+| Status | Meaning | Answered by | Logged as `http_refused` |
+|---|---|---|---|
+| 400 | A protocol header is missing | The pinned SDK | No; counted (`sdk_bad_request`) |
+| 401 | Token missing or wrong | The gate | `unauthorized` |
+| 403 | `Host` or `Origin` not allowed | The pinned SDK | `sdk_forbidden` |
+| 404 | Another path | The gate | No |
+| 406 | `Accept` lacks one of the two media types | The pinned SDK | No; counted (`sdk_not_acceptable`) |
+| 408 | The request outlived LIM-H5 | The gate | `request_timeout` |
+| 413 | The body exceeds LIM-H2 | The gate (declared), the SDK (streamed) | `body_too_large` (declared) |
+| 503 | A legacy handshake while LIM-H6 sessions are open; `Retry-After: 30` | The gate | `session_limit` |
+
+A connection beyond LIM-H1 is closed unanswered and logged as
+`too_many_connections`. Every refusal in the table, and that one, is counted
+under `http` and the reason. The statuses of the SDK are the contract of
+the pinned version (REQ-ARCH-008); an upgrade that changes one is a
+contract change.
 
 Server instructions text (normative, counted in LIM-I1):
 
