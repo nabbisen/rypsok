@@ -305,7 +305,7 @@ async fn run_inner(
     // Strict mode (REQ-SEC-021).
     if p.strict_mode {
         let host = match url.host() {
-            Some(url::Host::Domain(name)) => Host::Name(name.to_ascii_lowercase()),
+            Some(url::Host::Domain(name)) => Host::name(name).map_err(refused)?,
             Some(url::Host::Ipv4(ip)) => Host::Ip(ip.into()),
             Some(url::Host::Ipv6(ip)) => Host::Ip(ip.into()),
             None => return Err(refused(Denial::HostName)),

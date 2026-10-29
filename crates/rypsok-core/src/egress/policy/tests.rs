@@ -284,7 +284,134 @@ fn req_cfg_005_rule_texts_are_validated_by_key_and_index() {
     }
 }
 
+/// REQ-SEC-006 (RFC 019 D1): an operator rule matches the canonical form
+/// of a name; a root dot or capitals do not get past it, and a malformed
+/// name is refused as malformed, never normalized into a match.
+#[test]
+fn req_sec_006_rules_match_the_canonical_name() {
+    let p = EgressPolicy::new(
+        Vec::new(),
+        vec![
+            parse_rule("blocked.invalid").unwrap(),
+            parse_rule("*.ads.invalid").unwrap(),
+        ],
+        false,
+        vec![443],
+    );
+    for host in [
+        "blocked.invalid",
+        "blocked.invalid.",
+        "BLOCKED.INVALID.",
+        "x.ads.invalid",
+        "x.ads.invalid.",
+        "X.Ads.Invalid.",
+    ] {
+        let url = Url::parse(&format!("https://{host}/")).unwrap();
+        assert_eq!(p.judge_url(&url), Err(Denial::HostName), "{host}");
+    }
+    // The resolver's name and a directly built `Host` are canonicalized
+    // by `judge_address` as well.
+    let public: IpAddr = "93.184.216.34".parse().unwrap();
+    for host in ["blocked.invalid", "blocked.invalid.", "BLOCKED.invalid."] {
+        assert_eq!(
+            p.judge_address(&Host::Name(host.to_owned()), public),
+            Err(Denial::HostName),
+            "{host}"
+        );
+    }
+    // Malformed names are refused whatever the rules say.
+    for host in [
+        "blocked.invalid..",
+        "blocked.invalid...",
+        "a..b",
+        ".a.example",
+    ] {
+        let url = Url::parse(&format!("https://{host}/")).unwrap();
+        assert_eq!(p.judge_url(&url), Err(Denial::HostName), "{host}");
+        assert_eq!(
+            p.judge_address(&Host::Name(host.to_owned()), public),
+            Err(Denial::HostName),
+            "{host}"
+        );
+    }
+    // `HostName` is also the answer to a matching rule; only an empty deny
+    // list proves that a malformed name is refused as malformed.
+    let open = EgressPolicy::new(
+        vec![parse_rule("blocked.invalid").unwrap()],
+        Vec::new(),
+        false,
+        vec![443],
+    );
+    for host in [
+        "blocked.invalid..",
+        "blocked.invalid...",
+        "a..b.example",
+        ".a.example",
+    ] {
+        assert_eq!(open.judge_name(host), Err(Denial::HostName), "{host}");
+    }
+    assert!(open.judge_name("blocked.invalid.").is_ok(), "an allow rule");
+}
+
+/// REQ-SEC-006 and REQ-CFG-005 (RFC 019 D1): a rule is written without the
+/// root dot or a leading dot; one with them is a configuration error, so
+/// that rules and names meet at one canonical form.
+#[test]
+fn req_sec_006_a_rule_with_a_root_dot_is_a_configuration_error() {
+    assert_eq!(parse_rule("blocked.invalid."), Err(InvalidRule));
+    assert_eq!(parse_rule(".blocked.invalid"), Err(InvalidRule));
+    assert_eq!(parse_rule("*.blocked.invalid."), Err(InvalidRule));
+    assert!(parse_rule("blocked.invalid").is_ok());
+    assert!(parse_rule("BLOCKED.Invalid").is_ok(), "lower-cased");
+}
+
+/// REQ-SEC-006 (RFC 019 D1): one constructor, one canonical form.
+#[test]
+fn req_sec_006_host_name_is_the_canonical_constructor() {
+    assert_eq!(
+        Host::name("Example.ORG."),
+        Ok(Host::Name("example.org".to_owned()))
+    );
+    assert_eq!(Host::name("a."), Ok(Host::Name("a".to_owned())));
+    for bad in ["", ".", "..", "a..", "a..b", ".a"] {
+        assert_eq!(Host::name(bad), Err(Denial::HostName), "{bad:?}");
+    }
+    assert_eq!(
+        Host::name("x.example").unwrap().as_name(),
+        Some("x.example")
+    );
+    assert_eq!(Host::Ip("10.0.0.1".parse().unwrap()).as_name(), None);
+}
+
 proptest! {
+    /// REQ-SEC-006 (RFC 019 D1): for a well-formed name, capitals and an
+    /// added root dot do not change the judgment; a name with an empty
+    /// label is always refused.
+    #[test]
+    fn req_sec_006_judgment_of_a_name_is_the_judgment_of_its_canonical_form(
+        host in "[a-z0-9]{1,8}(\\.[a-z0-9]{1,8}){1,3}",
+        deny_it in any::<bool>(),
+    ) {
+        // A name whose last label is all digits is not a rule (it is a
+        // malformed address); then nothing is denied by rule.
+        let rule = if deny_it { parse_rule(&host).ok() } else { None };
+        let denied = rule.is_some();
+        let deny = rule.into_iter().collect();
+        let p = EgressPolicy::new(Vec::new(), deny, false, vec![443]);
+        let plain = p.judge_name(&host);
+        prop_assert_eq!(&plain, &p.judge_name(&host.to_uppercase()));
+        prop_assert_eq!(&plain, &p.judge_name(&format!("{host}.")));
+        prop_assert_eq!(&plain, &p.judge_name(&format!("{}.", host.to_uppercase())));
+        let built_in = [".local", ".internal", ".arpa", ".localhost"]
+            .iter()
+            .any(|suffix| host.ends_with(suffix));
+        prop_assert_eq!(plain.is_err(), denied || built_in);
+        // An empty label is refused, however the rest is written.
+        prop_assert_eq!(p.judge_name(&format!("{host}..")), Err(Denial::HostName));
+        prop_assert_eq!(p.judge_name(&format!(".{host}")), Err(Denial::HostName));
+        prop_assert_eq!(p.judge_name(&host.replacen('.', "..", 1)), Err(Denial::HostName));
+    }
+
     /// REQ-SEC-006: every IPv4 address the policy admits is one the
     /// standard library classifies as neither private, loopback,
     /// link-local, multicast, broadcast, unspecified nor documentation.

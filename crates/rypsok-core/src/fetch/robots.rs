@@ -12,7 +12,7 @@ use std::time::Duration;
 use tokio::time::Instant;
 use url::Url;
 
-use crate::egress::{EgressPolicy, Target};
+use crate::egress::{EgressPolicy, Host, Target};
 
 /// The product token robots.txt groups are matched for.
 pub const PRODUCT_TOKEN: &str = "rypsok";
@@ -160,11 +160,19 @@ impl Robots {
     }
 }
 
-/// `scheme://host[:port]` of a URL.
+/// `scheme://host[:port]` of a URL, with the host in its canonical form
+/// (RFC 019 D1): `x.example` and `x.example.` share one cache entry.
 pub fn origin_of(url: &Url) -> String {
+    let host = match url.host() {
+        Some(url::Host::Domain(name)) => match Host::name(name) {
+            Ok(Host::Name(canonical)) => canonical,
+            _ => name.to_owned(),
+        },
+        _ => url.host_str().unwrap_or("").to_owned(),
+    };
     match url.port() {
-        Some(port) => format!("{}://{}:{port}", url.scheme(), url.host_str().unwrap_or("")),
-        None => format!("{}://{}", url.scheme(), url.host_str().unwrap_or("")),
+        Some(port) => format!("{}://{host}:{port}", url.scheme()),
+        None => format!("{}://{host}", url.scheme()),
     }
 }
 

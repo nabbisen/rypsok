@@ -115,7 +115,11 @@ refuses even what an `allow` rule admits, and an `allow` rule admits a
 private destination at the operator's own responsibility. A rule is a
 network in CIDR notation (`10.0.0.0/8`, `fd00::/8`), an address, a host
 name (`wiki.corp.example`) or a subdomain pattern (`*.corp.example`, which
-does not match `corp.example` itself); never a scheme or a port.
+does not match `corp.example` itself); never a scheme or a port. Names
+are compared lower-cased and without the root dot (`blocked.example.` is
+`blocked.example`), and a name with an empty label (`a..example`) is
+refused as malformed, never matched. Write a rule without the root dot and
+without a leading dot: a rule with one is a configuration error.
 
 | Key | Default | Range | Meaning |
 |---|---|---|---|

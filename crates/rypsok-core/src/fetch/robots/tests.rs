@@ -244,3 +244,27 @@ async fn req_cmp_005_robots_redirects_are_followed_under_the_policy() {
         Decision::Disallowed
     );
 }
+
+/// REQ-CMP-005 and REQ-SEC-006 (RFC 019 D1): the cache key names the host
+/// in its canonical form, so `x.example` and `x.example.` share one entry.
+#[test]
+fn req_cmp_005_cache_key_uses_the_canonical_host_name() {
+    for (a, b) in [
+        ("https://x.example/", "https://x.example./"),
+        ("https://X.Example:8443/p", "https://x.example.:8443/q"),
+    ] {
+        assert_eq!(
+            origin_of(&Url::parse(a).unwrap()),
+            origin_of(&Url::parse(b).unwrap()),
+            "{a} and {b}"
+        );
+    }
+    assert_eq!(
+        origin_of(&Url::parse("https://x.example./").unwrap()),
+        "https://x.example"
+    );
+    assert_eq!(
+        origin_of(&Url::parse("https://[::1]:8443/").unwrap()),
+        "https://[::1]:8443"
+    );
+}

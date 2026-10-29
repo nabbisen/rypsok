@@ -15,6 +15,16 @@ use url::Url;
 
 use crate::model::DetailReason;
 
+/// The canonical form of a host name; see [`Host::name`].
+fn canonical_name(raw: &str) -> Result<String, Denial> {
+    let lower = raw.to_ascii_lowercase();
+    let bare = lower.strip_suffix('.').unwrap_or(&lower);
+    if bare.is_empty() || bare.split('.').any(str::is_empty) {
+        return Err(Denial::HostName);
+    }
+    Ok(bare.to_owned())
+}
+
 /// A destination host as the URL names it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Host {
@@ -26,8 +36,19 @@ pub enum Host {
 }
 
 impl Host {
+    /// The one constructor of a [`Host::Name`] (RFC 019 D1): lower-cased,
+    /// at most one trailing root dot removed, and refused with
+    /// [`Denial::HostName`] when what is left is empty or has an empty
+    /// label (`a..`, `a..b`, `.a`). A malformed name is never normalized
+    /// into a match: operator rules, the connect-time judgment, strict
+    /// mode, the per-host permit and the robots.txt cache key all meet at
+    /// this one canonical form.
+    pub fn name(raw: &str) -> Result<Host, Denial> {
+        canonical_name(raw).map(Host::Name)
+    }
+
     /// The name, when the host is one.
-    pub fn name(&self) -> Option<&str> {
+    pub fn as_name(&self) -> Option<&str> {
         match self {
             Host::Name(name) => Some(name),
             Host::Ip(_) => None,
@@ -316,11 +337,10 @@ impl EgressPolicy {
             None => return Err(Denial::HostName),
             Some(url::Host::Ipv4(v4)) => Host::Ip(IpAddr::V4(v4)),
             Some(url::Host::Ipv6(v6)) => Host::Ip(IpAddr::V6(v6)),
-            Some(url::Host::Domain(name)) => Host::Name(name.to_ascii_lowercase()),
+            Some(url::Host::Domain(name)) => self.judge_name(name)?,
         };
-        match &host {
-            Host::Ip(ip) => self.judge_address(&host, *ip)?,
-            Host::Name(name) => self.judge_name(name)?,
+        if let Host::Ip(ip) = &host {
+            self.judge_address(&host, *ip)?;
         }
         Ok(Target {
             url: url.clone(),
@@ -329,25 +349,27 @@ impl EgressPolicy {
         })
     }
 
-    /// Judges a host name: deny rules, allow rules, then the built-in
-    /// refusals of names that never name a public site.
-    fn judge_name(&self, name: &str) -> Result<(), Denial> {
-        let host = Host::Name(name.to_owned());
+    /// Judges a host name as written and returns its canonical [`Host`]:
+    /// canonicalized by [`Host::name`] first, so that case and a root dot
+    /// do not change the judgment and a malformed name is refused (RFC 019
+    /// D1); then deny rules, allow rules, and the built-in refusals of
+    /// names that never name a public site.
+    fn judge_name(&self, raw: &str) -> Result<Host, Denial> {
+        let name = canonical_name(raw)?;
+        let host = Host::Name(name.clone());
         if self.deny.iter().any(|r| rule_matches(r, &host, None)) {
             return Err(Denial::HostName);
         }
         if self.allow.iter().any(|r| rule_matches(r, &host, None)) {
-            return Ok(());
+            return Ok(host);
         }
-        let bare = name.strip_suffix('.').unwrap_or(name);
-        if bare.is_empty()
-            || bare == "localhost"
-            || !bare.contains('.')
-            || REFUSED_NAME_SUFFIXES.iter().any(|s| bare.ends_with(s))
+        if name == "localhost"
+            || !name.contains('.')
+            || REFUSED_NAME_SUFFIXES.iter().any(|s| name.ends_with(s))
         {
             return Err(Denial::HostName);
         }
-        Ok(())
+        Ok(host)
     }
 
     /// Judges one address that is about to be connected to for `host`
@@ -355,6 +377,16 @@ impl EgressPolicy {
     /// built-in refused ranges, then admitted.
     pub fn judge_address(&self, host: &Host, ip: IpAddr) -> Result<(), Denial> {
         let ip = canonical(ip);
+        // A name is canonical before it meets a rule, whoever built the
+        // `Host` (RFC 019 D1); a malformed one is refused.
+        let canonical_host;
+        let host = match host {
+            Host::Name(raw) => {
+                canonical_host = Host::name(raw)?;
+                &canonical_host
+            }
+            Host::Ip(_) => host,
+        };
         if self.deny.iter().any(|r| rule_matches(r, host, Some(ip))) {
             return Err(match host {
                 Host::Name(_)

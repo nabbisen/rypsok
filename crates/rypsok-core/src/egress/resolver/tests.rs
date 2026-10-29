@@ -124,3 +124,32 @@ async fn req_sec_006_rules_apply_at_connect_time() {
     let refused = admitted(&policy, "blocked.example", &[ip("93.184.216.34")]).unwrap_err();
     assert_eq!(refused, Refused::Policy(Denial::HostName));
 }
+
+/// REQ-SEC-006 and REQ-SEC-007 (RFC 019 D1): the resolver's name meets the
+/// operator's rules in its canonical form, and a malformed name yields no
+/// address.
+#[test]
+fn req_sec_006_resolver_names_are_canonical() {
+    let denying = EgressPolicy::new(
+        Vec::new(),
+        vec![parse_rule("blocked.invalid").unwrap()],
+        false,
+        vec![443],
+    );
+    let public = [ip("93.184.216.34")];
+    for name in ["blocked.invalid", "blocked.invalid.", "BLOCKED.Invalid."] {
+        assert_eq!(
+            admitted(&denying, name, &public),
+            Err(Refused::Policy(Denial::HostName)),
+            "{name}"
+        );
+    }
+    for name in ["blocked.invalid..", "a..example", ".example"] {
+        assert_eq!(
+            admitted(&policy(), name, &public),
+            Err(Refused::Policy(Denial::HostName)),
+            "{name} is malformed"
+        );
+    }
+    assert!(admitted(&policy(), "fine.example.", &public).is_ok());
+}

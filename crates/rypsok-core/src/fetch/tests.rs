@@ -941,3 +941,55 @@ async fn req_sec_008_redirect_targets_pass_the_policy() {
         );
     }
 }
+
+/// REQ-SEC-006, REQ-SEC-021 and REQ-SEC-012 (RFC 019 D1): strict mode, the
+/// per-host permit (LIM-C4) and the robots.txt key meet at the canonical
+/// host name: `x.example` and `x.example.` are one host everywhere.
+#[tokio::test]
+async fn req_sec_006_strict_mode_and_the_host_permit_use_the_canonical_name() {
+    let mut h = harness_with(Limits {
+        fetch_deadline_ms: 500,
+        ..Limits::default()
+    })
+    .await;
+    let port = h.server.address().port();
+    // The pipeline's policy also allows the name by rule; the client's own
+    // policy (which judges the connection) is the harness's.
+    h.policy = Arc::new(EgressPolicy::new(
+        vec![
+            parse_rule("127.0.0.1/32").unwrap(),
+            parse_rule("mirror.example").unwrap(),
+        ],
+        Vec::new(),
+        true,
+        vec![80, 443, port],
+    ));
+    Mock::given(method("GET"))
+        .and(path("/known"))
+        .respond_with(page(ARTICLE))
+        .mount(&h.server)
+        .await;
+
+    // Strict mode: the allow rule matches the name written with a root dot.
+    h.strict_mode = true;
+    let dotted = format!("http://mirror.example.:{port}/known");
+    let loud = format!("http://MIRROR.example.:{port}/known");
+    for url in [&dotted, &loud] {
+        let read = h.fetch(url).await;
+        assert!(read.is_ok(), "{url}: {read:?}");
+    }
+    h.strict_mode = false;
+
+    // The per-host permit: while the permit of `mirror.example` is held,
+    // a fetch of `mirror.example.` waits for it and ends `busy`.
+    let held = h
+        .service
+        .host_permit("mirror.example")
+        .acquire_owned()
+        .await
+        .unwrap();
+    let error = h.fetch(&dotted).await.unwrap_err();
+    assert_eq!(error.detail.reason, Some(DetailReason::Busy));
+    drop(held);
+    assert!(h.fetch(&dotted).await.is_ok(), "the permit is back");
+}
