@@ -12,14 +12,87 @@ it: what it lists as frozen changes only with a major version, additions
 arrive in minor versions, and every change of a default value is
 announced here with both values.
 
-## [Unreleased] — Corrections from the first independent review (0.7.1)
+## [0.8.0] — 2026-10-29 — Corrections from the first independent review
 
-RFC 019: the fixes of handoffs 019a to 019c are listed here as they land.
+RFC 019: the fixes of handoffs 019a to 019c, found by the first
+independent review of 0.7.0. This is a minor version before 1.0.0, so it
+carries announced changes of the external contract and of the public items
+of `rypsok-core`; they are under Changed.
+
+### Added
+
+- `[service.http] max_sessions` (LIM-H6, default 256, 1 to 65536): the
+  sessions of the handshake-based protocol revisions are bounded, and a
+  handshake beyond the bound is answered 503 with `Retry-After: 30` and
+  logged, instead of holding memory without limit (REQ-SEC-024, THR-27).
+  The stateless revision opens no session and is unaffected.
+- Every request the HTTP listener refuses, by its own gate or by the SDK
+  behind it, is counted under `http` with its reason and appears in the
+  once-a-minute counters line, also when no tool is called (REQ-OBS-007).
+- Binaries are attached to a release: Linux x86_64 (static), macOS arm64
+  and Windows x86_64 archives and `SHA256SUMS`, by the `release` workflow
+  from a release the owner has published, never replacing an asset
+  (REQ-DEP-005). The maintainers' book has a page on the procedure.
+- The fuzz target `clean_decoded_text`.
+- `tools/check-limits` and `cargo deny` with `bans` run in CI; a test
+  keeps every page of the book in its summary; a test runs the headers of
+  the documented `curl` against the binary.
 
 ### Changed
 
 - RFCs 001 to 018 moved to `rfcs/done/` with the release each shipped in,
   as RFC 000 prescribes; no design changed.
+- A site `web_fetch` cannot reach is `unavailable` / `network`, where an
+  unreachable robots.txt was answered `denied` / `robots_txt`; a name the
+  egress policy refuses (a private address behind a name) is answered
+  exactly like a name that does not resolve, so that the answer does not
+  tell a caller which internal names exist. The operator's log names the
+  refusal (`refused`, with the denial, without the host). A robots.txt
+  that answers 5xx is still `denied` / `robots_txt`. An `http` URL whose
+  `https` attempt fails is `denied` / `scheme` whether `robots_txt` is on
+  or off. These are changes of error kinds and reasons (the announcement
+  the preamble requires).
+- A handshake over HTTP beyond `max_sessions` is answered 503 with
+  `Retry-After`. The statuses of the listener are documented by owner: the
+  gate answers 401, 404, 408, 413 and 503; the SDK behind it answers 400,
+  403 and 406.
+- Public items of `rypsok-core`:
+  - renamed: `boundary::clean_text` is `boundary::clean_markup_text` (no
+    alias is kept); the new `boundary::clean_decoded_text` serves text that
+    a parser already decoded (page titles and scraped results);
+  - added: `egress::Host::from_name` (the one constructor of a host name:
+    lower-case, one root dot dropped, empty labels refused),
+    `fetch::SendFailure`, `fetch::robots::Decision::Unreachable` (a new
+    variant of an exhaustive enum), `boundary::Provenance`,
+    `boundary::make_decoded_result`, `engine::RawResult::{decoded,
+    provenance}`, `Rypsok::{shared_counters, with_counters}`,
+    `Counters::{refused_http, with_flush_interval}`. `Rypsok` now keeps
+    its counters in a shared handle (a private field).
+- `<` followed by a non-ASCII letter is kept as text (2026-10-27).
+- Control characters are removed before the markup step (2026-10-28).
+
+These two cleaner changes were made in 0.6.0 and 0.7.0 and were not listed.
+
+### Fixed
+
+- A trailing root dot (`blocked.invalid.`) bypassed an operator `deny`
+  host rule: names are compared in one canonical form, and a name with an
+  empty label is refused.
+- An unreachable site was reported as a robots.txt refusal; a refused name
+  answered differently from an unreachable one.
+- A title or a scraped result lost `<T>` in `Vec<T>` as if it were markup.
+- The bearer token comparison treated two tokens whose lengths differ by a
+  multiple of 256 as the same length.
+- The documented `curl` answered 406: it now lists both `Accept` media
+  types.
+- The DuckDuckGo record was missing from the book's summary.
+- The book said binaries were attached to every release while none were.
+- The tutorial and the troubleshooting page said different things about a
+  corrected key; one sentence is used: the key is read at startup, and a
+  corrected key takes effect at the next restart, the engine being asked
+  meanwhile.
+- The `IPAddressAllow` examples now name a placeholder for the engines'
+  addresses.
 
 ## [0.7.0] — 2026-10-28 — Security (milestone M7)
 
@@ -231,7 +304,8 @@ Search deadline 2500 ms, engine timeout 2000 ms, reserve 200 ms, up to 8
 engines per request, 10 results per engine, snippets 300 and titles 150
 characters, query 400 characters, 60 `web_search` calls per minute.
 
-[Unreleased]: https://github.com/nabbisen/rypsok/compare/0.7.0...HEAD
+[Unreleased]: https://github.com/nabbisen/rypsok/compare/0.8.0...HEAD
+[0.8.0]: https://github.com/nabbisen/rypsok/releases/tag/0.8.0
 [0.7.0]: https://github.com/nabbisen/rypsok/releases/tag/0.7.0
 [0.6.0]: https://github.com/nabbisen/rypsok/releases/tag/0.6.0
 [0.5.0]: https://github.com/nabbisen/rypsok/releases/tag/0.5.0
