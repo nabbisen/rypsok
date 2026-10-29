@@ -488,8 +488,7 @@ config_version = 1                 # REQ-MAIN-003
 structured_content = true          # REQ-MCP-011
 
 [search]
-default_language = "en"
-languages = ["en", "ja"]           # values offered to callers
+languages = ["en", "ja"]           # values offered to callers; the first is the default
 region = "US"
 safe_search = "moderate"          # REQ-SEARCH-008
 max_results = 5                    # LIM-S2 default
