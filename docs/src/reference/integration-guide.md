@@ -57,13 +57,15 @@ add the operating system's. The policy cannot see what the kernel sees,
 and a bug in one does not reach the other.
 
 With systemd, deny every address and allow the engines and the sites the
-deployment needs:
+deployment needs. `<the engines' addresses>` is a placeholder: you list
+the addresses (or networks) of the engines you configured and of any site
+you allow:
 
 ```ini
 [Service]
 ExecStart=/usr/local/bin/rypsok serve --transport stdio
 IPAddressDeny=any
-IPAddressAllow=93.184.216.0/24
+IPAddressAllow=<the engines' addresses>
 RestrictAddressFamilies=AF_INET AF_INET6
 PrivateNetwork=no
 ```

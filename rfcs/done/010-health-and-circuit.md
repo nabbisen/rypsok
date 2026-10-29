@@ -196,3 +196,14 @@ The `[resilience]` table above is added to the configuration schema and to
   recommendation: keep REQ-RES-004 as written until a deployment's
   counters show sustained `request_failure` streaks; revisit in M3's
   review.
+
+## Amendment to RFC 010 (2026-10-29, RFC 019 D7)
+
+- The wording of the corrected key. The text above says an `auth_failure`
+  engine "keeps being selected so that a corrected key takes effect at
+  once". The key is read at startup, so a corrected key takes effect at the
+  next restart; what is true now is that the engine keeps being asked
+  meanwhile, so that no cooldown delays it. The pages use one sentence:
+  "the key is read at startup; a corrected key takes effect at the next
+  restart, and the engine keeps being asked meanwhile, so no cooldown
+  delays it."

@@ -245,3 +245,149 @@ async fn req_doc_002_first_tutorial_runs_end_to_end() {
     .await
     .unwrap();
 }
+
+/// The `-H '…'` headers of the `curl` examples on a page, as name and
+/// value, without the ones that belong to the deployment the page
+/// describes rather than to the loopback listener under test (the bearer
+/// token and the proxy's `Host`).
+fn curl_headers(page: &str) -> Vec<(String, String)> {
+    let mut headers = Vec::new();
+    let mut rest = page;
+    while let Some(at) = rest.find("-H ") {
+        rest = &rest[at + 3..];
+        let Some(quote) = rest.chars().next().filter(|c| matches!(c, '\'' | '"')) else {
+            continue;
+        };
+        let body = &rest[1..];
+        let Some(end) = body.find(quote) else { break };
+        let header = &body[..end];
+        rest = &body[end + 1..];
+        let Some((name, value)) = header.split_once(": ") else {
+            continue;
+        };
+        if matches!(name.to_ascii_lowercase().as_str(), "authorization" | "host") {
+            continue;
+        }
+        headers.push((name.to_owned(), value.to_owned()));
+    }
+    headers
+}
+
+/// REQ-DOC-002 (RFC 019 D6): the `curl` of Tutorial 4 and of the deployment
+/// page, with exactly the headers the pages show, gets 200 from the binary
+/// in HTTP mode. The headers are read from the pages themselves, so a page
+/// that drifts from the protocol fails here, not in a user's terminal.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn req_doc_002_documented_curl_gets_200() {
+    use std::io::{BufRead, BufReader};
+    use std::process::Stdio;
+    use std::sync::mpsc::channel;
+    use std::time::Duration;
+
+    let root = examples().join("..").join("docs").join("src");
+    let pages = [
+        root.join("tutorials/04-network-mode.md"),
+        root.join("reference/deployment.md"),
+    ];
+    let request: Value = serde_json::from_str(
+        &std::fs::read_to_string(examples().join("calls/engine-status.json")).unwrap(),
+    )
+    .unwrap();
+    let body = request["request"].clone();
+
+    let config = config_file(
+        "config_version = 1\n[service.http]\nbind = \"127.0.0.1:0\"\n[engines.wikipedia]\ntype = \"wikipedia\"\ncategories = [\"general\"]\n",
+    );
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rypsok"))
+        .args(["serve", "--transport", "http", "--config"])
+        .arg(&config)
+        .env_remove("RYPSOK_CONFIG")
+        .env_remove("BRAVE_API_KEY")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("rypsok spawns");
+    let stderr = child.stderr.take().unwrap();
+    let (tx, lines) = channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            if tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    // The port is whatever the operating system gave: read it from the
+    // `listening` event.
+    let address = loop {
+        let line = lines
+            .recv_timeout(Duration::from_secs(30))
+            .expect("the listener logs `listening`");
+        let Ok(event) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if event["event"] == "listening" {
+            break event["address"].as_str().unwrap().to_owned();
+        }
+    };
+
+    rypsok_core::egress::ensure_crypto_provider();
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .unwrap();
+    let mut checked = Vec::new();
+    for page in &pages {
+        let text = std::fs::read_to_string(page).unwrap();
+        let headers = curl_headers(&text);
+        let names: Vec<String> = headers
+            .iter()
+            .map(|(n, _)| n.to_ascii_lowercase())
+            .collect();
+        for needed in [
+            "content-type",
+            "accept",
+            "mcp-protocol-version",
+            "mcp-method",
+            "mcp-name",
+        ] {
+            assert!(
+                names.iter().any(|n| n == needed),
+                "{}: the curl shows no `{needed}` header: {names:?}",
+                page.display()
+            );
+        }
+        let mut call = client.post(format!("http://{address}/mcp"));
+        for (name, value) in &headers {
+            call = call.header(name.as_str(), value.as_str());
+        }
+        let response = call.json(&body).send().await.unwrap();
+        let status = response.status();
+        let answer: Value = response.json().await.unwrap_or(Value::Null);
+        assert_eq!(status, 200, "{}: {answer}", page.display());
+        assert_eq!(
+            answer["result"]["structuredContent"]["outcome"],
+            "ok",
+            "{}: {answer}",
+            page.display()
+        );
+        checked.push(headers);
+    }
+    child.kill().unwrap();
+    child.wait().unwrap();
+
+    // The protocol requires both media types; a page that lists one gets a
+    // 406 from the server, and says so here before it says so to a user.
+    for headers in checked {
+        let accept = headers
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case("accept"))
+            .map(|(_, v)| v.clone())
+            .unwrap();
+        assert!(
+            accept.contains("application/json") && accept.contains("text/event-stream"),
+            "{accept}"
+        );
+    }
+}

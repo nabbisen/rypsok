@@ -42,12 +42,15 @@ the TLS certificate.
 ## 3. Call it
 
 Every request is a `POST` to `/mcp` with the bearer token and the three
-headers of the protocol revision beside the JSON body:
+headers of the protocol revision beside the JSON body. The `Accept` header
+lists both `application/json` and `text/event-stream`: the protocol
+requires a client to list both, and the server answers 406 to a request
+that lists one:
 
 ```sh
 curl -sS https://rypsok.example/mcp \
   -H "Authorization: Bearer $RYPSOK_TOKEN_MIMLYS" \
-  -H 'Content-Type: application/json' -H 'Accept: application/json' \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
   -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: engine_status' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"engine_status","arguments":{},
        "_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28",

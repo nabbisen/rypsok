@@ -24,7 +24,7 @@ ever goes to standard output except protocol messages.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `unavailable` with reason `no_engine` | No enabled, active engine serves the category asked | Check `categories` of the engines and the engines' state in `check` |
-| Every search is `partial` with one engine `auth_failure` | The provider refuses the key | Check the key and the subscription; rypsok keeps asking so that a corrected key works at the next restart |
+| Every search is `partial` with one engine `auth_failure` | The provider refuses the key | Check the key and the subscription. The key is read at startup; a corrected key takes effect at the next restart, and the engine keeps being asked meanwhile, so no cooldown delays it |
 | `partial` with `rate_limited` | The provider's or the engine's rate is used up; the notice may carry when to retry | Wait; lower `requests` by asking for fewer engines, or raise the plan |
 | `partial` with `timeout` for one engine, often | The provider is slow for the deadline configured | Raise `[search] engine_timeout_ms` within `deadline_ms`, or accept |
 | `engine_status` shows an engine `open` | It failed several times in a row and rests; after the cooldown one call probes it | Nothing to do; fix the cause of the failures if there is one (key, network, provider) |

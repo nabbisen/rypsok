@@ -60,9 +60,9 @@ its recent requests.
 
 A wrong or expired key gives every search the outcome `partial` with the
 notice `{"code": "engine_unavailable", "engine": "brave", "reason":
-"auth_failure"}`, and Wikipedia's results. rypsok keeps asking Brave, so
-that a corrected key takes effect at the next search without a restart
-of anything but rypsok itself (it reads the key at startup).
+"auth_failure"}`, and Wikipedia's results. The key is read at startup; a
+corrected key takes effect at the next restart, and the engine keeps being
+asked meanwhile, so no cooldown delays it.
 
 ## What Brave's terms mean for you
 
