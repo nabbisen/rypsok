@@ -602,7 +602,12 @@ demonstrations succeed:
 ## 18. Requirements coverage
 
 Every requirement of the baseline and the section of this document that
-satisfies it. "Internal" marks requirements that have no externally visible
+satisfies it. A row maps one requirement to the sections that, together,
+specify its group: the same cell is repeated for the requirements of a
+group (all `REQ-FETCH-*` rows name the same sections), and a row does not say
+which sentence of those sections satisfies the requirement. Where no
+section of this document specifies a requirement, the cell says
+"Internal" and names what does. "Internal" marks requirements that have no externally visible
 form; they are verified by tests and inspection. Deferred requirements
 (DR-001 to DR-011) are listed in requirements §24 and have no design yet.
 
@@ -665,6 +670,9 @@ contract. Changing one is a breaking change.
 | REQ-ENG-010 | Provider obligations as engine properties | M1 | §6 Search behavior; §11 Engines and compliance |
 | REQ-ENG-011 | Result count per engine | M1 | §6 Search behavior; §11 Engines and compliance |
 | REQ-ENG-012 | Snippet delivery | M1 | §6 Search behavior; §11 Engines and compliance |
+| REQ-ENG-013 | Scraping drivers opt in | M5 | §11 Engines and compliance (Scraping drivers) |
+| REQ-ENG-014 | No browser imitation by scraping drivers | M5 | §11 Engines and compliance (Scraping drivers, User-Agent) |
+| REQ-ENG-015 | Bounded scraping | M5 | §11 Engines and compliance (Scraping drivers: "bounded like `web_fetch`"); the node, depth and `parse_failure` rules are in RFC 015, not in this document |
 | REQ-AGG-001 | Concurrent requests | M1 | §6 Search behavior; §7 Outcome decision table; §14 Failure and degradation |
 | REQ-AGG-002 | Per-engine timeout | M1 | §6 Search behavior; §7 Outcome decision table; §14 Failure and degradation |
 | REQ-AGG-003 | Overall deadline | M1 | §6 Search behavior; §7 Outcome decision table; §14 Failure and degradation |
@@ -720,6 +728,9 @@ contract. Changing one is a breaking change.
 | REQ-SEC-018 | Listener protections | M4 | §8 Egress policy; §9 Content boundary; §2 HTTP listener; §16 Invariants |
 | REQ-SEC-019 | Per-caller limits | M4 | §8 Egress policy; §9 Content boundary; §2 HTTP listener; §16 Invariants |
 | REQ-SEC-020 | Supply chain and hardening | M0 | §8 Egress policy; §9 Content boundary; §2 HTTP listener; §16 Invariants |
+| REQ-SEC-022 | Request time and stream bounds | M7 | §2 Transports and protocol (the listener's statuses: 408); the stream bound LIM-H4 is in the limits table, not in this document |
+| REQ-SEC-023 | Fuzzing | M7 | Internal: the fuzz targets in `fuzz/` and the scheduled workflow (REQ-TEST-003); no section of this document specifies it |
+| REQ-SEC-024 | Session bound | M7 | §2 Transports and protocol (the listener's statuses: 503) |
 | REQ-PRIV-001 | Queries are sensitive | All | §10 Privacy |
 | REQ-PRIV-002 | Secrets in queries and URLs | M1 | §10 Privacy |
 | REQ-PRIV-003 | Non-retention | M1 | §10 Privacy |
@@ -782,6 +793,7 @@ contract. Changing one is a breaking change.
 | REQ-TEST-015 | Engine profile tests | M1 | Internal: verified by the test suite named in each requirement |
 | REQ-TEST-016 | Limit tests | M1 | Internal: verified by the test suite named in each requirement |
 | REQ-TEST-017 | Circuit tests | M2 | Internal: verified by the test suite named in each requirement |
+| REQ-TEST-018 | Scraping driver tests | M5 | Internal: verified by the test suite named in each requirement |
 | REQ-TEST-012 | CI gate | M0 | Internal: verified by the test suite named in each requirement |
 | REQ-MAIN-001 | Isolated drivers | All | Internal: crate structure; §13.2 configuration version; §18 note on contract versioning |
 | REQ-MAIN-002 | Tools depend on the core only | All | Internal: crate structure; §13.2 configuration version; §18 note on contract versioning |
@@ -805,3 +817,7 @@ contract. Changing one is a breaking change.
 | REQ-DEP-003 | Deployment egress control | M3 | §1 System context; §15 Deployment profiles; §13 Operator interface |
 | REQ-DEP-004 | Container limits | M1 | §1 System context; §15 Deployment profiles; §13 Operator interface |
 | REQ-DEP-005 | Distribution | M1 | §1 System context; §15 Deployment profiles; §13 Operator interface |
+| REQ-DOC-001 | Tutorials | M6 | Internal: the book's tutorials (RFC 017); no section of this document specifies them |
+| REQ-DOC-002 | Checked examples | M6 | Internal: `examples/` and the tests that check them (RFC 017); no section of this document specifies them |
+| REQ-DOC-003 | Reading a response | M6 | Internal: the book's page "Reading a response" (RFC 017); §1.2 states the external-data rule it explains |
+| REQ-DOC-004 | Troubleshooting | M6 | Internal: the book's page "Troubleshooting" (RFC 017); §2 and §4 give the statuses and errors it maps |
