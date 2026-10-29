@@ -17,7 +17,7 @@ a verification method:
 | A | Analysis, such as a threat-model review or a measurement report |
 | D | Demonstration against a live client or provider |
 
-Milestones M0 to M5 are defined in `ROADMAP.md`; `All` marks a requirement
+Milestones M0 to M8 are defined in `ROADMAP.md`; `All` marks a requirement
 that holds from M1 on. Numbers are never written here; they are cited as
 `LIM-` identifiers of [Limits and Defaults](./limits-and-defaults.md).
 Threats are cited as `THR-` identifiers of the

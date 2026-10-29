@@ -1,6 +1,6 @@
 # Limits and Defaults
 
-**Status:** Baseline 1.0 (2026-09-30). Values are provisional until the M1 and M3 measurements, as confirmed by the owner on 2026-09-30.
+**Status:** Baseline 1.0 (2026-09-30). Values were provisional until the M1 and M3 measurements, as confirmed by the owner on 2026-09-30. The measurements were taken and left the values they tested unchanged: at M1 the cold start (729 ms, 2026-10-20) kept LIM-S4 and LIM-S6, and at M3 the fetch memory report (release 0.3.0, 2026-10-27) proposed no change to LIM-F10 and derived the ceiling from LIM-C3, LIM-C5 and LIM-F3. M8 measures again (RFC 020, handoff 020e).
 **Governs:** every number that the [requirements](./requirements.md) and the
 [external design](./external-design.md) refer to by a `LIM-` identifier.
 
