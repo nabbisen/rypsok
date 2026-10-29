@@ -1,16 +1,177 @@
-# Builds the container image on a release tag and keeps it as a workflow
-# artifact (RFC 013). Publication to a registry is a separate decision.
+# Release artifacts (RFC 013, RFC 019 D8). This workflow never creates a
+# release: the owner publishes it. It builds the binaries and the container
+# image, and attaches the binaries and SHA256SUMS to the release of a tag
+# that already exists.
+#
+#   * A tag push builds everything; the attach job uploads to the release of
+#     that tag if there is one, and otherwise says so in the run summary.
+#   * To attach after publishing, run this workflow again from the tag
+#     (Actions, release, Run workflow, "Use workflow from: Tag X.Y.Z").
+#   * A run from a branch builds the artifacts and attaches nothing: that
+#     is the dry run.
+#
+# See docs/src/maintainers/releasing.md for the procedure.
 name: release
 
 on:
   push:
     tags: ["[0-9]*"]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    env:
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-27
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - name: C toolchain for the static Linux build
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build
+        run: cargo build --release --locked -p rypsok --target "$TARGET"
+        shell: bash
+      - name: Smoke test
+        run: |
+          binary="target/$TARGET/release/rypsok"
+          [ -f "$binary.exe" ] && binary="$binary.exe"
+          "$binary" --version
+        shell: bash
+      - name: Version
+        run: echo "VERSION=$(sed -n 's/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -n 1)" >> "$GITHUB_ENV"
+        shell: bash
+      - name: Package (Linux, macOS)
+        if: runner.os != 'Windows'
+        run: |
+          name="rypsok-$VERSION-$TARGET"
+          mkdir "$name"
+          cp "target/$TARGET/release/rypsok" LICENSE NOTICE "$name/"
+          tar -czf "$name.tar.gz" "$name"
+        shell: bash
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          $name = "rypsok-$env:VERSION-$env:TARGET"
+          New-Item -ItemType Directory $name | Out-Null
+          Copy-Item "target/$env:TARGET/release/rypsok.exe", "LICENSE", "NOTICE" $name
+          Compress-Archive -Path $name -DestinationPath "$name.zip"
+        shell: pwsh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: archive-${{ matrix.target }}
+          path: |
+            rypsok-*.tar.gz
+            rypsok-*.zip
+          if-no-files-found: error
+
+  checksums:
+    name: Checksums
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: archive-*
+          merge-multiple: true
+          path: dist
+      - name: SHA256SUMS
+        run: |
+          cd dist
+          sha256sum rypsok-* > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: checksums
+          path: dist/SHA256SUMS
+          if-no-files-found: error
+
+  attach:
+    name: Attach to the release
+    needs: [build, checksums]
+    # Only on a tag ref: a run from a branch is the dry run.
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    # The one job that may write to the repository.
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: The tag is a release tag and the version of this tree
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          if ! [[ "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::the tag is not of the form X.Y.Z"
+            exit 1
+          fi
+          version="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -n 1)"
+          if [ "$version" != "$tag" ]; then
+            echo "::error::the workspace version ($version) is not the tag ($tag)"
+            exit 1
+          fi
+      # The binaries and the checksums, and not the container image that the
+      # image job uploads to the same run.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: archive-*
+          merge-multiple: true
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: checksums
+          path: dist
+      - name: Upload to the release, if it exists
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          if ! shown="$(gh release view "$tag" 2>&1)"; then
+            if grep -qi "not found" <<<"$shown"; then
+              message="the release for tag $tag does not exist; publish it, then run this workflow again from tag $tag (Actions, release, Run workflow, Use workflow from: Tag $tag)"
+              echo "::notice title=Nothing attached::$message"
+              {
+                echo "### Nothing attached"
+                echo
+                echo "$message"
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "$shown"
+            exit 1
+          fi
+          ls -l dist
+          # No --clobber: an asset that is already there fails the upload.
+          gh release upload "$tag" dist/*
+          {
+            echo "### Attached to the release of $tag"
+            echo
+            for file in dist/*; do echo "- ${file##*/}"; done
+          } >> "$GITHUB_STEP_SUMMARY"
+
   image:
+    name: Container image
+    # A branch run would tag the image after the branch.
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0

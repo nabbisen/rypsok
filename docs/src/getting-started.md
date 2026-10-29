@@ -10,8 +10,9 @@ cargo install rypsok
 rypsok --version
 ```
 
-Binaries for Linux, macOS and Windows are attached to each release on
-GitHub, and a container image is built for each release.
+Binaries for Linux x86_64, macOS arm64 and Windows x86_64 are attached to
+each release; `SHA256SUMS` proves a download is intact, not where it came
+from. A container image is built for each release.
 
 ## Run
 

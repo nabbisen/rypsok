@@ -81,6 +81,15 @@ engines and the sites the operator admits: replace `<the engines'
 addresses>` with the addresses (or networks) of the engines you configured
 and of any site you allow, and keep the line in step with `[egress]`.
 
+## Binaries
+
+Each release lists archives for Linux x86_64 (static), macOS arm64 and
+Windows x86_64, and a file `SHA256SUMS`. Verify a download before running
+it: on Linux, `sha256sum --check --ignore-missing SHA256SUMS` in the
+directory that holds it; elsewhere, compute the archive's SHA-256 and
+compare it with its line in `SHA256SUMS`. The sums show the file is
+intact; they do not show who published it.
+
 ## Container
 
 The repository's `Dockerfile` builds a static binary into a distroless
