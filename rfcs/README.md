@@ -39,9 +39,7 @@ _None yet._
 
 ## Accepted
 
-| ID | Title | Milestone | Handoff |
-|----|-------|-----------|---------|
-| 019 | [Corrections from the first independent review](./accepted/019-first-independent-review.md) | 0.7.1 | [019a](./handoffs/019a-core-corrections/README.md), [019b](./handoffs/019b-listener-and-http-docs/README.md), [019c](./handoffs/019c-release-ci-records/README.md), [019d](./handoffs/019d-release-preparation/README.md) |
+_None at the moment._
 
 Review records are not in the repository: the owner keeps review requests and reviewed packages under a private directory, which earlier handoffs name as `.git-exclude/reviews/`, today `.git-exclude/review-requests/` and `.git-exclude/reviewed/`.
 
@@ -68,6 +66,7 @@ Review records are not in the repository: the owner keeps review requests and re
 | 016 | [1.0.0: the stable contract](./done/016-stable-contract.md) | 0.6.0 |
 | 017 | [User documentation, tutorials and checked examples](./done/017-user-documentation.md) | 0.6.0 |
 | 018 | [Threat model revision and hardening](./done/018-threat-model-revision.md) | 0.7.0 |
+| 019 | [Corrections from the first independent review](./done/019-first-independent-review.md) | 0.8.0 |
 
 ## Archive
 

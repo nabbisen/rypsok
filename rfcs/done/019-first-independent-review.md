@@ -1,7 +1,7 @@
 # RFC 019 — Corrections from the first independent review
 
-**Status.** Accepted (2026-10-29) — implementer may start at once.
-**Tracks.** Release 0.7.1 (a correction release between M7 and M8);
+**Status.** Implemented (0.8.0); accepted 2026-10-29.
+**Tracks.** Release 0.8.0 (the corrections release after M7; it was 0.7.1 until the owner's decision of 2026-10-29, see Amendment 2; the audit M8 follows as 0.9.0);
 requirements REQ-SEC-006 and REQ-SEC-007 (egress rules), REQ-CMP-005 and
 REQ-FETCH-011 (robots.txt and unreachable sites), REQ-SEC-003 and
 REQ-CTX-005 (no silent rewriting of visible text), REQ-SEC-018 and
@@ -300,3 +300,81 @@ handoffs, not the text above where the two differ.
   and 019c item 2 touch the gate tests and are given to one developer or
   landed in that order. What may start at once: 019a items 3 and 4; 019b
   item 2; 019c items 2, 3 and 4. The rest starts with this amendment.
+
+## Amendment 2 to RFC 019 (2026-10-29, after the re-review, revision 3)
+
+By the architect (the independent architect now holds the role; the
+original architect's amendment above stands except where this one says
+otherwise). The re-review (`arch-002-review-019/RE-REVIEW.md`) found six
+mechanisms of the first amendment that do not work as written. The
+handoffs are at revision 3 and win over the text above.
+
+- **D5 (N1, N2). The count and the error.** The wrapper owns the count:
+  a set of live session ids and a pending-reservation count under one
+  lock, so the count is `live + pending` and cannot drift or underflow;
+  the SDK closes one session from two places (its `DELETE` handler and
+  the worker's exit) and a `has_session` check before delegating would
+  miscount concurrent closes. The wrapper's error type is its own, with
+  `LimitReached` (Display `session limit reached`) and a transparent
+  `Delegate`, because the SDK's error type carries no text. The SDK's
+  per-refusal ERROR log line is a recorded residual of THR-27.
+- **D6 (N3). Counting that is emitted.** The gate counts every refusal it
+  makes or sees under `refusals[("http", reason)]`, and counting runs the
+  same once-a-minute flush check as a tool call; without it a flood of
+  refused requests with no tool call would never be logged. This
+  supersedes "counted" in D6 revised.
+- **D8 (N4). The re-run is made from the tag.** The `tag` and
+  `build_only` inputs are withdrawn. The attach job runs only when the
+  workflow runs on a tag ref and fails unless the workspace version equals
+  the tag; the owner re-runs the workflow from the tag after publishing; a
+  run from a branch builds artifacts only and is the dry run. A dispatch
+  that builds `main` and attaches it under a tag's name is therefore not
+  possible. The decision D-C (attach only to an existing release, never
+  overwrite, write permission on the attach job only) stands. The image
+  job runs on tag refs only. A maintainers page documents the procedure.
+- **D2 (N5, N7). One answer, the existing one.** The uniform answer is the
+  existing `ToolError::network()` with its existing message; the first
+  amendment's new sentence is withdrawn. The two answers are identical,
+  their latency is not equalised: a residual, recorded with THR-05.
+- **D3 (N6). Rename, in a minor release.** `clean_text` becomes
+  `clean_markup_text` as D3 revised says; with the release number settled
+  as 0.8.0 (below) a rename is a permitted, announced change before 1.0.0,
+  and no deprecated alias is kept. The re-review's alternative (an alias
+  to keep a patch release compatible) is withdrawn with the patch.
+- **D1 (rules).** `parse_rule` already refuses a rule with an empty label;
+  it is unchanged and pinned by a test. A rule is written without the root
+  dot. The first amendment's canonicalization of rules is withdrawn.
+- **D2 (review of the implementation).** An `http` URL upgraded to
+  `https` whose first https attempt cannot connect answers `denied`/
+  `scheme` (REQ-FETCH-010) at the robots.txt stage as at the page request,
+  so the answer does not depend on the `robots_txt` setting. `Host::name(raw)`
+  of the handoff is `Host::from_name(raw)`: a function that builds a host and
+  a method that reads one should not share a name.
+- **D10 (N9).** 019d removes the changelog's "as they land" sentence and
+  uses the preparation date.
+
+### Release number: 0.8.0 (owner's decision, 2026-10-29)
+
+The first amendment assumed a patch release ("do it as a patch release" in
+Goals; "release 0.7.1" in Acceptance). That assumption was wrong, and the
+architect's reading that kept it was wrong with it:
+
+- Semantic Versioning 2.0.0 asks for a patch only for backward-compatible
+  bug fixes and for a minor when functionality is added; 0.7.1 adds a
+  configuration key (`max_sessions`), a status (503), a public function and
+  release binaries.
+- The CHANGELOG preamble says that before 1.0.0 the external contract
+  (tool names, parameters, response fields, outcomes, error kinds) may
+  change *between minor versions* and that every such change is announced.
+  D2 changes an error kind (an unreachable site: `denied`/`robots_txt`
+  becomes `unavailable`/`network`) and what a refused name answers.
+- ROADMAP: "Patch releases carry fixes only."
+
+Therefore the corrections release is **0.8.0**, and the audit (M8) is
+**0.9.0**; the ROADMAP is amended accordingly and the audit's RFC takes the
+number 020. Wherever the text above says 0.7.1 or a patch release, read
+0.8.0 and a minor release; the contract changes (D2's error kinds, D3's
+rename, the 503, the new key) are announced under `Changed` in the
+changelog (019d). `tools/CURRENT_MILESTONE` stays `M7`: the requirements are
+tagged by milestone and this release adds none beyond REQ-SEC-024, which
+carries M7. The plan is `.git-exclude/plans/0.8.0-release-plan.md`.
