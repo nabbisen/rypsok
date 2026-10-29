@@ -18,7 +18,7 @@ limits, and a runtime connecting to it.
   caller `local`.
 - `allowed_hosts` lists the names the proxy forwards in the `Host`
   header. A bind on `0.0.0.0` or `::` requires this list. Any other
-  `Host` is refused with 400.
+  `Host` is refused with 403.
 - A caller has an identifier and a token read from the environment or a
   file. A token is at least 32 bytes. Generate one:
 

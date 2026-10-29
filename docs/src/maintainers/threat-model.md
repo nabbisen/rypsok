@@ -61,7 +61,9 @@ controls were confirmed and left unchanged:
   `[redacted]`; `check` prints the name of a variable or file, never a
   value; the proxy URL is never logged.
 - Standard output carries protocol messages only; the gate answers 401,
-  403, 404 and 413 before any JSON is parsed.
+  404, 408, 413 and 503 and the pinned SDK 400, 403 and 406 (the statuses
+  of the listener, by owner, are in the external design §2); 401, 403, 404
+  and 413 come before any JSON is parsed.
 - A driver's panic ends the engine's task, not the process; a parse
   panic ends the call.
 - Cache keys hold the query text in memory for LIM-K2, and the
