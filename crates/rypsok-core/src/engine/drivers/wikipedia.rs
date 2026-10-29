@@ -194,10 +194,8 @@ impl Driver for Wikipedia {
                     .as_deref()
                     .and_then(|t| Date::new(t.get(..10)?).ok());
                 Some(RawResult {
-                    title: hit.title,
-                    url,
-                    snippet: hit.snippet,
                     date,
+                    ..RawResult::new(hit.title, url, hit.snippet)
                 })
             })
             .collect();

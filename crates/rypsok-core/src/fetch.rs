@@ -417,7 +417,7 @@ async fn run_inner(
 
     // The boundary (RFC 005, RFC 012) and the window.
     let mut notices = Vec::new();
-    let title = boundary::clean_text(&document.title, limits.title_max_chars);
+    let title = boundary::clean_decoded_text(&document.title, limits.title_max_chars);
     if title.truncated {
         notices.push(Notice::counted(NoticeCode::TitleTruncated, 1));
     }

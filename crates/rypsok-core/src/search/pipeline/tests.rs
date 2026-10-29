@@ -19,6 +19,8 @@ use crate::telemetry::HealthTable;
 #[derive(Debug, Clone)]
 enum Script {
     Answer(Vec<(&'static str, &'static str, &'static str)>),
+    /// Answers with text a parser already decoded (a scraping driver).
+    Decoded(Vec<(&'static str, &'static str, &'static str)>),
     Fail(EngineErrorClass, Option<Duration>),
     Slow(Duration, Vec<(&'static str, &'static str, &'static str)>),
     Hang,
@@ -79,16 +81,17 @@ impl Driver for Scripted {
         let answer = |items: &[(&str, &str, &str)]| EngineResponse {
             results: items
                 .iter()
-                .map(|(t, u, s)| RawResult {
-                    title: (*t).into(),
-                    url: (*u).into(),
-                    snippet: (*s).into(),
-                    date: None,
-                })
+                .map(|(t, u, s)| RawResult::new(*t, *u, *s))
                 .collect(),
         };
         match &self.script {
             Script::Answer(items) => Ok(answer(items)),
+            Script::Decoded(items) => Ok(EngineResponse {
+                results: items
+                    .iter()
+                    .map(|(t, u, s)| RawResult::new(*t, *u, *s).decoded())
+                    .collect(),
+            }),
             Script::Fail(class, wait) => Err(EngineError {
                 class: *class,
                 retry_after: *wait,
@@ -1522,4 +1525,62 @@ async fn req_test_010_probes_bypass_and_cancelled_calls_store_nothing() {
     let result = slow.search(req(), cancel).await;
     assert!(matches!(result, Err(CallError::Cancelled)));
     assert!(slow.cache.as_ref().unwrap().is_empty());
+}
+
+/// REQ-SEC-003 (RFC 019 D3): a result whose producer marked its text
+/// decoded keeps `<T>` and `&lt;` as written; raw provider text still
+/// loses its markup and has its entities decoded; the mark survives the
+/// result cache, which stores the engine's answer.
+#[tokio::test]
+async fn req_sec_003_decoded_text_keeps_its_angle_brackets_through_the_cache() {
+    const SCRAPED: &[(&str, &str, &str)] = &[(
+        "std::vec::Vec<T> - Rust",
+        "https://doc.rust-lang.org/std/vec/struct.Vec.html",
+        "Use Vec<T> and write &lt;b&gt; as text.",
+    )];
+    const PROVIDER: &[(&str, &str, &str)] = &[(
+        "Rust (programming language)",
+        "https://en.wikipedia.org/wiki/Rust",
+        "<span class=\"searchmatch\">Rust</span> is fast&#8212;and safe",
+    )];
+    let h = harness_cached(
+        vec![
+            ("scraped", Script::Decoded(SCRAPED.to_vec())),
+            ("provider", Script::Answer(PROVIDER.to_vec())),
+        ],
+        10,
+        4096,
+        |_| {},
+    );
+    let mut results = Vec::new();
+    for round in 0..2 {
+        let response = h.search(req(), CancellationToken::new()).await.unwrap();
+        assert_eq!(
+            response.notices.is_empty(),
+            round == 0,
+            "the second call is served from the cache"
+        );
+        let find = |url: &str| {
+            response
+                .results
+                .iter()
+                .find(|r| r.url == url)
+                .unwrap_or_else(|| panic!("{url} missing in {:?}", response.results))
+                .clone()
+        };
+        let scraped = find("https://doc.rust-lang.org/std/vec/struct.Vec.html");
+        assert_eq!(scraped.title, "std::vec::Vec<T> - Rust", "round {round}");
+        assert_eq!(
+            scraped.snippet, "Use Vec<T> and write &lt;b&gt; as text.",
+            "decoded text is not decoded twice (round {round})"
+        );
+        let provider = find("https://en.wikipedia.org/wiki/Rust");
+        assert_eq!(
+            provider.snippet, "Rust is fast\u{2014}and safe",
+            "raw text loses its markup and has its entities decoded (round {round})"
+        );
+        results.push(response.results);
+    }
+    assert_eq!(results[0], results[1]);
+    assert_eq!(h.engine_calls(0), 1, "the second call came from the cache");
 }

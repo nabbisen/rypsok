@@ -22,6 +22,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "clean_decoded_text"
+path = "fuzz_targets/clean_decoded_text.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "clean_content"
 path = "fuzz_targets/clean_content.rs"
 test = false

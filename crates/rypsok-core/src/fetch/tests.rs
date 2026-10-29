@@ -42,7 +42,7 @@ fn render_and_clean(bytes: &[u8], media_type: &str) -> (String, String, Vec<&'st
         &Limits::default(),
     );
     let mut notices = Vec::new();
-    let title = boundary::clean_text(&document.title, 150).text;
+    let title = boundary::clean_decoded_text(&document.title, 150).text;
     let cleaned = boundary::clean_content(&document.content, 0, 1_000_000).unwrap();
     if cleaned.removed > 0 {
         notices.push("characters_removed");
@@ -1166,4 +1166,29 @@ async fn req_sec_007_a_refused_name_and_an_unreachable_name_answer_alike() {
     let literal = h.fetch("http://10.0.0.1/").await.unwrap_err();
     assert_eq!(literal.kind, ErrorKind::Denied);
     assert_eq!(literal.detail.reason, Some(DetailReason::Egress));
+}
+
+/// REQ-SEC-003 and REQ-CTX-005 (RFC 019 D3): the title of a fetched page is
+/// text the parser already decoded: `&lt;T&gt;` in the markup is `<T>` in
+/// the title, and the markup cleaner does not eat it.
+#[tokio::test]
+async fn req_sec_003_decoded_titles_keep_their_angle_brackets() {
+    let h = harness().await;
+    let body = "<html><head><title>std::vec::Vec&lt;T&gt; - Rust</title></head><body><main><h1>Vec</h1><p>A contiguous growable array type, written Vec&lt;T&gt;, with heap-allocated contents. It is long enough to be the candidate of the extractor.</p></main></body></html>";
+    Mock::given(method("GET"))
+        .and(path("/vec"))
+        .respond_with(page(body))
+        .mount(&h.server)
+        .await;
+    let response = h.fetch(&h.url("/vec")).await.unwrap();
+    assert_eq!(response.title, "std::vec::Vec<T> - Rust");
+    assert!(response.content.contains("Vec<T>"), "{}", response.content);
+    assert!(
+        response
+            .notices
+            .iter()
+            .all(|n| n.code != NoticeCode::TitleTruncated),
+        "{:?}",
+        response.notices
+    );
 }

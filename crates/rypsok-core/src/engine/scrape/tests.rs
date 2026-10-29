@@ -2,6 +2,7 @@
 //! DuckDuckGo fixtures. Every test names the requirement it verifies.
 
 use super::*;
+use crate::boundary::Provenance;
 use crate::engine::drivers::duckduckgo::{DuckDuckGo, SHAPE};
 use crate::html::dom::parse;
 
@@ -139,4 +140,25 @@ fn req_eng_015_selectors_match_by_tag_class_and_attribute() {
         .matches(&dom, form)
     );
     assert_eq!(text_of(&dom, div), "t");
+}
+
+/// REQ-SEC-003 and REQ-ENG-012 (RFC 019 D3): a scraping driver's results
+/// are marked decoded: the DOM already decoded `&lt;T&gt;` into `<T>`, so
+/// the pipeline must not run the markup cleaner over it.
+#[test]
+fn req_sec_003_scraped_results_are_marked_decoded() {
+    let page = r#"<html><body><div class="result"><a class="result__a" href="https://doc.rust-lang.org/std/vec/struct.Vec.html">std::vec::Vec&lt;T&gt; - Rust</a><a class="result__snippet" href="https://doc.rust-lang.org/">Use Vec&lt;T&gt; here.</a></div></body></html>"#;
+    let dom = parse(page, 50_000);
+    let Page::Results(results) = read(&dom, &SHAPE, 10, &DuckDuckGo::unwrap_link) else {
+        panic!("results expected");
+    };
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].title, "std::vec::Vec<T> - Rust");
+    assert_eq!(results[0].snippet, "Use Vec<T> here.");
+    assert_eq!(results[0].provenance(), Provenance::Decoded);
+    // A result a driver builds from provider text stays raw by default.
+    assert_eq!(
+        RawResult::new("t", "https://example.org/", "s").provenance(),
+        Provenance::Raw
+    );
 }

@@ -37,12 +37,7 @@ fn key(caller: &str, query: &str) -> CacheKey {
 
 fn answer(text: &str) -> EngineResponse {
     EngineResponse {
-        results: vec![RawResult {
-            title: text.to_owned(),
-            url: "https://example.org/".to_owned(),
-            snippet: String::new(),
-            date: None,
-        }],
+        results: vec![RawResult::new(text, "https://example.org/", "")],
     }
 }
 

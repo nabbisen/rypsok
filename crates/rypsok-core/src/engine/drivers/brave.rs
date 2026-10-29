@@ -220,13 +220,11 @@ impl Driver for Brave {
         let results = items
             .into_iter()
             .map(|item| RawResult {
-                title: item.title,
-                url: item.url,
-                snippet: item.description,
                 date: item
                     .page_age
                     .as_deref()
                     .and_then(|t| Date::new(t.get(..10)?).ok()),
+                ..RawResult::new(item.title, item.url, item.description)
             })
             .collect();
         Ok(EngineResponse { results })

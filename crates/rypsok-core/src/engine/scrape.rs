@@ -138,12 +138,8 @@ pub fn read(
         let snippet = find_in(dom, h, &shape.snippet)
             .map(|s| text_of(dom, s))
             .unwrap_or_default();
-        results.push(RawResult {
-            title,
-            url,
-            snippet,
-            date: None,
-        });
+        // Text of a parsed document: decoded, not raw (RFC 019 D3).
+        results.push(RawResult::new(title, url, snippet).decoded());
     }
     if !results.is_empty() {
         return Page::Results(results);

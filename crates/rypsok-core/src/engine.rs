@@ -17,6 +17,7 @@ pub mod scrape;
 use std::time::Duration;
 
 use crate::CancellationToken;
+use crate::boundary::Provenance;
 use crate::config::SafeSearch;
 use crate::model::{Date, Language, Reason, TimeRange};
 use crate::privacy::Sensitive;
@@ -56,19 +57,24 @@ impl EngineRequest {
     }
 }
 
-/// One result as a provider returned it: raw text that has not passed the
-/// content boundary (REQ-ENG-012).
+/// One result as a provider returned it: text that has not passed the
+/// content boundary (REQ-ENG-012). The text is raw (markup and entities
+/// may be in it) unless the producer marked it [`decoded`](Self::decoded);
+/// the mark travels with the result, through the result cache, and chooses
+/// the cleaner (RFC 019 D3).
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct RawResult {
-    /// The title, raw.
+    /// The title, as the provider gave it.
     pub title: String,
     /// The URL as the provider gave it, unwrapped from any redirect wrapper.
     pub url: String,
-    /// The snippet, raw.
+    /// The snippet, as the provider gave it.
     pub snippet: String,
     /// The date, when the provider gave one.
     pub date: Option<Date>,
+    /// Where the text comes from; private, set by `new` and `decoded`.
+    provenance: Provenance,
 }
 
 impl RawResult {
@@ -93,7 +99,23 @@ impl RawResult {
             url: url.into(),
             snippet: snippet.into(),
             date: None,
+            provenance: Provenance::Raw,
         }
+    }
+
+    /// The same result marked as decoded: its title and snippet were taken
+    /// from a parsed document, so no markup or entities remain in them and
+    /// `<T>` is text. A result is raw unless its producer says otherwise,
+    /// which errs on the safe side: raw text is cleaned as markup.
+    #[must_use]
+    pub fn decoded(mut self) -> Self {
+        self.provenance = Provenance::Decoded;
+        self
+    }
+
+    /// Where the text comes from, which chooses its cleaner.
+    pub fn provenance(&self) -> Provenance {
+        self.provenance
     }
 
     /// The same result with a date.

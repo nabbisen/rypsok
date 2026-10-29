@@ -1,12 +1,24 @@
 //! The content boundary: every piece of external text passes here before it
 //! enters a response (external design §9; RFC 005).
 //!
-//! [`clean_text`] applies five steps in a fixed order: markup removal and
+//! There are two cleaners for titles and snippets, chosen by where the text
+//! comes from ([`Provenance`], RFC 019 D3).
+//!
+//! [`clean_markup_text`] is for raw provider text, which carries markup and
+//! entities. It applies five steps in a fixed order: markup removal and
 //! entity decoding, NFC normalization, removal of invisible and control
 //! characters (REQ-SEC-015), whitespace collapsing, and bounding at a
-//! character boundary (REQ-CTX-004, REQ-CTX-006). Visible text is never
-//! rewritten beyond these steps (REQ-SEC-003). Every change is reported
-//! through counts that become notices (REQ-CTX-007).
+//! character boundary (REQ-CTX-004, REQ-CTX-006).
+//!
+//! [`clean_decoded_text`] is for text a parser has already decoded (a
+//! page's DOM): the same steps without the markup step and without entity
+//! decoding, because a decoded `&lt;` is the four characters `&lt;` and a
+//! decoded `<T>` is text. Handing decoded text to the markup cleaner would
+//! silently eat `<T>`; handing raw text to the decoded cleaner would pass
+//! markup, so a result is raw unless its producer says otherwise.
+//!
+//! Visible text is never rewritten beyond these steps (REQ-SEC-003). Every
+//! change is reported through counts that become notices (REQ-CTX-007).
 //!
 //! [`make_result`] is the only way to build a [`SearchResult`]: the type
 //! has a crate-private field, so no code outside this crate, and no code
@@ -45,6 +57,18 @@ pub const INSTRUCTION_PATTERNS: &[&str] = &[
     "do not tell the user",
 ];
 
+/// Where a piece of external text comes from, which decides its cleaner
+/// (RFC 019 D3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum Provenance {
+    /// Raw provider text: markup and entities are still in it. The default.
+    #[default]
+    Raw,
+    /// Text a parser already decoded: no markup, no entities.
+    Decoded,
+}
+
 /// The outcome of cleaning one text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cleaned {
@@ -56,9 +80,12 @@ pub struct Cleaned {
     pub truncated: bool,
 }
 
+/// For raw provider text: markup is stripped and entities are decoded; use
+/// [`clean_decoded_text`] for text a parser already decoded.
+///
 /// Cleans a title or snippet: the five steps of RFC 005 in order, bounded
 /// at `max_chars` Unicode scalar values (LIM-U1).
-pub fn clean_text(raw: &str, max_chars: u32) -> Cleaned {
+pub fn clean_markup_text(raw: &str, max_chars: u32) -> Cleaned {
     // NFC before the markup step as well as after entity decoding (RFC 005
     // amendment of 2026-10-27): normalization can map a compatibility
     // letter to ASCII or reorder combining marks after a `<`, and the tag
@@ -78,6 +105,29 @@ pub fn clean_text(raw: &str, max_chars: u32) -> Cleaned {
     let (visible, removed_after) = remove_invisible(&normalized);
     let removed = removed_before + removed_after;
     let collapsed = visible.split_whitespace().collect::<Vec<_>>().join(" ");
+    let (text, truncated) = bound(&collapsed, max_chars as usize);
+    Cleaned {
+        text,
+        removed,
+        truncated,
+    }
+}
+
+/// For text a parser already decoded (a page's title, a scraped snippet):
+/// there is no markup step and no entity decoding, so `<T>` and `&lt;` stay
+/// as written; use [`clean_markup_text`] for raw provider text.
+///
+/// NFC normalization, removal of invisible and control characters
+/// (REQ-SEC-015), whitespace collapsing and the bound, in the order of
+/// [`clean_markup_text`]. Cleaning is idempotent: with no entity residual
+/// there is nothing to exclude (RFC 019 D3).
+pub fn clean_decoded_text(text: &str, max_chars: u32) -> Cleaned {
+    let normalized: String = text.nfc().collect();
+    let (visible, removed) = remove_invisible(&normalized);
+    // Removing a character between a base and a combining mark can let
+    // them compose; normalize again so that a second pass changes nothing.
+    let recomposed: String = visible.nfc().collect();
+    let collapsed = recomposed.split_whitespace().collect::<Vec<_>>().join(" ");
     let (text, truncated) = bound(&collapsed, max_chars as usize);
     Cleaned {
         text,
@@ -177,7 +227,8 @@ pub struct ResultEffects {
     pub instruction_like: bool,
 }
 
-/// Builds a result from raw external text. `url` must already be the
+/// Builds a result from raw provider text (markup and entities still in
+/// it): the cleaner is [`clean_markup_text`]. `url` must already be the
 /// returned form of RFC 008; `date` and `engines` are rypsok's own.
 pub fn make_result(
     raw_title: &str,
@@ -188,8 +239,44 @@ pub fn make_result(
     title_max_chars: u32,
     snippet_max_chars: u32,
 ) -> (SearchResult, ResultEffects) {
-    let title = clean_text(raw_title, title_max_chars);
-    let snippet = clean_text(raw_snippet, snippet_max_chars);
+    build_result(
+        clean_markup_text(raw_title, title_max_chars),
+        clean_markup_text(raw_snippet, snippet_max_chars),
+        url,
+        date,
+        engines,
+    )
+}
+
+/// Builds a result from text a parser already decoded (a scraping driver's
+/// results): the cleaner is [`clean_decoded_text`], so `Vec<T>` stays as
+/// written. Otherwise as [`make_result`].
+pub fn make_decoded_result(
+    decoded_title: &str,
+    decoded_snippet: &str,
+    url: String,
+    date: Option<Date>,
+    engines: Option<Vec<EngineId>>,
+    title_max_chars: u32,
+    snippet_max_chars: u32,
+) -> (SearchResult, ResultEffects) {
+    build_result(
+        clean_decoded_text(decoded_title, title_max_chars),
+        clean_decoded_text(decoded_snippet, snippet_max_chars),
+        url,
+        date,
+        engines,
+    )
+}
+
+/// The one place a [`SearchResult`] is built, from cleaned text.
+fn build_result(
+    title: Cleaned,
+    snippet: Cleaned,
+    url: String,
+    date: Option<Date>,
+    engines: Option<Vec<EngineId>>,
+) -> (SearchResult, ResultEffects) {
     let effects = ResultEffects {
         title_truncated: title.truncated,
         snippet_truncated: snippet.truncated,

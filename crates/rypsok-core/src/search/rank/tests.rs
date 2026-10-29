@@ -17,12 +17,7 @@ fn observe(
         engine: EngineId::new(engine).unwrap(),
         preference,
         rank,
-        raw: RawResult {
-            title: format!("{engine} {rank}"),
-            url: url.into(),
-            snippet: String::new(),
-            date: None,
-        },
+        raw: RawResult::new(format!("{engine} {rank}"), url, ""),
         returned_url: returned_url.clone(),
         key: comparison_key(&returned_url),
     }

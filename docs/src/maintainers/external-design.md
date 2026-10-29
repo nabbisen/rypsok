@@ -370,6 +370,17 @@ explicit allow rules in configuration (Principle P4).
 | Bounds with truncation signal | All external text | REQ-CTX-006, REQ-CTX-007 |
 | Fixed vocabularies for everything rypsok asserts | Envelope, errors, status | REQ-SEC-016 |
 
+Titles and snippets have two cleaners, chosen by provenance (RFC 019 D3).
+Raw provider text (the JSON engines: Wikipedia, Brave) still carries markup
+and entities, so markup is removed and entities are decoded
+(`clean_markup_text`). Text a parser already decoded (a fetched page's
+title, a scraping driver's results) has neither: `clean_decoded_text` does
+only the normalization, the removal of invisible characters, the
+whitespace collapsing and the bound, so that a title such as
+`std::vec::Vec<T> - Rust` is returned as the page wrote it. A result is
+raw unless its producer marked it decoded, and the mark travels with the
+result through the result cache; forgetting it errs on the safe side.
+
 ---
 
 ## 10. Privacy

@@ -11,28 +11,31 @@ const SNIPPET_MAX: u32 = 300;
 /// else; provider snippets carry `<span class="searchmatch">` and entities.
 #[test]
 fn req_ctx_004_markup_removed_and_entities_decoded() {
-    let cleaned = clean_text(
+    let cleaned = clean_markup_text(
         "<span class=\"searchmatch\">Rust</span> is a &quot;language&quot; &amp; more&#8230;",
         SNIPPET_MAX,
     );
     assert_eq!(cleaned.text, "Rust is a \"language\" & more…");
-    assert_eq!(clean_text("a<br>b</p>c", SNIPPET_MAX).text, "a b c");
+    assert_eq!(clean_markup_text("a<br>b</p>c", SNIPPET_MAX).text, "a b c");
     assert_eq!(
-        clean_text("1 < 2 and 3 > 2", SNIPPET_MAX).text,
+        clean_markup_text("1 < 2 and 3 > 2", SNIPPET_MAX).text,
         "1 < 2 and 3 > 2"
     );
-    assert_eq!(clean_text("text <unterminated", SNIPPET_MAX).text, "text");
+    assert_eq!(
+        clean_markup_text("text <unterminated", SNIPPET_MAX).text,
+        "text"
+    );
 }
 
 /// REQ-CTX-004: the steps run in order: an entity that decodes to a
 /// control character is removed, so decoding precedes removal.
 #[test]
 fn req_ctx_004_steps_run_in_order() {
-    let cleaned = clean_text("a&#8203;b&#x200B;c", SNIPPET_MAX);
+    let cleaned = clean_markup_text("a&#8203;b&#x200B;c", SNIPPET_MAX);
     assert_eq!(cleaned.text, "abc");
     assert_eq!(cleaned.removed, 2);
     // NFC: a decomposed é becomes one scalar value before bounding counts.
-    let cleaned = clean_text("e\u{0301}", SNIPPET_MAX);
+    let cleaned = clean_markup_text("e\u{0301}", SNIPPET_MAX);
     assert_eq!(cleaned.text, "é");
     assert_eq!(cleaned.text.chars().count(), 1);
 }
@@ -45,12 +48,12 @@ fn req_ctx_004_steps_run_in_order() {
 /// twice.
 #[test]
 fn req_test_013_markup_step_sees_normalized_text() {
-    let kelvin = clean_text("<\u{212A}b>x", 50);
+    let kelvin = clean_markup_text("<\u{212A}b>x", 50);
     assert_eq!(kelvin.text, "x");
-    assert_eq!(clean_text(&kelvin.text, 50).text, kelvin.text);
-    let marks = clean_text("<\u{EC8}\u{C55}", 50);
+    assert_eq!(clean_markup_text(&kelvin.text, 50).text, kelvin.text);
+    let marks = clean_markup_text("<\u{EC8}\u{C55}", 50);
     assert_eq!(marks.text, "<\u{C55}\u{EC8}");
-    assert_eq!(clean_text(&marks.text, 50).text, marks.text);
+    assert_eq!(clean_markup_text(&marks.text, 50).text, marks.text);
 }
 
 #[test]
@@ -67,14 +70,21 @@ fn req_sec_015_invisible_and_control_characters_removed() {
         ("a\u{0378}b", 1),  // unassigned
     ];
     for (input, expected) in cases {
-        let cleaned = clean_text(input, SNIPPET_MAX);
+        let cleaned = clean_markup_text(input, SNIPPET_MAX);
         assert_eq!(cleaned.text, "ab", "{input:?}");
         assert_eq!(cleaned.removed, expected, "{input:?}");
     }
     for visible in ["a b", "aéb", "a日b", "a😀b", "a\u{2019}b"] {
-        assert_eq!(clean_text(visible, SNIPPET_MAX).removed, 0, "{visible:?}");
+        assert_eq!(
+            clean_markup_text(visible, SNIPPET_MAX).removed,
+            0,
+            "{visible:?}"
+        );
     }
-    assert_eq!(clean_text("a\tb\nc\r\nd", SNIPPET_MAX).text, "a b c d");
+    assert_eq!(
+        clean_markup_text("a\tb\nc\r\nd", SNIPPET_MAX).text,
+        "a b c d"
+    );
 }
 
 /// REQ-CTX-006 and REQ-CTX-007: text is cut at the bound at a character
@@ -82,24 +92,24 @@ fn req_sec_015_invisible_and_control_characters_removed() {
 #[test]
 fn req_ctx_006_bounding_prefers_a_word_boundary_and_reports() {
     let text = "word ".repeat(40);
-    let cleaned = clean_text(&text, 100);
+    let cleaned = clean_markup_text(&text, 100);
     assert!(cleaned.truncated);
     assert!(cleaned.text.chars().count() <= 100);
     assert!(cleaned.text.ends_with("word"));
     let exact = "x".repeat(100);
-    let cleaned = clean_text(&exact, 100);
+    let cleaned = clean_markup_text(&exact, 100);
     assert!(!cleaned.truncated);
     assert_eq!(cleaned.text.chars().count(), 100);
     let over = "x".repeat(101);
-    let cleaned = clean_text(&over, 100);
+    let cleaned = clean_markup_text(&over, 100);
     assert!(cleaned.truncated);
     assert_eq!(cleaned.text.chars().count(), 100);
     let japanese = "日本語の文章".repeat(60);
-    let cleaned = clean_text(&japanese, SNIPPET_MAX);
+    let cleaned = clean_markup_text(&japanese, SNIPPET_MAX);
     assert!(cleaned.truncated);
     assert_eq!(cleaned.text.chars().count(), 300);
     let emoji = "😀👍🏽 ".repeat(80);
-    let cleaned = clean_text(&emoji, 100);
+    let cleaned = clean_markup_text(&emoji, 100);
     assert!(cleaned.text.chars().count() <= 100);
     assert!(cleaned.text.is_char_boundary(cleaned.text.len()));
 }
@@ -116,10 +126,10 @@ fn req_sec_003_instruction_like_patterns_detected_not_rewritten() {
         ] {
             let text = format!("Please {variant} and reply");
             assert!(
-                has_instruction_like_pattern(&clean_text(&text, SNIPPET_MAX).text),
+                has_instruction_like_pattern(&clean_markup_text(&text, SNIPPET_MAX).text),
                 "{variant}"
             );
-            assert_eq!(clean_text(&text, SNIPPET_MAX).text, text);
+            assert_eq!(clean_markup_text(&text, SNIPPET_MAX).text, text);
         }
     }
     assert!(!has_instruction_like_pattern(
@@ -223,8 +233,8 @@ proptest! {
         // cleaning would treat as markup, by the browser-faithful order of
         // RFC 005; idempotence is asserted for every other input.
         let raw = raw.replace('&', "");
-        let once = clean_text(&raw, max);
-        let twice = clean_text(&once.text, max);
+        let once = clean_markup_text(&raw, max);
+        let twice = clean_markup_text(&once.text, max);
         prop_assert_eq!(&twice.text, &once.text);
         prop_assert_eq!(twice.removed, 0);
         prop_assert!(!twice.truncated);
@@ -242,9 +252,9 @@ proptest! {
 #[test]
 fn req_ctx_010_budgets_count_scalar_values() {
     let fits = "日".repeat(150);
-    assert!(!clean_text(&fits, TITLE_MAX).truncated);
+    assert!(!clean_markup_text(&fits, TITLE_MAX).truncated);
     let over = "日".repeat(151);
-    let cleaned = clean_text(&over, TITLE_MAX);
+    let cleaned = clean_markup_text(&over, TITLE_MAX);
     assert!(cleaned.truncated);
     assert_eq!(cleaned.text.chars().count(), 150);
     assert_eq!(cleaned.text.len(), 450, "bytes are not the unit");
@@ -319,15 +329,63 @@ fn req_sec_015_content_cleaning_keeps_indentation() {
 /// the first pass; both passes see the same characters.
 #[test]
 fn req_test_013_hidden_characters_do_not_hide_a_tag() {
-    let once = clean_text("<\u{0}y>hidden</y> shown", 50);
+    let once = clean_markup_text("<\u{0}y>hidden</y> shown", 50);
     assert_eq!(
         once.text, "hidden shown",
         "both tags stripped, the text kept"
     );
     assert!(once.removed >= 1);
-    let twice = clean_text(&once.text, 50);
+    let twice = clean_markup_text(&once.text, 50);
     assert_eq!(twice.text, once.text);
     assert_eq!(twice.removed, 0);
-    let plain = clean_text("a < b", 50);
+    let plain = clean_markup_text("a < b", 50);
     assert_eq!(plain.text, "a < b", "a lone `<` is text");
+}
+
+/// REQ-SEC-003 and REQ-CTX-004 (RFC 019 D3): decoded text keeps angle
+/// brackets and entity-looking text as written, and still loses invisible
+/// characters, collapses whitespace and obeys the bound.
+#[test]
+fn req_sec_003_decoded_cleaner_does_not_touch_markup_or_entities() {
+    let kept = clean_decoded_text("std::vec::Vec<T> - Rust", 150);
+    assert_eq!(kept.text, "std::vec::Vec<T> - Rust");
+    assert_eq!(kept.removed, 0);
+    assert!(!kept.truncated);
+    assert_eq!(
+        clean_decoded_text("a &lt;b&gt; c", 50).text,
+        "a &lt;b&gt; c"
+    );
+    assert_eq!(clean_decoded_text("x <b>y</b> z", 50).text, "x <b>y</b> z");
+    assert_eq!(clean_decoded_text("1 <2 \n\t 3>", 50).text, "1 <2 3>");
+    // The raw cleaner still eats the same markup.
+    assert_eq!(clean_markup_text("x <b>y</b> z", 50).text, "x y z");
+
+    let hidden = clean_decoded_text("a\u{200B}b\u{0}c", 50);
+    assert_eq!((hidden.text.as_str(), hidden.removed), ("abc", 2));
+    let cut = clean_decoded_text(&"word ".repeat(40), 30);
+    assert!(cut.truncated && cut.text.chars().count() <= 30, "{cut:?}");
+    // A removed character between a base and a mark lets them compose.
+    let composed = clean_decoded_text("e\u{200D}\u{0301}", 50);
+    assert_eq!(composed.text, "\u{e9}");
+    assert_eq!(
+        clean_decoded_text(&composed.text, 50),
+        Cleaned {
+            removed: 0,
+            ..composed
+        }
+    );
+}
+
+proptest! {
+    /// REQ-TEST-013 (RFC 019 D3): decoded cleaning is fully idempotent (it
+    /// has no entity residual), within the bound, and without edge spaces.
+    #[test]
+    fn req_test_013_decoded_cleaning_is_idempotent(raw in "\\PC{0,200}", max in 50u32..400) {
+        let once = clean_decoded_text(&raw, max);
+        let twice = clean_decoded_text(&once.text, max);
+        prop_assert_eq!(&twice.text, &once.text);
+        prop_assert_eq!(twice.removed, 0);
+        prop_assert!(once.text.chars().count() <= max as usize);
+        prop_assert!(!once.text.starts_with(' ') && !once.text.ends_with(' '));
+    }
 }

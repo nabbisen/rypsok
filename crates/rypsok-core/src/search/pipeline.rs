@@ -18,7 +18,7 @@ use super::normalize::{self, UrlRejection};
 use super::rank::{self, Observation};
 use super::{SearchPolicy, ValidatedSearch};
 use crate::CancellationToken;
-use crate::boundary;
+use crate::boundary::{self, Provenance};
 use crate::cache::{CacheKey, NotStored, ResultCache};
 use crate::config::{SafeSearch, SecretDetection};
 use crate::egress::ReturnedUrls;
@@ -443,7 +443,12 @@ pub async fn run(
         });
         let engines: Option<Vec<EngineId>> =
             (p.engine_attribution || attribution_required).then(|| item.engines.clone());
-        let (result, effects) = boundary::make_result(
+        // The cleaner follows the text's provenance (RFC 019 D3).
+        let make = match item.best.raw.provenance() {
+            Provenance::Decoded => boundary::make_decoded_result,
+            Provenance::Raw => boundary::make_result,
+        };
+        let (result, effects) = make(
             &item.best.raw.title,
             &item.best.raw.snippet,
             item.best.returned_url.clone(),
