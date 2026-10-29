@@ -13,7 +13,11 @@ release workflow builds and attaches, and never creates a release.
    attach job fails otherwise.
 3. **Publish.** The owner publishes the release on GitHub from the tag, or
    publishes first: creating the release creates the tag, which starts the
-   workflow, whose attach job then finds the release.
+   workflow, whose attach job then finds the release. When publishing
+   first, choose the release commit as the target of the new tag, not the
+   branch head: the tag goes on the commit chosen, and the attach job's
+   version check catches a wrong version but not a wrong commit with the
+   same version.
 4. **Read the run.** The `release` workflow builds the binaries, writes
    `SHA256SUMS`, and builds the container image. If the release did not exist
    when its attach job ran, the job wrote a notice in the run summary and
