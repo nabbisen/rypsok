@@ -118,6 +118,9 @@ pub struct HttpConfig {
     pub max_streams: u32,
     /// LIM-H5 (RFC 018): at least `fetch.deadline_ms` + 2 s.
     pub request_timeout_s: u32,
+    /// LIM-H6 (RFC 019): live sessions of the handshake-based revisions; a
+    /// handshake beyond it is answered 503.
+    pub max_sessions: u32,
     /// `[service.http.auth]`.
     pub auth: HttpAuthConfig,
 }
@@ -134,6 +137,7 @@ impl Default for HttpConfig {
             idle_timeout_s: defaults::HTTP_IDLE_TIMEOUT_S,
             max_streams: defaults::HTTP_MAX_STREAMS,
             request_timeout_s: defaults::HTTP_REQUEST_TIMEOUT_S,
+            max_sessions: defaults::HTTP_MAX_SESSIONS,
             auth: HttpAuthConfig::default(),
         }
     }
@@ -776,6 +780,13 @@ impl Config {
             3,
             600,
         );
+        range(
+            &mut problems,
+            "service.http.max_sessions",
+            h.max_sessions,
+            1,
+            65536,
+        );
         // A request bound shorter than a fetch would end tool calls, not
         // slow clients (RFC 018, LIM-H5).
         if u64::from(h.request_timeout_s) * 1000 < u64::from(self.fetch.deadline_ms) + 2000 {
@@ -1134,6 +1145,7 @@ impl Config {
             http_idle_timeout_s: self.service.http.idle_timeout_s,
             http_max_streams: self.service.http.max_streams,
             http_request_timeout_s: self.service.http.request_timeout_s,
+            http_max_sessions: self.service.http.max_sessions,
             failures_to_open: self.resilience.failures_to_open,
             first_cooldown_s: self.resilience.first_cooldown_s,
             max_cooldown_s: self.resilience.max_cooldown_s,

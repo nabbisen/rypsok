@@ -35,6 +35,7 @@ controls as requirements and the tests that verify them.
 | THR-24 | Misleading source metadata: homograph or confusable domains in a returned URL | B4 | The caller trusts the wrong site | REQ-RANK-003 (hosts returned in ASCII form) | REQ-TEST-007 |
 | THR-25 | A scraping driver runs against a provider's terms, or imitates a browser to get through | B2 | The operator's exposure; the project's honesty | REQ-ENG-013, REQ-ENG-014, REQ-CMP-004 | REQ-TEST-018 |
 | THR-26 | A slow or stream-flooding HTTP client exhausts the listener: a body sent a byte at a time, or one HTTP/2 connection opening many streams | B6 | Loss of service for other callers | REQ-SEC-018, REQ-SEC-022 | REQ-TEST-014 |
+| THR-27 | Session exhaustion by legacy handshakes: one client opens handshakes until memory is gone | B6 | Loss of service for other callers | REQ-SEC-018, REQ-SEC-024 | REQ-TEST-014 |
 
 ## Residual risks, accepted
 
@@ -44,6 +45,8 @@ controls as requirements and the tests that verify them.
 | A deliberate exfiltration that encodes a secret so that no pattern matches | Pattern detection catches accidents, not adversaries | Host: approve what leaves |
 | Results poisoned by search-engine optimization | Inherent to search | Caller |
 | A caller times `web_fetch` to tell a name the policy refused from one that does not resolve (THR-05) | The two answers are identical (`unavailable`, `network`), but their latency is not equalised: a refused name answers as soon as the resolver has judged it. Equalising it would add a delay to every failure; the policy's purpose is met by the identical object | Operator |
+| The session bound turns memory exhaustion into slot exhaustion (THR-27) | One caller that passes the gate can hold every slot for the 300 s idle expiry of the SDK. Per-caller session quotas and a shorter expiry are deferred to the audit (M8) | Operator |
+| The SDK writes one ERROR log line per refused handshake, at a rate the caller sets (THR-27) | Log amplification by a caller that passes the gate; filtering that log target is an M8 candidate | Operator |
 | Loss of health state at restart | State is not retained by design | Operator |
 | Queries retained in memory for LIM-K2 while the cache is on | A cache keyed by query is retention of queries; the configuration page says so next to the switch (REQ-CACHE-007) | Operator |
 | At most 200 characters of a provider's error body in a `debug` log line | A driver's author needs the provider's words to classify a new failure; `debug` is explicit and the bound is a constant (external design §16 I5) | Operator who enables `debug` |
@@ -59,3 +62,4 @@ controls as requirements and the tests that verify them.
 | 2026-10-27 | M4 | THR-18 and THR-19 added for the listener |
 | 2026-10-27 | M5 | THR-17 reviewed against the cache; the scraping threat added (as THR-20, renumbered THR-25 on 2026-10-27) |
 | 2026-10-27 | M7 | Revision against the delivered system (RFC 018): THR-22 extended to CI actions, THR-26 added, two residual risks recorded, the threat model page added |
+| 2026-10-29 | RFC 019 | THR-27 added (session exhaustion by legacy handshakes) with REQ-SEC-024 and LIM-H6; two residual risks recorded |

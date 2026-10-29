@@ -41,6 +41,7 @@ fn meta() -> Value {
 struct Server {
     url: String,
     service: Arc<Rypsok>,
+    sessions: Arc<BoundedSessions<LocalSessionManager>>,
     shutdown: CancellationToken,
     task: tokio::task::JoinHandle<std::io::Result<()>>,
 }
@@ -55,10 +56,21 @@ impl Server {
         let url = format!("http://{}{PATH}", listener.local_addr().unwrap());
         let shutdown = CancellationToken::new();
         let adapter = Adapter::new(Arc::clone(&service));
-        let task = tokio::spawn(run(adapter, listener, settings, shutdown.clone()));
+        let sessions = Arc::new(BoundedSessions::new(
+            LocalSessionManager::default(),
+            settings.max_sessions as usize,
+        ));
+        let task = tokio::spawn(run_with(
+            adapter,
+            listener,
+            settings,
+            shutdown.clone(),
+            Arc::clone(&sessions),
+        ));
         Server {
             url,
             service,
+            sessions,
             shutdown,
             task,
         }
@@ -89,6 +101,20 @@ impl Server {
             builder = builder.header("mcp-name", name);
         }
         builder.json(&json!({ "jsonrpc": "2.0", "id": 1, "method": method, "params": params }))
+    }
+
+    /// A legacy `initialize` (revision 2025-11-25), which opens a session.
+    async fn initialize(&self) -> reqwest::Response {
+        self.client()
+            .post(&self.url)
+            .header("accept", "application/json, text/event-stream")
+            .json(&json!({
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": { "protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": { "name": "t", "version": "0" } }
+            }))
+            .send()
+            .await
+            .unwrap()
     }
 
     async fn stop(self) {
@@ -571,4 +597,144 @@ async fn req_sec_022_a_slow_body_is_ended_with_408() {
     assert_eq!(response.status(), 200);
     assert_eq!(s.service.counters().calls_of("engine_status", "ok"), 0);
     s.stop().await;
+}
+
+/// What a legacy handshake answered: status, session id, `Retry-After`,
+/// body.
+async fn handshake(s: &Server) -> (u16, Option<String>, Option<String>, String) {
+    let response = s.initialize().await;
+    let status = response.status().as_u16();
+    let header = |name: &str| {
+        response
+            .headers()
+            .get(name)
+            .map(|v| v.to_str().unwrap().to_owned())
+    };
+    let (session, retry) = (header("mcp-session-id"), header("retry-after"));
+    (status, session, retry, response.text().await.unwrap())
+}
+
+/// REQ-SEC-024 (RFC 019 D5): legacy sessions are bounded. With a bound of
+/// three, three handshakes open a session and the fourth is answered 503
+/// with `Retry-After: 30`, an empty body and no session; the stateless
+/// revision is unaffected; closing a session (`DELETE`) frees its slot; the
+/// count equals the live sessions throughout.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn req_sec_024_sessions_are_bounded() {
+    let s = Server::start(&LOOPBACK.replace(
+        "bind = \"127.0.0.1:0\"\n",
+        "bind = \"127.0.0.1:0\"\nmax_sessions = 3\n",
+    ))
+    .await;
+    let mut ids = Vec::new();
+    for round in 1..=3 {
+        let (status, session, _, body) = handshake(&s).await;
+        assert_eq!(status, 200, "handshake {round}: {body}");
+        ids.push(session.expect("a session id"));
+        assert_eq!(s.sessions.live(), round);
+    }
+    let (status, session, retry, body) = handshake(&s).await;
+    assert_eq!(status, 503, "{body}");
+    assert_eq!(session, None, "no session is opened");
+    assert_eq!(retry.as_deref(), Some("30"));
+    assert_eq!(body, "", "the SDK's own text is not passed on");
+    assert_eq!(s.sessions.live(), 3, "a refusal changes no count");
+
+    // The stateless revision keeps no session and is not counted.
+    let discover = s
+        .request("server/discover", json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(discover.status(), 200);
+    assert_eq!(s.sessions.live(), 3);
+
+    // Closing a session frees its slot.
+    let closed = s
+        .client()
+        .delete(&s.url)
+        .header("mcp-session-id", &ids[0])
+        .send()
+        .await
+        .unwrap();
+    assert!(closed.status().is_success(), "{}", closed.status());
+    let waited = std::time::Instant::now();
+    while s.sessions.live() != 2 {
+        assert!(
+            waited.elapsed() < Duration::from_secs(5),
+            "the slot is freed"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let (status, session, _, body) = handshake(&s).await;
+    assert_eq!(status, 200, "{body}");
+    assert!(session.is_some());
+    assert_eq!(s.sessions.live(), 3);
+    s.stop().await;
+}
+
+/// REQ-SEC-024 and REQ-OBS-005 (RFC 019 D5): a refused handshake is logged
+/// once as `http_refused` with the reason `session_limit` and the address
+/// family, and with nothing of the request. (A current-thread runtime, so
+/// that the test's subscriber sees the listener's tasks.)
+#[tokio::test]
+async fn req_sec_024_a_refused_handshake_is_logged() {
+    let (log, _guard) = capture_log();
+    let s = Server::start(&LOOPBACK.replace(
+        "bind = \"127.0.0.1:0\"\n",
+        "bind = \"127.0.0.1:0\"\nmax_sessions = 1\n",
+    ))
+    .await;
+    assert_eq!(handshake(&s).await.0, 200);
+    log.lock().unwrap().clear();
+    assert_eq!(handshake(&s).await.0, 503);
+    let text = String::from_utf8(log.lock().unwrap().clone()).unwrap();
+    let refused: Vec<Value> = text
+        .lines()
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .filter(|v| v["event"] == "http_refused")
+        .collect();
+    assert_eq!(refused.len(), 1, "{text}");
+    assert_eq!(refused[0]["reason"], "session_limit");
+    assert_eq!(refused[0]["family"], "ipv4");
+    s.stop().await;
+}
+
+/// A subscriber for the current thread whose output the test can read.
+fn capture_log() -> (
+    Arc<std::sync::Mutex<Vec<u8>>>,
+    tracing::subscriber::DefaultGuard,
+) {
+    use std::io::Write;
+    use tracing_subscriber::fmt::MakeWriter;
+
+    #[derive(Clone, Default)]
+    struct Sink(Arc<std::sync::Mutex<Vec<u8>>>);
+    struct SinkWriter(Arc<std::sync::Mutex<Vec<u8>>>);
+    impl Write for SinkWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl<'a> MakeWriter<'a> for Sink {
+        type Writer = SinkWriter;
+        fn make_writer(&'a self) -> SinkWriter {
+            SinkWriter(Arc::clone(&self.0))
+        }
+    }
+
+    let sink = Sink::default();
+    let buffer = Arc::clone(&sink.0);
+    let subscriber = tracing_subscriber::fmt()
+        .json()
+        .flatten_event(true)
+        .with_target(false)
+        .without_time()
+        .with_writer(sink)
+        .finish();
+    (buffer, tracing::subscriber::set_default(subscriber))
 }

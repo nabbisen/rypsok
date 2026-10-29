@@ -37,6 +37,10 @@ use tower_service::Service;
 use super::Adapter;
 use super::rate::CallerId;
 
+pub mod sessions;
+
+use sessions::{BoundedSessions, SESSION_RETRY_AFTER_S, scope_refusals};
+
 /// The one path the listener serves.
 pub const PATH: &str = "/mcp";
 
@@ -81,6 +85,8 @@ pub struct HttpSettings {
     pub max_streams: u32,
     /// LIM-H5.
     pub request_timeout: Duration,
+    /// LIM-H6.
+    pub max_sessions: u32,
 }
 
 impl HttpSettings {
@@ -151,6 +157,7 @@ impl HttpSettings {
             idle_timeout: Duration::from_secs(u64::from(http.idle_timeout_s)),
             max_streams: http.max_streams,
             request_timeout: Duration::from_secs(u64::from(http.request_timeout_s)),
+            max_sessions: http.max_sessions,
         })
     }
 }
@@ -179,6 +186,22 @@ pub async fn run(
     listener: TcpListener,
     settings: HttpSettings,
     shutdown: CancellationToken,
+) -> std::io::Result<()> {
+    let sessions = Arc::new(BoundedSessions::new(
+        LocalSessionManager::default(),
+        usize::try_from(settings.max_sessions).unwrap_or(usize::MAX),
+    ));
+    run_with(adapter, listener, settings, shutdown, sessions).await
+}
+
+/// [`run`] with the bounded session manager given, so that a caller (a
+/// test) can read its count.
+pub async fn run_with(
+    adapter: Adapter,
+    listener: TcpListener,
+    settings: HttpSettings,
+    shutdown: CancellationToken,
+    sessions: Arc<BoundedSessions<LocalSessionManager>>,
 ) -> std::io::Result<()> {
     let local = listener.local_addr()?;
     tracing::info!(
@@ -214,7 +237,7 @@ pub async fn run(
         let factory_adapter = adapter;
         Inner::Local(StreamableHttpService::new(
             move || Ok(factory_adapter.clone()),
-            Arc::new(LocalSessionManager::default()),
+            sessions,
             config,
         ))
     } else {
@@ -232,6 +255,7 @@ pub async fn run(
         }),
         max_request_bytes: settings.max_request_bytes,
         request_timeout: settings.request_timeout,
+        family: "ipv4",
     };
     let permits = Arc::new(Semaphore::new(
         usize::try_from(settings.max_connections)
@@ -279,7 +303,10 @@ pub async fn run(
         let connection = builder
             .serve_connection_with_upgrades(
                 TokioIo::new(stream),
-                TowerToHyperService::new(gate.clone()),
+                TowerToHyperService::new(Gate {
+                    family: address_family(&remote),
+                    ..gate.clone()
+                }),
             )
             .into_owned();
         let connection = graceful.watch(connection);
@@ -309,7 +336,7 @@ type GateFuture = Pin<Box<dyn Future<Output = Result<GateResponse, Infallible>> 
 
 #[derive(Clone)]
 enum Inner {
-    Local(StreamableHttpService<Adapter, LocalSessionManager>),
+    Local(StreamableHttpService<Adapter, BoundedSessions<LocalSessionManager>>),
     Never(StreamableHttpService<Adapter, NeverSessionManager>),
 }
 
@@ -322,6 +349,9 @@ struct Gate {
     max_request_bytes: u64,
     /// LIM-H5: the whole request, body and handler, ends after this.
     request_timeout: Duration,
+    /// The address family of the connection, for the log (never the
+    /// address).
+    family: &'static str,
 }
 
 impl Service<Request<Incoming>> for Gate {
@@ -347,6 +377,7 @@ impl Service<Request<Incoming>> for Gate {
             tracing::warn!(
                 event = "http_refused",
                 reason = "body_too_large",
+                family = self.family,
                 "request refused: LIM-H2"
             );
             return ready(empty(StatusCode::PAYLOAD_TOO_LARGE));
@@ -359,22 +390,35 @@ impl Service<Request<Incoming>> for Gate {
         let req = Request::from_parts(parts, body);
         let inner = self.inner.clone();
         let request_timeout = self.request_timeout;
+        let family = self.family;
         Box::pin(async move {
             // LIM-H5 (RFC 018): a request that is still running after the
             // bound is a slow client; the handler's own deadlines are
-            // shorter by the validation rule.
-            let served = async move {
+            // shorter by the validation rule. LIM-H6 (RFC 019): the SDK
+            // answers a refused session with a 500 of its own; the cell
+            // tells the gate it was a refusal, and the gate answers 503.
+            let served = scope_refusals(async move {
                 match inner {
                     Inner::Local(mut service) => service.call(req).await,
                     Inner::Never(mut service) => service.call(req).await,
                 }
-            };
+            });
             match tokio::time::timeout(request_timeout, served).await {
-                Ok(response) => response,
+                Ok((_, true)) => {
+                    tracing::warn!(
+                        event = "http_refused",
+                        reason = "session_limit",
+                        family,
+                        "handshake refused: LIM-H6"
+                    );
+                    Ok(session_limit_response())
+                }
+                Ok((response, false)) => response,
                 Err(_) => {
                     tracing::warn!(
                         event = "http_refused",
                         reason = "request_timeout",
+                        family,
                         "request ended: LIM-H5"
                     );
                     Ok(empty(StatusCode::REQUEST_TIMEOUT))
@@ -382,6 +426,16 @@ impl Service<Request<Incoming>> for Gate {
             }
         })
     }
+}
+
+/// 503 with an empty body and the fixed `Retry-After` hint (RFC 019 D5).
+fn session_limit_response() -> GateResponse {
+    let mut response = empty(StatusCode::SERVICE_UNAVAILABLE);
+    response.headers_mut().insert(
+        header::RETRY_AFTER,
+        HeaderValue::from(SESSION_RETRY_AFTER_S),
+    );
+    response
 }
 
 fn ready(response: GateResponse) -> GateFuture {

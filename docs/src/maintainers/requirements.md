@@ -765,6 +765,9 @@ reader, URL normalization, the secret check, configuration parsing) shall
 have a fuzz target that runs on the schedule of REQ-TEST-003, report only;
 a finding becomes a test. (RFC 018)
 
+### REQ-SEC-024 Session bound — M7 · T
+In HTTP mode the handshake-based revisions shall hold at most LIM-H6 live sessions; a handshake beyond the bound shall be answered 503 with a Retry-After hint and no session, logged and counted; the stateless revision is unaffected. (THR-27; RFC 019)
+
 ---
 
 ## 13. Query privacy

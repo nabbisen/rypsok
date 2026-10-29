@@ -1507,6 +1507,7 @@ version = "0.7.0"
 dependencies = [
  "bytes",
  "clap",
+ "futures-core",
  "governor",
  "http",
  "http-body-util",
@@ -1523,6 +1524,7 @@ dependencies = [
  "tokio-util",
  "tower-service",
  "tracing",
+ "tracing-subscriber",
  "wiremock",
 ]
 

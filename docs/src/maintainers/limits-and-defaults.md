@@ -83,6 +83,7 @@ it.
 | LIM-H3 | Idle HTTP connection timeout (HTTP/1: close after; HTTP/2: keep-alive ping after, close when unanswered) | 60 s | 5–600 s | Resource hygiene (RFC 013) |
 | LIM-H4 | Streams one HTTP/2 connection may open | 16 | 1–256 | THR-26 (RFC 018) |
 | LIM-H5 | Time one HTTP request may take, whatever its state | 30 s | 3–600 s, at least `fetch.deadline_ms` + 2 s | THR-26 (RFC 018) |
+| LIM-H6 | Live sessions of the handshake-based revisions over HTTP | 256 | 1–65536 | THR-27 (RFC 019) |
 
 ## Circuit breaker
 

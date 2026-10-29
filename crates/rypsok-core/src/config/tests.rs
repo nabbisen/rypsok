@@ -375,3 +375,36 @@ fn req_sec_022_request_timeout_needs_room_for_a_fetch() {
     assert_eq!(defaults.service.http.max_streams, 16);
     assert_eq!(defaults.service.http.request_timeout_s, 30);
 }
+
+/// REQ-SEC-024 and REQ-CFG-005 (RFC 019 D5): `max_sessions` (LIM-H6) has
+/// its range and its default.
+#[test]
+fn req_sec_024_max_sessions_has_its_range() {
+    assert_eq!(Config::default().service.http.max_sessions, 256);
+    for ok in ["1", "256", "65536"] {
+        let config = Config::parse(&format!(
+            "config_version = 1\n[service.http]\nmax_sessions = {ok}\n"
+        ))
+        .unwrap();
+        assert!(config.validate().is_ok(), "{ok}: {:?}", config.validate());
+        assert_eq!(
+            config.limits().http_max_sessions,
+            ok.parse::<u32>().unwrap()
+        );
+    }
+    for bad in ["0", "65537"] {
+        let config = Config::parse(&format!(
+            "config_version = 1\n[service.http]\nmax_sessions = {bad}\n"
+        ))
+        .unwrap();
+        let error = config.validate().unwrap_err();
+        assert!(
+            error
+                .problems
+                .iter()
+                .any(|p| p.starts_with("service.http.max_sessions")),
+            "{bad}: {:?}",
+            error.problems
+        );
+    }
+}

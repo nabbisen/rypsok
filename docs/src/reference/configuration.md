@@ -41,6 +41,7 @@ chooses it on the command line, where the launching host can see it.
 | `max_request_bytes` | `65536` | 4096–1048576 | Size of a request body (LIM-H2); the same 413 whether declared or streamed |
 | `idle_timeout_s` | `60` | 5–600 | Idle connection timeout (LIM-H3): HTTP/1 closes after it; HTTP/2 pings after it and closes when the ping goes unanswered |
 | `max_streams` | `16` | 1–256 | Streams one HTTP/2 connection may open at once (LIM-H4) |
+| `max_sessions` | `256` | 1–65536 | At most this many live sessions of the handshake-based revisions (LIM-H6); a handshake beyond it is answered 503 with `Retry-After: 30`, a hint, and opens no session. The 2026-07-28 revision keeps no session and is not counted. Sessions expire after 300 s without traffic |
 | `request_timeout_s` | `30` | 3–600, at least `fetch.deadline_ms` + 2 s | A request still running after this, body and handler included, is answered 408 (LIM-H5); a slow client cannot hold a connection |
 
 rypsok does not terminate TLS: off loopback, put a reverse proxy or a

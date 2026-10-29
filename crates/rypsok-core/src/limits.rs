@@ -119,6 +119,8 @@ pub mod defaults {
     pub const HTTP_MAX_STREAMS: u32 = 16; // LIM-H4
     /// Time one HTTP request may take, whatever its state, in seconds (RFC 018).
     pub const HTTP_REQUEST_TIMEOUT_S: u32 = 30; // LIM-H5
+    /// Live sessions of the handshake-based revisions over HTTP (RFC 019).
+    pub const HTTP_MAX_SESSIONS: u32 = 256; // LIM-H6
 
     /// Lifetime of a cache entry, in seconds.
     pub const CACHE_TTL_S: u32 = 300; // LIM-K2
@@ -195,6 +197,8 @@ pub struct Limits {
     pub http_max_streams: u32,
     /// LIM-H5.
     pub http_request_timeout_s: u32,
+    /// LIM-H6.
+    pub http_max_sessions: u32,
     /// LIM-C1.
     pub outbound_in_flight: u32,
     /// LIM-C2.
@@ -251,6 +255,7 @@ impl Limits {
         http_idle_timeout_s: defaults::HTTP_IDLE_TIMEOUT_S,
         http_max_streams: defaults::HTTP_MAX_STREAMS,
         http_request_timeout_s: defaults::HTTP_REQUEST_TIMEOUT_S,
+        http_max_sessions: defaults::HTTP_MAX_SESSIONS,
         outbound_in_flight: defaults::OUTBOUND_IN_FLIGHT,
         per_engine_in_flight: defaults::PER_ENGINE_IN_FLIGHT,
         fetches_in_flight: defaults::FETCHES_IN_FLIGHT,
