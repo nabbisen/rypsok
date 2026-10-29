@@ -15,7 +15,7 @@ use url::Url;
 
 use crate::model::DetailReason;
 
-/// The canonical form of a host name; see [`Host::name`].
+/// The canonical form of a host name; see [`Host::from_name`].
 fn canonical_name(raw: &str) -> Result<String, Denial> {
     let lower = raw.to_ascii_lowercase();
     let bare = lower.strip_suffix('.').unwrap_or(&lower);
@@ -43,12 +43,12 @@ impl Host {
     /// into a match: operator rules, the connect-time judgment, strict
     /// mode, the per-host permit and the robots.txt cache key all meet at
     /// this one canonical form.
-    pub fn name(raw: &str) -> Result<Host, Denial> {
+    pub fn from_name(raw: &str) -> Result<Host, Denial> {
         canonical_name(raw).map(Host::Name)
     }
 
     /// The name, when the host is one.
-    pub fn as_name(&self) -> Option<&str> {
+    pub fn name(&self) -> Option<&str> {
         match self {
             Host::Name(name) => Some(name),
             Host::Ip(_) => None,
@@ -350,7 +350,7 @@ impl EgressPolicy {
     }
 
     /// Judges a host name as written and returns its canonical [`Host`]:
-    /// canonicalized by [`Host::name`] first, so that case and a root dot
+    /// canonicalized by [`Host::from_name`] first, so that case and a root dot
     /// do not change the judgment and a malformed name is refused (RFC 019
     /// D1); then deny rules, allow rules, and the built-in refusals of
     /// names that never name a public site.
@@ -382,7 +382,7 @@ impl EgressPolicy {
         let canonical_host;
         let host = match host {
             Host::Name(raw) => {
-                canonical_host = Host::name(raw)?;
+                canonical_host = Host::from_name(raw)?;
                 &canonical_host
             }
             Host::Ip(_) => host,

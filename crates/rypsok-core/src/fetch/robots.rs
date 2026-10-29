@@ -178,7 +178,7 @@ impl Robots {
 /// (RFC 019 D1): `x.example` and `x.example.` share one cache entry.
 pub fn origin_of(url: &Url) -> String {
     let host = match url.host() {
-        Some(url::Host::Domain(name)) => match Host::name(name) {
+        Some(url::Host::Domain(name)) => match Host::from_name(name) {
             Ok(Host::Name(canonical)) => canonical,
             _ => name.to_owned(),
         },

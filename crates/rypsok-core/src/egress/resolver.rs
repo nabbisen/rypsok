@@ -68,7 +68,7 @@ pub fn admitted(
     name: &str,
     ips: &[IpAddr],
 ) -> Result<Vec<SocketAddr>, Refused> {
-    let host = Host::name(name).map_err(Refused::Policy)?;
+    let host = Host::from_name(name).map_err(Refused::Policy)?;
     let mut last = None;
     let kept: Vec<SocketAddr> = ips
         .iter()

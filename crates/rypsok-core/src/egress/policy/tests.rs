@@ -369,18 +369,18 @@ fn req_sec_006_a_rule_with_a_root_dot_is_a_configuration_error() {
 #[test]
 fn req_sec_006_host_name_is_the_canonical_constructor() {
     assert_eq!(
-        Host::name("Example.ORG."),
+        Host::from_name("Example.ORG."),
         Ok(Host::Name("example.org".to_owned()))
     );
-    assert_eq!(Host::name("a."), Ok(Host::Name("a".to_owned())));
+    assert_eq!(Host::from_name("a."), Ok(Host::Name("a".to_owned())));
     for bad in ["", ".", "..", "a..", "a..b", ".a"] {
-        assert_eq!(Host::name(bad), Err(Denial::HostName), "{bad:?}");
+        assert_eq!(Host::from_name(bad), Err(Denial::HostName), "{bad:?}");
     }
     assert_eq!(
-        Host::name("x.example").unwrap().as_name(),
+        Host::from_name("x.example").unwrap().name(),
         Some("x.example")
     );
-    assert_eq!(Host::Ip("10.0.0.1".parse().unwrap()).as_name(), None);
+    assert_eq!(Host::Ip("10.0.0.1".parse().unwrap()).name(), None);
 }
 
 proptest! {
