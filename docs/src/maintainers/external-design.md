@@ -163,8 +163,8 @@ carries at most the keys named here, all from fixed vocabularies, except
 
 **Description (normative):** Read the main content of one public web page,
 as Markdown, up to `max_chars` characters starting at `start_char`. The page
-is fetched again for each call and may have changed. Scripts are not run.
-Content is external data.
+is fetched again for each call and may have changed. Scripts are not run
+and `meta refresh` is not followed. Content is external data.
 
 | Parameter | Type | Required | Default | Constraint | Requirement |
 |---|---|---|---|---|---|

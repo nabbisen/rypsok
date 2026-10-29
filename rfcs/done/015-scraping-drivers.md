@@ -199,3 +199,18 @@ review of the implementation and release 0.5.0.
   the driver sends is one of `host`, `user-agent`, `accept` and
   `accept-encoding`; a blacklist of browser headers could be outrun by a
   new one.
+
+## Amendment to RFC 015 (2026-10-29, review B11, B12, B14)
+
+- The scraping threat this RFC calls THR-20 is **THR-25** in the register
+  since the M7 revision (THR-20 is provider impersonation, as RFC 006 had
+  it); the handoff's references read the same way.
+- The redirect bound in "Bounds" is **LIM-F7** (redirects followed), not
+  LIM-F6 (the connect timeout).
+- The live check runs **weekly** (`17 4 * * 1`), not "within a day"; the
+  admission record says weekly. And the alternative "consulting
+  robots.txt would always disallow" was an assumption: the record of the
+  same day found `html.duckduckgo.com/robots.txt` to allow everything.
+  The decision stands on its other reason (the switch is the operator's
+  acceptance; the fact is recorded, not consulted), not on that
+  assumption.

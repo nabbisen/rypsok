@@ -201,3 +201,102 @@ that names each item.
 D5 depends on the SDK's session manager interface; the handoff names the
 trait and the wrapping, and the dev team reports if the SDK's error path
 cannot carry the refusal.
+
+## Amendment to RFC 019 (2026-10-29, after the independent review, revision 2)
+
+The independent architect's review of this RFC and its handoffs
+(`.git-exclude/reviewed/arch-002-review-019/README.md`) was conditionally
+approved with six mandatory corrections and four recommendations; the
+owner decided the three questions it raised on 2026-10-29. Every point is
+applied here and in the handoffs; the dev team implements the amended
+handoffs, not the text above where the two differ.
+
+- **D1 revised (M2).** The canonical form of a host name is lower case
+  with at most one root dot removed. A name with an empty label after
+  that (`a..`, `a..b`, `.a`) is refused as `HostName`; malformed names
+  are never normalized into a match. One constructor builds the
+  canonical `Host::Name` for every user: the judgments, the resolver,
+  strict mode, the per-host fetch permit (LIM-C4), the robots.txt cache
+  key and the same-host redirect comparison. The property: for every
+  well-formed name, case and an added root dot do not change the
+  judgment; every name with an empty label is refused.
+- **D2 revised (M1).** For a host name, a connect-time policy refusal and
+  an unreachable site give the caller the same answer: `unavailable`,
+  reason `network`, the same message ("the site could not be reached"),
+  and neither is cached. Otherwise the error kind is an oracle for
+  internal names (a name that resolves to a private address versus one
+  that does not resolve), the reconnaissance the policy exists to deny,
+  as REQ-FETCH-006 already withholds a refused redirect target. One
+  classification of every `send()` error in the fetch path (the page
+  request, each redirect hop, the robots.txt read) makes this uniform.
+  The operator still learns of a refusal: a `warn` `refused` event with
+  the denial's name and no host, by walking the error's source chain for
+  the resolver's refusal, for logging only. Literal addresses are judged
+  on the URL and stay `denied`/`egress`, which discloses nothing. The
+  troubleshooting page's sentence that a name resolving to a private
+  address is `denied`/`egress` is wrong today and changes.
+- **D3 revised (M4, R4).** `clean_text` becomes `clean_markup_text`, with
+  a first-line sentence saying it assumes raw provider text (markup and
+  entities), and `clean_decoded_text` says it assumes text a parser
+  already decoded; forgetting `RawResult::decoded()` errs on the safe
+  side. `clean_decoded_text` gets a fuzz target with the full idempotence
+  property (it has no entity residual). Provenance is a field of
+  `RawResult`, so it survives the result cache, which stores
+  `EngineResponse`. The thinking-aloud passage in D3 above ("? No:") is
+  withdrawn; this paragraph is the record.
+- **D5 specified (M3; owner's decision D-A, option 1).** The wrapper
+  counts in `create_session` and decrements in `close_session` when the
+  id was present; the SDK calls `close_session` when a session worker
+  exits, expiry included, so no sweep. The SDK answers a failed
+  `create_session` with 500 and our error's text in the body; the gate
+  therefore runs the SDK call inside a `tokio::task_local!` cell that the
+  wrapper sets when it refuses (`create_session` is awaited inline in the
+  request's task), and the gate, seeing the cell set, discards the SDK's
+  response and answers **503** with an empty body and `Retry-After: 30`
+  (a fixed, documented hint). The wrapper's error text is a fixed
+  non-sensitive sentence, because the SDK would put it in a 500 body if
+  the cell were ever unset; a test pins the 503 on the pinned SDK and a
+  second test pins the fallback (cell unset → 500 with the fixed text) so
+  that an SDK change fails loudly. The gate logs `http_refused` with
+  reason `session_limit` and the address family. Residual risk recorded
+  with THR-27: the bound turns memory exhaustion into slot exhaustion
+  (one caller can hold every slot for the 300 s idle expiry); per-caller
+  session quotas and a shorter expiry are deferred.
+- **D6 revised (R1, R2).** The gate logs an inner **403** as
+  `http_refused` with reason `sdk_forbidden` and counts it: a foreign
+  `Host` or `Origin` is the signature of THR-18 and must leave a trace;
+  400 and 406 are client mistakes and are counted but not logged per
+  request. The stability page says who owns each status: the gate
+  answers 401, 404, 408, 413 and 503; the pinned SDK answers 400, 403 and
+  406, and an SDK upgrade that changes them is a contract change. Tests
+  pin all four SDK answers (403 `Host`, 403 `Origin`, 400 header, 406
+  `Accept`). The pages tell users to send both `Accept` media types
+  because the protocol requires it: Streamable HTTP, revision
+  2026-07-28, "Sending Messages" 2: "The client MUST include an `Accept`
+  header listing both `application/json` and `text/event-stream`."
+- **D8 revised (M5; owner's decision D-C, option 2).** The release
+  workflow never creates a release. The build jobs always upload workflow
+  artifacts; an attach job uploads to the release of the tag only if that
+  release exists, refuses to overwrite an existing asset, and otherwise
+  writes a visible notice in the run summary; a `workflow_dispatch` input
+  (the tag, validated against the tag pattern and passed through an
+  environment variable, never interpolated) re-runs the attach after the
+  owner publishes. Only the attach job gets `contents: write`. A
+  build-only dispatch on `main` must run green and be recorded before
+  0.7.1. `musl-tools` is installed for the musl target. The book names
+  the attached targets (Linux x86_64, macOS arm64, Windows x86_64) and
+  says that `SHA256SUMS` proves integrity, not origin; attestation is an
+  M8 candidate.
+- **D10 extended (M6; owner's decision D-B, option 3).** A fourth
+  handoff, 019d "release preparation", carries the changelog section
+  (including the two cleaner changes of 2026-10-27 and 2026-10-28 that
+  0.6.0 and 0.7.0 omitted, B16, and the statuses), the version bump and
+  `CURRENT_MILESTONE`; the dev team implements it last, the independent
+  architect reviews it, the original architect tags and publishes on the
+  owner's authorization after the reviewer's Go. The RFC amendments the
+  reply owed (B4, B5, B9, B11, B14) are the original architect's and land
+  before 019d.
+- **Sequencing (R3).** 019a item 4 lands before 019b item 1; 019b item 3
+  and 019c item 2 touch the gate tests and are given to one developer or
+  landed in that order. What may start at once: 019a items 3 and 4; 019b
+  item 2; 019c items 2, 3 and 4. The rest starts with this amendment.

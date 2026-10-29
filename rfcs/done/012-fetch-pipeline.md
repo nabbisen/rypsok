@@ -334,3 +334,11 @@ RFC 011.
 - Underscores unescaped, `text/markdown` as text, empty extracted HTML as
   `extraction_failed` with an empty text document as an empty `ok`, and
   `FetchService::with_lookup` for tests: confirmed.
+
+## Amendment to RFC 012 (2026-10-29, review B14)
+
+"The body is read to at most 64 KiB and discarded" for a 4xx or 5xx
+answer describes an intention, not the code: the pipeline returns
+`unavailable`/`http_status` before reading the body, which is the safer
+reading (nothing of an error page is read at all). The sentence is
+corrected to that.

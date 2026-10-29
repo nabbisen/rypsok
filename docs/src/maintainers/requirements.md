@@ -319,9 +319,10 @@ credentials taken from the URL. A URL that carries credentials shall be
 refused with `denied`. (A-03, M-07)
 
 ### REQ-FETCH-008 Eligible content — M3 · T
-`web_fetch` shall extract HTML, XHTML and plain text. Any other media type
-shall end the call with the error kind `unsupported_content` naming the
-type. PDF extraction is deferred (§24).
+`web_fetch` shall extract HTML, XHTML, plain text and Markdown. Any other
+media type shall end the call with the error kind `unsupported_content`
+naming the type. PDF extraction is deferred (§24). (Markdown added by
+RFC 012; the baseline amended 2026-10-29, review B5)
 
 ### REQ-FETCH-011 Response status — M3 · T
 Only a response with a 2xx status shall be extracted. A 4xx or 5xx status

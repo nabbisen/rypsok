@@ -221,3 +221,10 @@ The profiles of external design §3 are documented in
   them deliberately.
 - An unknown tool is the JSON-RPC error `-32602` with a fixed message that
   does not repeat the caller's text.
+
+## Amendment to RFC 003 (2026-10-29, review B4)
+
+The served `web_fetch` description says "Scripts are not run and `meta
+refresh` is not followed" since RFC 012 (REQ-FETCH-009 asks the
+description to say so). RFC 012 did not amend this RFC or the external
+design §3.2; both now carry the sentence. No behavior changed.

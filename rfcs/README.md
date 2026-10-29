@@ -41,7 +41,7 @@ _None yet._
 
 | ID | Title | Milestone | Handoff |
 |----|-------|-----------|---------|
-| 019 | [Corrections from the first independent review](./accepted/019-first-independent-review.md) | 0.7.1 | [019a](./handoffs/019a-core-corrections/README.md), [019b](./handoffs/019b-listener-and-http-docs/README.md), [019c](./handoffs/019c-release-ci-records/README.md) |
+| 019 | [Corrections from the first independent review](./accepted/019-first-independent-review.md) | 0.7.1 | [019a](./handoffs/019a-core-corrections/README.md), [019b](./handoffs/019b-listener-and-http-docs/README.md), [019c](./handoffs/019c-release-ci-records/README.md), [019d](./handoffs/019d-release-preparation/README.md) |
 
 Review records are not in the repository: the owner keeps review requests and reviewed packages under a private directory, which earlier handoffs name as `.git-exclude/reviews/`, today `.git-exclude/review-requests/` and `.git-exclude/reviewed/`.
 

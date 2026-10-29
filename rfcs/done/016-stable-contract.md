@@ -151,3 +151,16 @@ Applied with this RFC:
   operator's-upstream engine. Decided here: no. The contract is about
   tools, responses, configuration and the command line; engines are
   additive by design.
+
+## Amendment to RFC 016 (2026-10-29, review B9)
+
+The list of enums to mark `#[non_exhaustive]` above is narrowed as the
+implementation decided (package 016, A12): only the vocabularies the
+stability table allows to grow are non-exhaustive (`NoticeCode`,
+`Reason`, `DetailReason`, `SecretKind`, `Category`, `EngineErrorClass`,
+`LanguageSupport`, `TimeRangeSupport`, `UserAgentFormat`); `Outcome`,
+`ErrorKind`, `CallError`, `EngineState` and `TimeRange` stay exhaustive
+so that a new variant is a compile error, which is what "needs a major
+version" should feel like. Also: `check` writes its report to standard
+error, not standard output, as the configuration page and REQ-MCP-002
+say; the sentence above that says "stdout" was wrong (review B10).
