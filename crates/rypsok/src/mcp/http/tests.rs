@@ -900,17 +900,46 @@ async fn req_obs_007_gate_refusals_are_counted_per_reason() {
     s.stop().await;
 }
 
+/// REQ-OBS-007 (RFC 019 D6): refused requests inside the flush interval
+/// are counted and leave no event. An interval of an hour stands for "the
+/// minute has not passed", whatever the speed of the machine. (A
+/// current-thread runtime, so that the test's subscriber sees the
+/// listener's tasks.)
+#[tokio::test]
+async fn req_obs_007_refusals_inside_the_interval_are_counted_not_logged() {
+    use rypsok_core::telemetry::Counters;
+    let (log, _guard) = capture_log();
+    let counters = Arc::new(Counters::with_flush_interval(Duration::from_secs(3600)));
+    let s = Server::start_with(LOOPBACK, Some(Arc::clone(&counters))).await;
+    for _ in 0..3 {
+        let response = s
+            .request("server/discover", json!({}))
+            .header("host", "evil.example")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 403);
+    }
+    assert_eq!(counters.refusals_of("http", "sdk_forbidden"), 3);
+    assert!(
+        events(&log, "counters").is_empty(),
+        "inside the interval nothing is flushed"
+    );
+    s.stop().await;
+}
+
 /// REQ-OBS-007 (RFC 019 D6): a flood of refused requests with no tool call
 /// is still logged: counting a refusal runs the flush check a call runs.
-/// Three foreign-`Host` requests inside the interval leave no event; once
-/// the interval has passed, the next refusal, whatever its reason, makes
-/// one `counters` event that lists the three. (A current-thread runtime,
-/// so that the test's subscriber sees the listener's tasks.)
+/// An interval of zero stands for "the minute has passed": each refusal,
+/// whatever its reason, makes a `counters` event with the totals so far, and
+/// the last one lists all three. No sleep, so no dependence on the speed of
+/// the machine. (A current-thread runtime, so that the test's subscriber
+/// sees the listener's tasks.)
 #[tokio::test]
 async fn req_obs_007_a_flood_of_refusals_is_logged_without_a_tool_call() {
     use rypsok_core::telemetry::Counters;
     let (log, _guard) = capture_log();
-    let counters = Arc::new(Counters::with_flush_interval(Duration::from_millis(300)));
+    let counters = Arc::new(Counters::with_flush_interval(Duration::ZERO));
     let s = Server::start_with(LOOPBACK, Some(counters)).await;
     for _ in 0..3 {
         let response = s
@@ -921,19 +950,15 @@ async fn req_obs_007_a_flood_of_refusals_is_logged_without_a_tool_call() {
             .unwrap();
         assert_eq!(response.status(), 403);
     }
-    assert!(
-        events(&log, "counters").is_empty(),
-        "inside the interval nothing is flushed"
-    );
-    tokio::time::sleep(Duration::from_millis(400)).await;
     assert_eq!(
         without_protocol_header(&s).send().await.unwrap().status(),
         400
     );
     let flushed = events(&log, "counters");
-    assert_eq!(flushed.len(), 1, "{flushed:?}");
-    let refusals = flushed[0]["refusals"].as_str().unwrap();
+    assert!(!flushed.is_empty(), "no event: the refusal did not flush");
+    let refusals = flushed.last().unwrap()["refusals"].as_str().unwrap();
     assert!(refusals.contains("http.sdk_forbidden=3"), "{refusals}");
+    assert!(refusals.contains("http.sdk_bad_request=1"), "{refusals}");
     assert!(
         s.service.counters().calls_of("engine_status", "ok") == 0
             && s.service.counters().calls_of("web_search", "ok") == 0,

@@ -65,8 +65,9 @@ fn req_obs_007_http_refusals_are_counted_and_flush() {
     assert_eq!(counters.refusals_of("http", "unauthorized"), 1);
     assert_eq!(counters.refusals_of("http", "session_limit"), 0);
 
-    // The flush: no event inside the interval, one after it, from the
-    // refusal itself.
+    // The flush, with no sleep and no dependence on elapsed time: an
+    // interval of an hour stands for "the minute has not passed" and an
+    // interval of zero for "it has".
     use std::io::Write;
     use std::sync::{Arc, Mutex};
     use tracing_subscriber::fmt::MakeWriter;
@@ -95,15 +96,24 @@ fn req_obs_007_http_refusals_are_counted_and_flush() {
         .with_writer(sink.clone())
         .finish();
     tracing::subscriber::with_default(subscriber, || {
-        let quick = Counters::with_flush_interval(std::time::Duration::from_millis(100));
-        quick.refused_http("sdk_forbidden");
-        quick.refused_http("sdk_forbidden");
+        // An hour has not passed: refusals are counted and nothing is logged.
+        let slow = Counters::with_flush_interval(std::time::Duration::from_secs(3600));
+        slow.refused_http("sdk_forbidden");
+        slow.refused_http("sdk_forbidden");
         assert!(sink.0.lock().unwrap().is_empty(), "inside the interval");
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        quick.refused_http("unauthorized");
+        assert_eq!(slow.refusals_of("http", "sdk_forbidden"), 2);
+
+        // The interval has always passed: each refusal runs the flush check
+        // and logs the totals so far, one line per refusal, with no call in
+        // between. The third line carries all three counts.
+        let due = Counters::with_flush_interval(std::time::Duration::ZERO);
+        due.refused_http("sdk_forbidden");
+        due.refused_http("sdk_forbidden");
+        due.refused_http("unauthorized");
         let log = String::from_utf8(sink.0.lock().unwrap().clone()).unwrap();
-        assert_eq!(log.lines().count(), 1, "{log}");
-        assert!(log.contains("http.sdk_forbidden=2"), "{log}");
-        assert!(log.contains("http.unauthorized=1"), "{log}");
+        assert_eq!(log.lines().count(), 3, "{log}");
+        let last = log.lines().last().unwrap();
+        assert!(last.contains("http.sdk_forbidden=2"), "{last}");
+        assert!(last.contains("http.unauthorized=1"), "{last}");
     });
 }
