@@ -493,6 +493,20 @@ fn req_sec_018_token_comparison_is_constant_time_in_structure() {
     assert!(constant_time_eq(b"", b""));
 }
 
+/// REQ-SEC-018 (RFC 019 D4): lengths that differ by a multiple of 256 do
+/// not alias to equal; a token followed by 256 zero bytes is another token.
+#[test]
+fn req_sec_018_token_comparison_has_no_length_aliasing() {
+    let token = [b'A'; 32];
+    for extra in [1usize, 255, 256, 257, 512, 768] {
+        let mut longer = token.to_vec();
+        longer.extend(std::iter::repeat_n(0u8, extra));
+        assert!(!constant_time_eq(&token, &longer), "{extra} zero bytes");
+        assert!(!constant_time_eq(&longer, &token), "{extra} zero bytes");
+    }
+    assert!(constant_time_eq(&token, &token));
+}
+
 /// REQ-OPS-002 over HTTP: cancelling the shutdown token closes the
 /// listener within LIM-O1 and the run future ends.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

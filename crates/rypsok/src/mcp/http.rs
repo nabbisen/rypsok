@@ -449,7 +449,7 @@ impl Auth {
 /// Equality in time that depends on the longer length only, never on the
 /// position of the first difference.
 pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    let mut difference = (a.len() ^ b.len()) as u8;
+    let mut difference = u8::from(a.len() != b.len());
     for i in 0..a.len().max(b.len()) {
         let x = a.get(i).copied().unwrap_or(0);
         let y = b.get(i).copied().unwrap_or(0);
