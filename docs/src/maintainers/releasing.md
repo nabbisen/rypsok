@@ -32,6 +32,28 @@ release workflow builds and attaches, and never creates a release.
    page by hand and say so in the release notes, then run the workflow again
    from the tag.
 
+## If the attach job fails
+
+A failed attach job leaves the release as the owner published it: it
+creates nothing and replaces nothing. The run's workflow artifacts
+(`archive-*` and `checksums`) are the binaries the workflow built from the
+tag. To attach them by hand:
+
+1. Download the artifacts of the tag's run (the run page, "Artifacts", or
+   `gh run download <run id>`) into one empty directory, so that the three
+   archives and `SHA256SUMS` lie side by side.
+2. Check each archive against `SHA256SUMS` (`sha256sum --check
+   SHA256SUMS`); upload nothing that does not match.
+3. Upload the three archives and `SHA256SUMS` to the release (the release
+   page, "Edit", or `gh release upload X.Y.Z <files>`).
+4. Say in the release notes that the files were attached by hand from the
+   artifacts of the run, naming the run.
+
+A run again from the tag does not help while the defect is in the workflow:
+it uses the workflow as the tag holds it. The defect is fixed in the next
+release. Never rebuild the binaries locally for a release: the checksums
+and the notes would then describe files the workflow did not build.
+
 ## The dry run
 
 A run of the workflow from a branch (Actions, release, Run workflow, "Use
