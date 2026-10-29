@@ -165,13 +165,21 @@ An error is a tool execution error (`isError: true`) whose content is:
 |---|---|---|
 | `invalid_request` | A parameter fails validation | `parameter`, and `min`/`max` or `allowed` |
 | `denied` | The query or URL looks like it carries a credential, or the fetch policies refuse the call: `egress`, `robots_txt`, `scheme`, `strict_mode`, `credential_in_url`, `secret_in_query`, `secret_in_url` | `reason`; for secrets also `kind` and `position` |
-| `unavailable` | No engine serves the category, every engine failed, the deadline passed, the tool's rate limit or a concurrency limit was reached, a fetch failed on the network, or the target answered 4xx or 5xx | `reason` (`no_engine`, `all_failed`, `rate_limited`, `network`, `deadline`, `http_status`, `busy`), `status` for `http_status`, `retry_after_ms` when known |
+| `unavailable` | No engine serves the category, every engine failed, the deadline passed, the tool's rate limit or a concurrency limit was reached, a fetch could not reach the site (for whatever reason; see below), or the target answered 4xx or 5xx | `reason` (`no_engine`, `all_failed`, `rate_limited`, `network`, `deadline`, `http_status`, `busy`), `status` for `http_status`, `retry_after_ms` when known |
 | `redirected` | A fetch was redirected to another host that passes the egress policy | `location` (external data, at most 2048 characters) |
 | `unsupported_content` | The media type cannot be extracted, or nothing could be extracted | `reason` (`media_type`, `extraction_failed`), `media_type` (external data, bounded) |
 | `too_large` | The response exceeded the byte limit (5 MiB after decompression by default) | `limit_bytes` |
 
 Messages are at most 200 characters, say what the caller can change, and
 never contain a secret, provider text, an address or a stack trace.
+
+A site that cannot be reached is `unavailable` with reason `network`
+whatever the cause: no such name, a refused connection, or a name that
+resolves only to addresses the egress policy refuses. The answer is the
+same in every case so that it does not tell a caller which internal names
+exist; the operator's log records a policy refusal (`refused`, with the
+denial's name and no host). A URL that names a refused address literally,
+or a port that is not allowed, is `denied` with reason `egress`.
 
 ## Rate limits
 

@@ -339,7 +339,7 @@ Two profiles, applied by one component (REQ-SEC-005).
 
 | Rule | Agent-directed (fetch, robots.txt) | Engine |
 |---|---|---|
-| Destination | Globally routable unicast only, judged on every address connected to, after canonicalizing IPv4-mapped addresses; refused ranges listed in REQ-SEC-006; operator deny rules and explicit allow rules | The configured host only |
+| Destination | Globally routable unicast only, judged on every address connected to, after canonicalizing IPv4-mapped addresses; refused ranges listed in REQ-SEC-006; operator deny rules and explicit allow rules. A name is compared lower-cased and without its root dot, and a name with an empty label is refused. A name whose addresses are all refused at connect time answers the caller exactly as a name that cannot be reached does (`unavailable`, `network`), never as `denied`; the two answers are identical but their latency is not equalised: a refused name answers as soon as the resolver has judged it. A literal address is judged on the URL and is `denied`, `egress` | The configured host only |
 | Address literals | Checked like any other address | Not applicable |
 | Scheme | `https`; `http` only when the operator allowed it (REQ-FETCH-010) | `https`; plain `http` only for an endpoint the operator configured explicitly |
 | Ports | LIM-F8 | The configured port |

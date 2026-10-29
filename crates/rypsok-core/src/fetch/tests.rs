@@ -993,3 +993,177 @@ async fn req_sec_006_strict_mode_and_the_host_permit_use_the_canonical_name() {
     drop(held);
     assert!(h.fetch(&dotted).await.is_ok(), "the permit is back");
 }
+
+/// A scripted name lookup: `private.invalid` resolves to a private address,
+/// `missing.invalid` to nothing, `gone.invalid` fails.
+struct ByName;
+
+impl crate::egress::resolver::Lookup for ByName {
+    fn lookup(
+        &self,
+        name: String,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = std::io::Result<Vec<std::net::IpAddr>>> + Send>,
+    > {
+        Box::pin(async move {
+            match name.as_str() {
+                "private.invalid" => Ok(vec!["10.0.0.1".parse().unwrap()]),
+                "missing.invalid" => Ok(Vec::new()),
+                _ => Err(std::io::Error::other("no such name")),
+            }
+        })
+    }
+}
+
+/// A subscriber for the current thread whose output the test can read.
+fn capture_log() -> (
+    Arc<std::sync::Mutex<Vec<u8>>>,
+    tracing::subscriber::DefaultGuard,
+) {
+    use std::io::Write;
+    use tracing_subscriber::fmt::MakeWriter;
+
+    #[derive(Clone, Default)]
+    struct Sink(Arc<std::sync::Mutex<Vec<u8>>>);
+    struct SinkWriter(Arc<std::sync::Mutex<Vec<u8>>>);
+    impl Write for SinkWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl<'a> MakeWriter<'a> for Sink {
+        type Writer = SinkWriter;
+        fn make_writer(&'a self) -> SinkWriter {
+            SinkWriter(Arc::clone(&self.0))
+        }
+    }
+
+    let sink = Sink::default();
+    let buffer = Arc::clone(&sink.0);
+    let subscriber = tracing_subscriber::fmt()
+        .json()
+        .flatten_event(true)
+        .with_target(false)
+        .without_time()
+        .with_writer(sink)
+        .finish();
+    (buffer, tracing::subscriber::set_default(subscriber))
+}
+
+/// The error object as a caller receives it.
+fn rendered(error: &ToolError) -> String {
+    serde_json::to_string(&error.clone().envelope()).unwrap()
+}
+
+/// REQ-CMP-005 and REQ-FETCH-011 (RFC 019 D2): a site whose robots.txt
+/// cannot be read at all is `unavailable`/`network`, not a robots refusal,
+/// and nothing is cached; a robots.txt that answers 5xx still disallows
+/// (RFC 9309 §2.3.1.4) and is cached.
+#[tokio::test]
+async fn req_cmp_005_unreachable_robots_is_unavailable_not_denied() {
+    let mut h = harness().await;
+    // A loopback port nothing listens on.
+    let closed = {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.local_addr().unwrap().port()
+    };
+    let open = h.server.address().port();
+    h.policy = Arc::new(EgressPolicy::new(
+        vec![parse_rule("127.0.0.1/32").unwrap()],
+        Vec::new(),
+        true,
+        vec![80, 443, open, closed],
+    ));
+    let error = h
+        .fetch(&format!("http://127.0.0.1:{closed}/page"))
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Unavailable);
+    assert_eq!(error.detail.reason, Some(DetailReason::Network));
+    assert!(
+        !error.message.to_lowercase().contains("robots"),
+        "the message says nothing about robots.txt: {}",
+        error.message
+    );
+    assert_eq!(
+        h.service.robots().len(),
+        0,
+        "an unreachable site is not cached"
+    );
+    assert_eq!(h.counters.refusals_of("web_fetch", "robots_txt"), 0);
+
+    // A 5xx robots.txt is a rule: disallow, cached.
+    Mock::given(method("GET"))
+        .and(path("/robots.txt"))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&h.server)
+        .await;
+    let error = h.fetch(&h.url("/page")).await.unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Denied);
+    assert_eq!(error.detail.reason, Some(DetailReason::RobotsTxt));
+    assert_eq!(h.service.robots().len(), 1);
+}
+
+/// REQ-SEC-007 and REQ-FETCH-006 (RFC 019 D2): a name the policy refused
+/// at connect time and a name that cannot be reached give byte-identical
+/// error objects, with robots.txt on and off, on the first and the second
+/// call, so that the error kind is no oracle for internal names. The
+/// operator's log says which it was, once, without the host; a literal
+/// address is still `denied`/`egress`.
+#[tokio::test]
+async fn req_sec_007_a_refused_name_and_an_unreachable_name_answer_alike() {
+    let (log, _guard) = capture_log();
+    let mut h = harness().await;
+    let settings = AgentClientSettings {
+        user_agent: "rypsok/test (+https://example.org)".into(),
+        connect_timeout: Duration::from_millis(h.limits.fetch_connect_timeout_ms.into()),
+        timeout: Duration::from_millis(h.limits.fetch_deadline_ms.into()),
+        allow_http: true,
+    };
+    h.service =
+        FetchService::with_lookup(&settings, Arc::clone(&h.policy), &h.limits, ByName).unwrap();
+
+    let mut reference: Option<String> = None;
+    for robots in [true, false] {
+        h.robots_txt = robots;
+        for url in [
+            "https://private.invalid/a",
+            "https://missing.invalid/a",
+            "https://gone.invalid/a",
+        ] {
+            for round in 1..=2 {
+                log.lock().unwrap().clear();
+                let error = h.fetch(url).await.unwrap_err();
+                assert_eq!(error.kind, ErrorKind::Unavailable, "{url} {robots} {round}");
+                assert_eq!(error.detail.reason, Some(DetailReason::Network));
+                let object = rendered(&error);
+                assert_eq!(
+                    *reference.get_or_insert_with(|| object.clone()),
+                    object,
+                    "{url}, robots {robots}, call {round}"
+                );
+                let text = String::from_utf8(log.lock().unwrap().clone()).unwrap();
+                let refusals = text
+                    .lines()
+                    .filter(|l| l.contains("\"event\":\"refused\""))
+                    .count();
+                let expected = usize::from(url.contains("private"));
+                assert_eq!(refusals, expected, "{url}: refused events\n{text}");
+                if expected == 1 {
+                    assert!(text.contains("\"denial\":\"address\""), "{text}");
+                }
+                assert!(!text.contains(".invalid"), "no host in the log:\n{text}");
+            }
+        }
+        assert_eq!(h.service.robots().len(), 0, "nothing is cached");
+    }
+
+    // A literal address is judged on the URL: `denied`/`egress`.
+    let literal = h.fetch("http://10.0.0.1/").await.unwrap_err();
+    assert_eq!(literal.kind, ErrorKind::Denied);
+    assert_eq!(literal.detail.reason, Some(DetailReason::Egress));
+}

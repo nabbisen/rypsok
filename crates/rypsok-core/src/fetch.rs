@@ -42,6 +42,47 @@ const SNIFF_BYTES: usize = 1024;
 /// The longest media type repeated in an error (external data, bounded).
 const MEDIA_TYPE_MAX_CHARS: usize = 100;
 
+/// How a request of the fetch path failed to be sent (RFC 019 D2). The
+/// caller's answer is the same for both: the site could not be reached.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SendFailure {
+    /// No address, a refused or dropped connection, a timeout, a TLS
+    /// failure: whatever the network said.
+    Unreachable,
+    /// The resolver judged every address of the name and the policy
+    /// refused them all (REQ-SEC-007). Known to the operator's log only.
+    Refused(Denial),
+}
+
+/// Classifies the error of a `send()` in the fetch path (the page request,
+/// each redirect hop, the robots.txt read) by walking its source chain for
+/// the resolver's refusal. A refusal is logged here, once, as `refused`
+/// with the denial's name and no host; the caller gets the answer of an
+/// unreachable site, so that the error kind is not an oracle for internal
+/// names. Call it once per failed send.
+pub(crate) fn classify_send_error(error: &reqwest::Error) -> SendFailure {
+    let mut source: Option<&(dyn std::error::Error + 'static)> = Some(error);
+    while let Some(current) = source {
+        if let Some(refused) = current.downcast_ref::<crate::egress::resolver::Refused>() {
+            return match refused {
+                crate::egress::resolver::Refused::Policy(denial) => {
+                    tracing::warn!(
+                        event = "refused",
+                        tool = "web_fetch",
+                        reason = denial.reason().as_str(),
+                        denial = denial.as_str(),
+                        "a name was refused by the egress policy at connect time; the caller was told the site could not be reached"
+                    );
+                    SendFailure::Refused(*denial)
+                }
+                crate::egress::resolver::Refused::NoAddress => SendFailure::Unreachable,
+            };
+        }
+        source = current.source();
+    }
+    SendFailure::Unreachable
+}
+
 /// What a document is parsed as (REQ-FETCH-008).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Media {
@@ -443,36 +484,35 @@ async fn network(
         max_bytes: limits.robots_max_bytes,
         max_redirects: limits.fetch_max_redirects,
     };
-    if p.robots_txt
-        && p.service
+    if p.robots_txt {
+        let decision = p
+            .service
             .robots
             .check(&p.service.client, p.policy, &target, read_limits)
-            .await
-            == robots::Decision::Disallowed
-    {
-        tracing::warn!(
-            event = "refused",
-            tool = "web_fetch",
-            reason = "robots_txt",
-            "call refused"
-        );
-        return Err(ToolError::denied(DetailReason::RobotsTxt));
+            .await;
+        robots_gate(decision)?;
     }
     let mut hops = 0u8;
     loop {
         let mut response = match p.service.client.get(target.url.clone()).send().await {
             Ok(response) => response,
-            Err(error) if error.is_timeout() => return Err(ToolError::deadline()),
-            Err(_) if upgraded && hops == 0 => {
-                tracing::warn!(
-                    event = "refused",
-                    tool = "web_fetch",
-                    reason = "scheme",
-                    "the https retry of an http URL failed"
-                );
-                return Err(ToolError::denied(DetailReason::Scheme));
+            Err(error) => {
+                let failure = classify_send_error(&error);
+                if failure == SendFailure::Unreachable && error.is_timeout() {
+                    return Err(ToolError::deadline());
+                }
+                if upgraded && hops == 0 {
+                    tracing::warn!(
+                        event = "refused",
+                        tool = "web_fetch",
+                        reason = "scheme",
+                        "the https retry of an http URL failed"
+                    );
+                    return Err(ToolError::denied(DetailReason::Scheme));
+                }
+                // A refused name and an unreachable one answer alike.
+                return Err(ToolError::network());
             }
-            Err(_) => return Err(ToolError::network()),
         };
         let status = response.status();
         if status.is_redirection() {
@@ -496,15 +536,13 @@ async fn network(
             if hops > limits.fetch_max_redirects {
                 return Err(ToolError::network());
             }
-            if !same_host
-                && p.robots_txt
-                && p.service
+            if !same_host && p.robots_txt {
+                let decision = p
+                    .service
                     .robots
                     .check(&p.service.client, p.policy, &next, read_limits)
-                    .await
-                    == robots::Decision::Disallowed
-            {
-                return Err(ToolError::denied(DetailReason::RobotsTxt));
+                    .await;
+                robots_gate(decision)?;
             }
             target = next;
             continue;
@@ -553,6 +591,25 @@ async fn network(
             media,
             charset,
         });
+    }
+}
+
+/// What a robots.txt decision means for the call: disallowed is `denied`
+/// with the reason `robots_txt`; a site that could not be reached is the
+/// same `unavailable` answer as the page read would give (RFC 019 D2).
+fn robots_gate(decision: robots::Decision) -> Result<(), ToolError> {
+    match decision {
+        robots::Decision::Allowed => Ok(()),
+        robots::Decision::Disallowed => {
+            tracing::warn!(
+                event = "refused",
+                tool = "web_fetch",
+                reason = "robots_txt",
+                "call refused"
+            );
+            Err(ToolError::denied(DetailReason::RobotsTxt))
+        }
+        robots::Decision::Unreachable => Err(ToolError::network()),
     }
 }
 

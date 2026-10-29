@@ -2,8 +2,11 @@
 //! LIM-F12 in a cache bounded to LIM-F15 entries, read through the agent
 //! client under the same policy as the page, bounded to LIM-F13 bytes, and
 //! matched for the product token `rypsok` and `*` by Google's parser. As
-//! RFC 9309 says: 4xx allows everything, 5xx and unreachable disallow
-//! everything (kept for one hour so that an outage is retried).
+//! RFC 9309 says: 4xx allows everything and a 5xx answer disallows
+//! everything (kept for one hour so that an outage is retried). A site
+//! that cannot be reached at all gives no verdict and nothing is cached:
+//! the page read would fail the same way, and a transport failure is
+//! never stated as a rule (RFC 019 D2).
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
@@ -24,7 +27,8 @@ enum Verdict {
     Rules(String),
     /// No rules apply (absent, not text, or empty).
     AllowAll,
-    /// Unreachable: nothing may be fetched (RFC 9309 §2.3.1.4).
+    /// The server answered with an error: nothing may be fetched (RFC 9309
+    /// §2.3.1.4).
     DisallowAll,
 }
 
@@ -42,7 +46,15 @@ pub enum Decision {
     Allowed,
     /// The page is disallowed for rypsok.
     Disallowed,
+    /// The site could not be reached, whatever the reason (no address, a
+    /// refused connection, a timeout, a connect-time policy refusal): no
+    /// verdict, nothing cached (RFC 019 D2).
+    Unreachable,
 }
+
+/// A robots.txt read that ended in a transport failure.
+#[derive(Debug, Clone, Copy)]
+struct Unreachable;
 
 /// What a robots.txt read needs.
 #[derive(Debug, Clone, Copy)]
@@ -92,11 +104,13 @@ impl Robots {
         let origin = origin_of(&target.url);
         let verdict = match self.fresh(&origin) {
             Some(verdict) => verdict,
-            None => {
-                let verdict = read(client, policy, &origin, limits).await;
-                self.store(origin.clone(), verdict.clone());
-                verdict
-            }
+            None => match read(client, policy, &origin, limits).await {
+                Ok(verdict) => {
+                    self.store(origin.clone(), verdict.clone());
+                    verdict
+                }
+                Err(Unreachable) => return Decision::Unreachable,
+            },
         };
         match verdict {
             Verdict::AllowAll => Decision::Allowed,
@@ -176,26 +190,30 @@ pub fn origin_of(url: &Url) -> String {
     }
 }
 
-/// Reads `<origin>/robots.txt` and turns the outcome into a verdict.
+/// Reads `<origin>/robots.txt` and turns the outcome into a verdict, or
+/// reports that the site could not be reached.
 async fn read(
     client: &reqwest::Client,
     policy: &EgressPolicy,
     origin: &str,
     limits: ReadLimits,
-) -> Verdict {
+) -> Result<Verdict, Unreachable> {
     let Ok(mut url) = Url::parse(&format!("{origin}/robots.txt")) else {
-        return Verdict::DisallowAll;
+        return Ok(Verdict::DisallowAll);
     };
     let mut hops = 0u8;
     loop {
         let Ok(target) = policy.judge_url(&url) else {
-            return Verdict::DisallowAll;
+            return Ok(Verdict::DisallowAll);
         };
         let response = match client.get(target.url.clone()).send().await {
             Ok(response) => response,
-            Err(_) => {
-                tracing::debug!(event = "robots_unreachable", "robots.txt could not be read");
-                return Verdict::DisallowAll;
+            Err(error) => {
+                // One classification for every send in the fetch path;
+                // the caller learns nothing that tells a refused name from
+                // an unreachable one (RFC 019 D2).
+                super::classify_send_error(&error);
+                return Err(Unreachable);
             }
         };
         let status = response.status();
@@ -206,22 +224,22 @@ async fn read(
                 .and_then(|v| v.to_str().ok())
                 .and_then(|l| url.join(l).ok())
             else {
-                return Verdict::DisallowAll;
+                return Ok(Verdict::DisallowAll);
             };
             hops += 1;
             // Followed across origins too, as RFC 9309 asks; every hop
             // passes the policy at the top of the loop.
             if hops > limits.max_redirects {
-                return Verdict::DisallowAll;
+                return Ok(Verdict::DisallowAll);
             }
             url = location;
             continue;
         }
         if status.is_client_error() {
-            return Verdict::AllowAll;
+            return Ok(Verdict::AllowAll);
         }
         if !status.is_success() {
-            return Verdict::DisallowAll;
+            return Ok(Verdict::DisallowAll);
         }
         let is_text = response
             .headers()
@@ -229,11 +247,13 @@ async fn read(
             .and_then(|v| v.to_str().ok())
             .is_none_or(|t| t.trim_start().to_ascii_lowercase().starts_with("text/"));
         if !is_text {
-            return Verdict::AllowAll;
+            return Ok(Verdict::AllowAll);
         }
+        // A connection that fails while the body is read is a transport
+        // failure like any other (RFC 019 D2).
         return match read_prefix(response, limits.max_bytes).await {
-            Some(body) => Verdict::Rules(String::from_utf8_lossy(&body).into_owned()),
-            None => Verdict::DisallowAll,
+            Some(body) => Ok(Verdict::Rules(String::from_utf8_lossy(&body).into_owned())),
+            None => Err(Unreachable),
         };
     }
 }

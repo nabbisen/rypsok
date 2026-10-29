@@ -43,6 +43,7 @@ controls as requirements and the tests that verify them.
 | A host that passes external text to its model as an instruction | rypsok cannot control the host; it marks and documents | Host (external design §1.2) |
 | A deliberate exfiltration that encodes a secret so that no pattern matches | Pattern detection catches accidents, not adversaries | Host: approve what leaves |
 | Results poisoned by search-engine optimization | Inherent to search | Caller |
+| A caller times `web_fetch` to tell a name the policy refused from one that does not resolve (THR-05) | The two answers are identical (`unavailable`, `network`), but their latency is not equalised: a refused name answers as soon as the resolver has judged it. Equalising it would add a delay to every failure; the policy's purpose is met by the identical object | Operator |
 | Loss of health state at restart | State is not retained by design | Operator |
 | Queries retained in memory for LIM-K2 while the cache is on | A cache keyed by query is retention of queries; the configuration page says so next to the switch (REQ-CACHE-007) | Operator |
 | At most 200 characters of a provider's error body in a `debug` log line | A driver's author needs the provider's words to classify a new failure; `debug` is explicit and the bound is a constant (external design §16 I5) | Operator who enables `debug` |

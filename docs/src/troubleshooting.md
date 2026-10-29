@@ -36,7 +36,8 @@ ever goes to standard output except protocol messages.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `denied` with reason `egress` | The destination resolves to a loopback, private, link-local or metadata address, or to a port not listed | Nothing for a private address: it is refused by design. For another port, add it to `[fetch] ports`; for a host you trust, an `[egress] allow` rule |
+| `denied` with reason `egress` | The URL names a loopback, private, link-local or metadata address literally, or a port that is not listed, or a host name that never names a public site (`localhost`, a single label, `*.local`) | Nothing for a private address: it is refused by design. For another port, add it to `[fetch] ports`; for a host you trust, an `[egress] allow` rule |
+| `unavailable` with reason `network` | The site could not be reached, for whatever reason: no such name, a refused or dropped connection, a name that resolves only to addresses the policy refuses | Retry later or choose another page. The answer is the same whatever the reason, so that it tells nothing about names inside your network; the operator's log says whether the policy refused it (`refused`, with the denial's name and no host) |
 | `denied` with reason `robots_txt` | The site's robots.txt disallows the page for `rypsok` or `*` | Respect it; `[fetch] robots_txt = false` turns the check off, at your risk |
 | `denied` with reason `strict_mode` | Strict mode is on and the URL was not returned by a search in this process | Fetch what a search returned, or list the host in `[egress] allow` |
 | `denied` with reason `scheme` | A plain `http` URL and the operator did not allow plain HTTP | rypsok retries over `https` first; set `[egress] allow_http = true` only if you must |
