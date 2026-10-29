@@ -123,3 +123,13 @@ None that block M0. The mock server crate is chosen in the aggregation RFC.
   (`req_cfg_001_configuration_page_matches_the_schema`) checks the
   configuration page against the serialized schema, which is the second
   half of RFC 004's deliverable 7.
+
+## Amendment to RFC 002 (2026-10-29, RFC 019 D9)
+
+- The gate table gains two rows, both run by the `rules` job of
+  `ci.yml`: **Limits table** `tools/check-limits` (REQ-CFG-003: the
+  constants of `limits.rs` equal the rows of the limits table), and the
+  dependency check now runs all four checks, `cargo deny check advisories
+  bans licenses sources` (REQ-SEC-020; the `bans` check was written in
+  `deny.toml` and never run by CI). `req_test_012_ci_workflow_lists_every_gate`
+  requires both.

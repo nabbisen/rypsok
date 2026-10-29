@@ -1,4 +1,4 @@
-# cargo-deny policy (REQ-SEC-020, RFC 001). Run: cargo deny check advisories licenses sources
+# cargo-deny policy (REQ-SEC-020, RFC 001). Run: cargo deny check advisories bans licenses sources
 
 [graph]
 all-features = true
@@ -23,6 +23,11 @@ allow = [
   "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.8
+# RFC 001 documents the allowed set as policy, including licenses no
+# dependency uses today (BSD-2-Clause, MPL-2.0): a dependency that brings one
+# of them must not fail the build. An allowance nothing uses is therefore not
+# a warning.
+unused-allowed-license = "allow"
 
 [bans]
 multiple-versions = "warn"

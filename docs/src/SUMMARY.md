@@ -33,3 +33,4 @@
 - [Engine admission records](./maintainers/engines/README.md)
   - [Wikipedia](./maintainers/engines/wikipedia.md)
   - [Brave Search](./maintainers/engines/brave.md)
+  - [DuckDuckGo](./maintainers/engines/duckduckgo.md)

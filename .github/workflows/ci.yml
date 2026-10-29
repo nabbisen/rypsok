@@ -51,11 +51,13 @@ jobs:
         run: tools/check-core-dependencies
       - name: Requirement coverage (REQ-TEST-001)
         run: tools/check-requirements-coverage
+      - name: Limits table against the constants (REQ-CFG-003)
+        run: tools/check-limits
       - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
           tool: cargo-deny
-      - name: Advisories, licenses, sources (REQ-SEC-020)
-        run: cargo deny check advisories licenses sources
+      - name: Advisories, bans, licenses, sources (REQ-SEC-020)
+        run: cargo deny check advisories bans licenses sources
       - uses: peaceiris/actions-mdbook@ee69d230fe19748b7abf22df32acaa93833fad08 # v2.0.0
         with:
           mdbook-version: latest

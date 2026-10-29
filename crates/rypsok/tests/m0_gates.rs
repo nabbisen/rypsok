@@ -114,7 +114,8 @@ fn req_test_012_ci_workflow_lists_every_gate() {
         "cargo test --workspace",
         "tools/check-core-dependencies",
         "tools/check-requirements-coverage",
-        "cargo deny check advisories licenses sources",
+        "tools/check-limits",
+        "cargo deny check advisories bans licenses sources",
         "cargo doc --workspace --no-deps",
         "mdbook build docs",
     ] {
@@ -218,4 +219,56 @@ fn req_sec_020_ci_actions_are_pinned() {
         }
     }
     assert!(seen >= 15, "{seen} action references found");
+}
+
+/// REQ-DOC-001 (RFC 019 D7): every page of the book is in its summary, so
+/// that no page is built without a way to reach it and no link in another
+/// page leads to a file the book does not publish.
+#[test]
+fn req_doc_001_every_page_is_in_the_summary() {
+    let src = repository_root().join("docs").join("src");
+    let summary = read("docs/src/SUMMARY.md");
+    let mut linked = std::collections::BTreeSet::new();
+    let mut rest = summary.as_str();
+    while let Some(at) = rest.find("](") {
+        rest = &rest[at + 2..];
+        let Some(end) = rest.find(')') else { break };
+        let target = rest[..end].trim_start_matches("./");
+        if target.ends_with(".md") {
+            linked.insert(target.to_owned());
+        }
+        rest = &rest[end..];
+    }
+    assert!(
+        linked.len() >= 20,
+        "{} links found in SUMMARY.md",
+        linked.len()
+    );
+
+    let mut pages = std::collections::BTreeSet::new();
+    let mut stack = vec![src.clone()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|e| e == "md") {
+                let relative = path
+                    .strip_prefix(&src)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                if relative != "SUMMARY.md" {
+                    pages.insert(relative);
+                }
+            }
+        }
+    }
+    let missing: Vec<_> = pages.difference(&linked).collect();
+    assert!(missing.is_empty(), "pages not in SUMMARY.md: {missing:?}");
+    let dangling: Vec<_> = linked.difference(&pages).collect();
+    assert!(
+        dangling.is_empty(),
+        "SUMMARY.md links to no page: {dangling:?}"
+    );
 }
