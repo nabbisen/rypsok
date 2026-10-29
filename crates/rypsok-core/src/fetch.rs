@@ -490,6 +490,11 @@ async fn network(
             .robots
             .check(&p.service.client, p.policy, &target, read_limits)
             .await;
+        // The first https attempt of an upgraded URL is the robots.txt read
+        // when it is on: its failure is the scheme's, as the page request's.
+        if upgraded && matches!(decision, robots::Decision::Unreachable) {
+            return Err(scheme_retry_failed());
+        }
         robots_gate(decision)?;
     }
     let mut hops = 0u8;
@@ -502,13 +507,7 @@ async fn network(
                     return Err(ToolError::deadline());
                 }
                 if upgraded && hops == 0 {
-                    tracing::warn!(
-                        event = "refused",
-                        tool = "web_fetch",
-                        reason = "scheme",
-                        "the https retry of an http URL failed"
-                    );
-                    return Err(ToolError::denied(DetailReason::Scheme));
+                    return Err(scheme_retry_failed());
                 }
                 // A refused name and an unreachable one answer alike.
                 return Err(ToolError::network());
@@ -592,6 +591,19 @@ async fn network(
             charset,
         });
     }
+}
+
+/// The first https attempt of an `http` URL failed, whether the policy
+/// refused the name or the site could not be reached (REQ-FETCH-010): the
+/// answer is `denied`/`scheme`, whichever way `robots_txt` is set.
+fn scheme_retry_failed() -> ToolError {
+    tracing::warn!(
+        event = "refused",
+        tool = "web_fetch",
+        reason = "scheme",
+        "the https retry of an http URL failed"
+    );
+    ToolError::denied(DetailReason::Scheme)
 }
 
 /// What a robots.txt decision means for the call: disallowed is `denied`

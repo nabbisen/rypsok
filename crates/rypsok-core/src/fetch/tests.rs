@@ -785,35 +785,40 @@ async fn req_fetch_010_http_is_retried_over_https() {
         timeout: Duration::from_secs(5),
         allow_http: false,
     };
-    let service = FetchService::new(&settings, Arc::clone(&strict_https), &limits).unwrap();
-    let counters = Counters::new();
-    let returned = ReturnedUrls::new(10);
-    let pipeline = Pipeline {
-        limits: &limits,
-        policy: &strict_https,
-        service: &service,
-        returned: &returned,
-        strict_mode: false,
-        robots_txt: false,
-        follow_cross_host_redirects: false,
-        secret_detection: SecretDetection::Refuse,
-        counters: &counters,
-    };
-    let req = FetchRequest {
-        url: format!("http://127.0.0.1:{port}/p"),
-        max_chars: None,
-        start_char: None,
-    };
-    let error = match run(&pipeline, req, CancellationToken::new()).await {
-        Err(CallError::Tool(error)) => error,
-        other => panic!("{other:?}"),
-    };
-    assert_eq!(error.kind, ErrorKind::Denied);
-    assert_eq!(
-        error.detail.reason,
-        Some(DetailReason::Scheme),
-        "the plain server cannot speak https, so the retry fails"
-    );
+    // The answer does not depend on the robots.txt setting (RFC 019 D2):
+    // the robots.txt read is the first https attempt when it is on.
+    for robots_txt in [false, true] {
+        let service = FetchService::new(&settings, Arc::clone(&strict_https), &limits).unwrap();
+        let counters = Counters::new();
+        let returned = ReturnedUrls::new(10);
+        let pipeline = Pipeline {
+            limits: &limits,
+            policy: &strict_https,
+            service: &service,
+            returned: &returned,
+            strict_mode: false,
+            robots_txt,
+            follow_cross_host_redirects: false,
+            secret_detection: SecretDetection::Refuse,
+            counters: &counters,
+        };
+        let req = FetchRequest {
+            url: format!("http://127.0.0.1:{port}/p"),
+            max_chars: None,
+            start_char: None,
+        };
+        let error = match run(&pipeline, req, CancellationToken::new()).await {
+            Err(CallError::Tool(error)) => error,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(error.kind, ErrorKind::Denied);
+        assert_eq!(
+            error.detail.reason,
+            Some(DetailReason::Scheme),
+            "the plain server cannot speak https, so the retry fails \
+             (robots_txt {robots_txt})"
+        );
+    }
     let h = harness().await;
     Mock::given(method("GET"))
         .and(path("/p"))
