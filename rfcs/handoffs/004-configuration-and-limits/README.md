@@ -1,5 +1,18 @@
 # Handoff — RFC 004: Configuration schema and limits
 
+**Known errors (2026-10-29, review B15).** This handoff is a record and is
+not rewritten. It is wrong in these places; the RFC and the requirements hold:
+
+- Deliverable 2 ("a missing file named explicitly (exit 2)") and deliverable 6
+  ("on an invalid file exits 2") are wrong: a configuration error exits **1**
+  and exit 2 is a usage error (RFC 004 "Command line", REQ-OPS-001;
+  `crates/rypsok/src/cli.rs`, `EXIT_CONFIGURATION = 1`, `EXIT_USAGE = 2`).
+- The header cites REQ-CFG-001 to -006 and REQ-OPS-001 to -004. REQ-CFG-006
+  and REQ-OPS-004 do not exist; the requirements are REQ-CFG-001, -003, -004,
+  -005 and REQ-OPS-001 to -003.
+- Deliverable 1 cites REQ-CFG-002, which was merged into REQ-ENG-004
+  (`requirements.md`, REQ-ENG-004 and the table of merged requirements).
+
 **RFC.** [`../../done/004-configuration-and-limits.md`](../../done/004-configuration-and-limits.md)
 (the design; this handoff never overrides it).
 **Specifications.** `docs/src/maintainers/requirements.md` (REQ-CFG-001 to
