@@ -247,7 +247,7 @@ with `invalid_request` stating the range. (CLR-3)
 ### REQ-SEARCH-004 Language parameter — M1 · T
 `web_search` shall accept an optional `language`, enumerated from the
 languages the operator configured, with the operator's default. It selects
-the language of the results where an engine supports the selection, and it
+the language of the results where an engine supports the selection.
 Engines that cannot honor the selection shall be skipped for that call, and
 a notice shall name them. (D-14)
 
