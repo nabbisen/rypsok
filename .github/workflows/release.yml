@@ -116,7 +116,11 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
+      # The job holds a write token and only reads Cargo.toml: the
+      # credential does not stay in the checkout's git config.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: The tag is a release tag and the version of this tree
         run: |
           set -euo pipefail
