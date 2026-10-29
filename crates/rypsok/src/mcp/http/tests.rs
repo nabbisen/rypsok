@@ -941,3 +941,47 @@ async fn req_obs_007_a_flood_of_refusals_is_logged_without_a_tool_call() {
     );
     s.stop().await;
 }
+
+/// REQ-SEC-024 (RFC 019 D5) over HTTP/2: hyper serves each stream in a task
+/// of its own, and the gate's cell must still reach the session wrapper
+/// inside it, so the refusal is a 503 here as well, not the SDK's 500.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn req_sec_024_a_refused_handshake_is_503_over_http2_too() {
+    let s = Server::start(&LOOPBACK.replace(
+        "bind = \"127.0.0.1:0\"\n",
+        "bind = \"127.0.0.1:0\"\nmax_sessions = 1\n",
+    ))
+    .await;
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .http2_prior_knowledge()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .unwrap();
+    let body = json!({
+        "jsonrpc": "2.0", "id": 1, "method": "initialize",
+        "params": { "protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": { "name": "t", "version": "0" } }
+    });
+    let mut statuses = Vec::new();
+    for _ in 0..2 {
+        let response = client
+            .post(&s.url)
+            .header("accept", "application/json, text/event-stream")
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.version(), reqwest::Version::HTTP_2);
+        statuses.push((
+            response.status().as_u16(),
+            response
+                .headers()
+                .get("retry-after")
+                .map(|v| v.to_str().unwrap().to_owned()),
+            response.text().await.unwrap(),
+        ));
+    }
+    assert_eq!(statuses[0].0, 200, "{statuses:?}");
+    assert_eq!(statuses[1], (503, Some("30".to_owned()), String::new()));
+    s.stop().await;
+}
