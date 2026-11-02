@@ -272,3 +272,62 @@ fn req_doc_001_every_page_is_in_the_summary() {
         "SUMMARY.md links to no page: {dangling:?}"
     );
 }
+
+/// REQ-SEC-014 with RFC 020 D3, handoff 020j (NET-13): a `std::sync` lock is never taken
+/// with `.expect(` in non-test source, so that a panic while one is held
+/// cannot make every later call panic. The code goes through the `sync`
+/// helpers (`rypsok-core`) or recovers the guard itself. `cache.rs` is
+/// exempt: it disables itself on a poisoned lock (RFC 014, REQ-CACHE-006).
+/// Test code is exempt. The scan joins the lines of a call chain first, so a
+/// `.lock()` and an `.expect(` on separate lines are found.
+#[test]
+fn req_sec_014_no_expect_on_a_standard_library_lock() {
+    let root = repository_root();
+    let mut files = Vec::new();
+    for krate in ["rypsok-core", "rypsok"] {
+        let mut stack = vec![root.join("crates").join(krate).join("src")];
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    files.push(path);
+                }
+            }
+        }
+    }
+    assert!(files.len() > 50, "{} source files found", files.len());
+
+    let exempt = root.join("crates/rypsok-core/src/cache.rs");
+    let mut offenders = Vec::new();
+    for path in files {
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        if path == exempt || name == "tests.rs" || name.starts_with("tests_") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).unwrap();
+        // Inline test modules sit at the end of a file: stop at the first.
+        let code = text.split("#[cfg(test)]").next().unwrap_or("");
+        let joined: String = code
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("");
+        for call in [".lock()", ".read()", ".write()"] {
+            let pattern = format!("{call}.expect(");
+            if joined.contains(&pattern) {
+                offenders.push(format!(
+                    "{}: `{pattern}`",
+                    path.strip_prefix(&root).unwrap().display()
+                ));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "locks taken with expect (use the sync helpers):\n{}",
+        offenders.join("\n")
+    );
+}
