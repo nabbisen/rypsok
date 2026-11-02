@@ -21,7 +21,10 @@ text drift, fixed now), [`020b`](../handoffs/020b-network-audit/README.md),
 [`020d`](../handoffs/020d-tests-and-code-audit/README.md),
 [`020e`](../handoffs/020e-measurements/README.md),
 [`020f`](../handoffs/020f-dependencies-and-ci-audit/README.md) (audits:
-findings only).
+findings only); fixes: [`020j`](../handoffs/020j-lock-helper/README.md),
+[`020g`](../handoffs/020g-listener-corrections/README.md),
+[`020o`](../handoffs/020o-workflow-hygiene/README.md) (more follow the owner's
+decisions).
 
 ## Problem and motivation
 
