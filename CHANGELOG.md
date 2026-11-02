@@ -12,6 +12,15 @@ it: what it lists as frozen changes only with a major version, additions
 arrive in minor versions, and every change of a default value is
 announced here with both values.
 
+## [Unreleased]
+
+### Fixed
+
+- A panic inside a critical section no longer makes every later call
+  panic: the counters, health table, limiters, robots.txt cache, returned
+  URL memory and the per-caller limiters recover a poisoned lock instead of
+  failing on it. The result cache keeps disabling itself on a poisoned lock.
+
 ## [0.8.0] — 2026-10-29 — Corrections from the first independent review
 
 RFC 019: the fixes of handoffs 019a to 019c, found by the first

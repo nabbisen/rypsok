@@ -17,6 +17,7 @@ use crate::engine::EngineErrorClass;
 use crate::engine::registry::Registry;
 use crate::limits::Limits;
 use crate::model::{EngineId, EngineState, EngineStatus};
+use crate::sync;
 
 /// The circuit of one engine (external design §3.3; RFC 010).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -235,7 +236,7 @@ impl HealthTable {
     /// circuit half-open under the lock, so that exactly one call carries
     /// the probe (LIM-B5).
     pub fn admit(&self, id: &EngineId) -> (Admission, Option<Transition>) {
-        let mut entries = self.entries.write().expect("health lock");
+        let mut entries = sync::write(&self.entries);
         let Some(health) = entries.get_mut(id) else {
             return (Admission::Skipped, None);
         };
@@ -262,7 +263,7 @@ impl HealthTable {
 
     /// Informs the circuit that a request (or a probe) completed.
     pub fn complete(&self, id: &EngineId, completion: Completion) -> Completed {
-        let mut entries = self.entries.write().expect("health lock");
+        let mut entries = sync::write(&self.entries);
         let Some(health) = entries.get_mut(id) else {
             return Completed::default();
         };
@@ -366,7 +367,7 @@ impl HealthTable {
     /// successful or classified (REQ-OBS-002). Timeouts and skips are not
     /// recorded.
     pub fn record_latency(&self, id: &EngineId, latency: Duration) {
-        let mut entries = self.entries.write().expect("health lock");
+        let mut entries = sync::write(&self.entries);
         if let Some(health) = entries.get_mut(id) {
             if health.latencies.len() >= self.policy.latency_window {
                 health.latencies.pop_front();
@@ -379,20 +380,14 @@ impl HealthTable {
 
     /// The circuit of an engine, for tests and hosts.
     pub fn circuit(&self, id: &EngineId) -> Option<Circuit> {
-        self.entries
-            .read()
-            .expect("health lock")
-            .get(id)
-            .map(|h| h.circuit)
+        sync::read(&self.entries).get(id).map(|h| h.circuit)
     }
 
     /// The snapshot `engine_status` returns: identifier, state and median
     /// latency per engine, in configuration order (REQ-STATUS-001). No
     /// I/O, no await.
     pub fn snapshot(&self) -> Vec<EngineStatus> {
-        self.entries
-            .read()
-            .expect("health lock")
+        sync::read(&self.entries)
             .iter()
             .map(|(id, health)| EngineStatus {
                 id: id.clone(),

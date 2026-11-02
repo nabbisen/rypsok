@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::num::NonZeroU32;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use rypsok_core::limits::Limits;
 
@@ -83,7 +83,7 @@ impl CallerLimiters {
 
     /// The limiters of a caller.
     pub fn for_caller(&self, caller: &CallerId) -> Arc<ToolLimiters> {
-        let mut callers = self.callers.lock().expect("limiters lock");
+        let mut callers = self.callers.lock().unwrap_or_else(PoisonError::into_inner);
         Arc::clone(callers.entry(caller.clone()).or_insert_with(|| {
             Arc::new(ToolLimiters {
                 search: ToolLimiter::per_minute(self.per_minute.0),
@@ -93,3 +93,6 @@ impl CallerLimiters {
         }))
     }
 }
+
+#[cfg(test)]
+mod tests;

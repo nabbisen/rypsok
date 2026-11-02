@@ -16,6 +16,7 @@ use tokio::time::Instant;
 use url::Url;
 
 use crate::egress::{EgressPolicy, Host, Target};
+use crate::sync;
 
 /// The product token robots.txt groups are matched for.
 pub const PRODUCT_TOKEN: &str = "rypsok";
@@ -128,7 +129,7 @@ impl Robots {
 
     /// How many origins are cached.
     pub fn len(&self) -> usize {
-        self.entries.lock().expect("robots lock").map.len()
+        sync::lock(&self.entries).map.len()
     }
 
     /// Whether nothing is cached.
@@ -137,7 +138,7 @@ impl Robots {
     }
 
     fn fresh(&self, origin: &str) -> Option<Verdict> {
-        let entries = self.entries.lock().expect("robots lock");
+        let entries = sync::lock(&self.entries);
         entries
             .map
             .get(origin)
@@ -151,7 +152,7 @@ impl Robots {
         } else {
             self.ttl
         };
-        let mut entries = self.entries.lock().expect("robots lock");
+        let mut entries = sync::lock(&self.entries);
         if !entries.map.contains_key(&origin) {
             while entries.map.len() >= self.capacity {
                 match entries.order.pop_front() {

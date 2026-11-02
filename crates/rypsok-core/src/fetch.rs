@@ -33,6 +33,7 @@ use crate::model::{
 };
 use crate::privacy::{self, Sensitive, Verdict};
 use crate::search::normalize::{self, comparison_key};
+use crate::sync;
 use crate::telemetry::Counters;
 
 /// How much of the head of a body is examined to tell HTML from text when
@@ -203,7 +204,7 @@ impl FetchService {
     /// The per-host permit (LIM-C4: one fetch per host at a time). Idle
     /// entries are pruned when the map outgrows the global limit.
     fn host_permit(&self, host: &str) -> Arc<Semaphore> {
-        let mut hosts = self.hosts.lock().expect("hosts lock");
+        let mut hosts = sync::lock(&self.hosts);
         if hosts.len() > self.fetches_in_flight {
             hosts.retain(|_, s| Arc::strong_count(s) > 1);
         }

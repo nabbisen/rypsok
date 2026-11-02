@@ -9,6 +9,8 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use crate::sync;
+
 /// How often the counters are logged.
 pub const FLUSH_INTERVAL: Duration = Duration::from_secs(60);
 
@@ -57,10 +59,7 @@ impl Counters {
 
     /// One call of a tool ended with this outcome or error kind.
     pub fn call(&self, tool: &'static str, outcome: &'static str) {
-        *self
-            .totals
-            .lock()
-            .expect("counters lock")
+        *sync::lock(&self.totals)
             .calls
             .entry((tool, outcome))
             .or_default() += 1;
@@ -69,20 +68,12 @@ impl Counters {
 
     /// One event of the result cache (RFC 014).
     pub fn cache(&self, outcome: &'static str) {
-        *self
-            .totals
-            .lock()
-            .expect("counters lock")
-            .cache
-            .entry(outcome)
-            .or_default() += 1;
+        *sync::lock(&self.totals).cache.entry(outcome).or_default() += 1;
     }
 
     /// The count of one cache outcome.
     pub fn cache_of(&self, outcome: &str) -> u64 {
-        self.totals
-            .lock()
-            .expect("counters lock")
+        sync::lock(&self.totals)
             .cache
             .get(outcome)
             .copied()
@@ -91,10 +82,7 @@ impl Counters {
 
     /// One call was refused before work started (REQ-OBS-007).
     pub fn refused(&self, tool: &'static str, reason: &'static str) {
-        *self
-            .totals
-            .lock()
-            .expect("counters lock")
+        *sync::lock(&self.totals)
             .refusals
             .entry((tool, reason))
             .or_default() += 1;
@@ -113,10 +101,7 @@ impl Counters {
     /// One call proceeded with a warning (privacy mode `warn`); not a
     /// refusal.
     pub fn warned(&self, tool: &'static str, reason: &'static str) {
-        *self
-            .totals
-            .lock()
-            .expect("counters lock")
+        *sync::lock(&self.totals)
             .warnings
             .entry((tool, reason))
             .or_default() += 1;
@@ -124,10 +109,7 @@ impl Counters {
 
     /// One engine request failed with this class (REQ-OBS-003).
     pub fn engine_error(&self, engine: &str, class: &'static str) {
-        *self
-            .totals
-            .lock()
-            .expect("counters lock")
+        *sync::lock(&self.totals)
             .engine_errors
             .entry((engine.to_owned(), class))
             .or_default() += 1;
@@ -135,22 +117,17 @@ impl Counters {
 
     /// Characters the boundary removed.
     pub fn characters_removed(&self, count: u64) {
-        self.totals
-            .lock()
-            .expect("counters lock")
-            .characters_removed += count;
+        sync::lock(&self.totals).characters_removed += count;
     }
 
     /// Results the pipeline dropped.
     pub fn results_dropped(&self, count: u64) {
-        self.totals.lock().expect("counters lock").results_dropped += count;
+        sync::lock(&self.totals).results_dropped += count;
     }
 
     /// The total calls of a tool with an outcome, for tests and status.
     pub fn calls_of(&self, tool: &str, outcome: &str) -> u64 {
-        self.totals
-            .lock()
-            .expect("counters lock")
+        sync::lock(&self.totals)
             .calls
             .iter()
             .filter(|((t, o), _)| *t == tool && *o == outcome)
@@ -160,9 +137,7 @@ impl Counters {
 
     /// The total refusals of a tool with a reason.
     pub fn refusals_of(&self, tool: &str, reason: &str) -> u64 {
-        self.totals
-            .lock()
-            .expect("counters lock")
+        sync::lock(&self.totals)
             .refusals
             .iter()
             .filter(|((t, r), _)| *t == tool && *r == reason)
@@ -172,9 +147,7 @@ impl Counters {
 
     /// The total warnings of a tool with a reason.
     pub fn warnings_of(&self, tool: &str, reason: &str) -> u64 {
-        self.totals
-            .lock()
-            .expect("counters lock")
+        sync::lock(&self.totals)
             .warnings
             .iter()
             .filter(|((t, r), _)| *t == tool && *r == reason)
@@ -184,9 +157,7 @@ impl Counters {
 
     /// The total errors of an engine with a class.
     pub fn engine_errors_of(&self, engine: &str, class: &str) -> u64 {
-        self.totals
-            .lock()
-            .expect("counters lock")
+        sync::lock(&self.totals)
             .engine_errors
             .iter()
             .filter(|((e, c), _)| e == engine && *c == class)
@@ -196,7 +167,7 @@ impl Counters {
 
     fn flush_if_due(&self) {
         let due = {
-            let mut last = self.last_flush.lock().expect("counters lock");
+            let mut last = sync::lock(&self.last_flush);
             if last.elapsed() >= self.flush_interval {
                 *last = Instant::now();
                 true
@@ -211,7 +182,7 @@ impl Counters {
 
     /// Logs the counters now, when any is non-zero.
     pub fn log(&self) {
-        let totals = self.totals.lock().expect("counters lock").clone();
+        let totals = sync::lock(&self.totals).clone();
         if totals == Totals::default() {
             return;
         }
@@ -246,3 +217,6 @@ impl Counters {
         );
     }
 }
+
+#[cfg(test)]
+mod tests;

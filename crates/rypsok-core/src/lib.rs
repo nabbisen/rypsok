@@ -44,6 +44,7 @@ pub mod limits;
 pub mod model;
 pub mod privacy;
 pub mod search;
+mod sync;
 pub mod telemetry;
 
 use std::collections::BTreeSet;

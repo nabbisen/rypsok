@@ -4,6 +4,8 @@
 
 use std::num::NonZeroU32;
 use std::sync::Mutex;
+
+use crate::sync;
 use std::time::{Duration, Instant};
 
 use governor::clock::DefaultClock;
@@ -47,7 +49,7 @@ impl EngineLimiter {
     /// `Retry-After`), capped by `max`.
     pub fn block_for(&self, retry_after: Duration, max: Duration) {
         let until = Instant::now() + retry_after.min(max);
-        let mut blocked = self.blocked_until.lock().expect("limiter lock");
+        let mut blocked = sync::lock(&self.blocked_until);
         if blocked.is_none_or(|current| current < until) {
             *blocked = Some(until);
         }
@@ -55,10 +57,7 @@ impl EngineLimiter {
 
     /// Whether a provider block is in force.
     pub fn is_blocked(&self) -> bool {
-        self.blocked_until
-            .lock()
-            .expect("limiter lock")
-            .is_some_and(|until| until > Instant::now())
+        sync::lock(&self.blocked_until).is_some_and(|until| until > Instant::now())
     }
 
     /// Admits one request before `deadline`: the bucket first, then the

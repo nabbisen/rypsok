@@ -7,6 +7,7 @@ use std::collections::{HashSet, VecDeque};
 use std::sync::Mutex;
 
 use crate::search::normalize::ComparisonKey;
+use crate::sync;
 
 /// The comparison keys of returned URLs.
 #[derive(Debug)]
@@ -33,7 +34,7 @@ impl ReturnedUrls {
     /// Remembers a returned URL; the oldest key leaves when the set is
     /// full. A key already present is not re-added.
     pub fn record(&self, key: &ComparisonKey) {
-        let mut inner = self.inner.lock().expect("returned urls lock");
+        let mut inner = sync::lock(&self.inner);
         if inner.keys.contains(key) {
             return;
         }
@@ -48,16 +49,12 @@ impl ReturnedUrls {
 
     /// Whether a URL with this key was returned earlier.
     pub fn contains(&self, key: &ComparisonKey) -> bool {
-        self.inner
-            .lock()
-            .expect("returned urls lock")
-            .keys
-            .contains(key)
+        sync::lock(&self.inner).keys.contains(key)
     }
 
     /// How many keys are remembered.
     pub fn len(&self) -> usize {
-        self.inner.lock().expect("returned urls lock").order.len()
+        sync::lock(&self.inner).order.len()
     }
 
     /// Whether nothing is remembered.
