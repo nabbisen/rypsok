@@ -156,6 +156,9 @@ fn req_err_004_messages_are_bounded_templates() {
         ToolError::fetch_deadline(),
         ToolError::http_status(404),
         ToolError::http_status(503),
+        ToolError::denied(DetailReason::Scheme),
+        ToolError::scheme_upgrade_failed(),
+        ToolError::url_length(8192),
         ToolError::rate_limited(1000),
         ToolError::busy(),
     ];
