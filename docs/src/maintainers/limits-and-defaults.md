@@ -50,11 +50,11 @@ it.
 | LIM-F4 | Overall deadline of a fetch | 10000 ms | 1000–30000 | — |
 | LIM-F5 | Maximum duration of a `web_fetch` call | LIM-F4 + 1000 ms | derived | X-04, R-04 |
 | LIM-F6 | Connect timeout | 3000 ms | 500–10000 | — |
-| LIM-F7 | Redirects followed on the same host | 5 | 0–10 | Draft external design §15 |
+| LIM-F7 | Redirects followed | 5 | 0–10 | Draft external design §15 |
 | LIM-F8 | Ports | 80, 443 | operator | M-07 |
 | LIM-F9 | Length of `url` | 2048 characters | 256–8192 | — |
 | LIM-F10 | HTML nodes parsed | 100000 | operator | R-04 |
-| LIM-F11 | HTML nesting depth | 256 | operator | R-04 |
+| LIM-F11 | HTML nesting depth at rendering | 256 | operator | R-04 |
 | LIM-F12 | robots.txt kept in memory | 24 hours | ≤ 24 hours | RFC 9309 §2.4 |
 | LIM-F13 | Size of a robots.txt read | 512 KiB | operator | Parser bound |
 | LIM-F14 | URLs remembered for strict mode | 10000 | operator | REQ-SEC-021; bounded memory (RFC 011) |

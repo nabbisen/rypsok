@@ -97,7 +97,7 @@ token_env = "RYPSOK_TOKEN_MIMLYS"
 | `max_bytes` | `5242880` | 65536–20971520 | Response bytes after decompression (LIM-F3) |
 | `deadline_ms` | `10000` | 1000–30000 | Overall deadline of a fetch (LIM-F4) |
 | `connect_timeout_ms` | `3000` | 500–10000 | Connect timeout (LIM-F6) |
-| `max_redirects` | `5` | 0–10 | Redirects followed on the same host (LIM-F7) |
+| `max_redirects` | `5` | 0–10 | Redirects followed (LIM-F7); every hop counts, a cross-host one too when `follow_cross_host_redirects` is on |
 | `ports` | `[80, 443]` | ports | Ports a fetch may use (LIM-F8); another port needs an `egress.allow` rule |
 | `robots_txt` | `true` | boolean | Honor robots.txt |
 | `follow_cross_host_redirects` | `false` | boolean | Follow a redirect to another host instead of returning `redirected` |
