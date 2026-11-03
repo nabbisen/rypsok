@@ -1,8 +1,12 @@
-//! A bounded document tree (RFC 012; REQ-PAGE-006, LIM-F10): an arena of
-//! nodes filled by `html5ever` through [`BoundedSink`]. The input is fed
-//! to the parser in small chunks and feeding stops as soon as the sink has
-//! reached `max_nodes`, so the tree overshoots the bound by at most the
-//! nodes of one chunk and the parse is recorded as truncated. No recursion
+//! A bounded document tree (RFC 012; REQ-PAGE-006, LIM-F10, LIM-F11): an
+//! arena of nodes filled by `html5ever` through [`BoundedSink`]. The input
+//! is fed to the parser in small chunks and feeding stops as soon as the
+//! sink has reached `max_nodes` or has attached an element deeper than
+//! `max_depth`, so the tree overshoots a bound by at most the nodes of one
+//! chunk and the parse is recorded as cut. The depth bound has to stop the
+//! feed: `html5ever` scans its stack of open elements on many tokens, so
+//! the time of a parse grows with the square of the nesting depth and a
+//! bound applied afterwards would come too late (RFC 020 D-3). No recursion
 //! anywhere: every traversal is an explicit stack (THR-12).
 
 use std::cell::{Cell, Ref, RefCell};
@@ -59,7 +63,16 @@ pub struct Node {
 #[derive(Debug, Clone)]
 pub struct Dom {
     nodes: Vec<Node>,
+    /// For each node, parallel to `nodes`: how many levels of elements the
+    /// subtree holds, the node itself included when it is an element (an
+    /// element without element children is 1, text is 0). The deepest
+    /// element under a parent is then `depth(parent) + levels(child)`, which
+    /// stays exact when the parser moves a whole subtree (the adoption
+    /// agency and foster parenting do). It only grows: a subtree that loses
+    /// a child keeps its value, so a count can be too high, never too low.
+    levels: Vec<u32>,
     truncated: bool,
+    depth_exceeded: bool,
 }
 
 impl Dom {
@@ -70,13 +83,21 @@ impl Dom {
                 parent: None,
                 children: Vec::new(),
             }],
+            levels: vec![0],
             truncated: false,
+            depth_exceeded: false,
         }
     }
 
     /// Whether the parse stopped at the node bound (REQ-PAGE-006).
     pub fn truncated(&self) -> bool {
         self.truncated
+    }
+
+    /// Whether the parse stopped at the depth bound (LIM-F11): an element
+    /// was attached deeper than `max_depth`.
+    pub fn depth_exceeded(&self) -> bool {
+        self.depth_exceeded
     }
 
     /// How many nodes exist, the document included.
@@ -165,6 +186,8 @@ impl Dom {
         if self.nodes.len() > max_nodes {
             self.truncated = true;
         }
+        self.levels
+            .push(u32::from(matches!(kind, Kind::Element { .. })));
         self.nodes.push(Node {
             kind,
             parent: None,
@@ -179,16 +202,50 @@ impl Dom {
         }
     }
 
-    fn attach(&mut self, parent: Handle, child: Handle) {
+    /// Called once `child` (with its subtree) is under `parent`: records
+    /// whether its deepest element passes `max_depth` and passes the new
+    /// number of levels up the ancestors, stopping where it changes
+    /// nothing. The cost is the depth of the parent, which the feed loop
+    /// keeps near the bound by stopping at the first excess.
+    fn note_attached(&mut self, parent: Handle, child: Handle, max_depth: u32) {
+        let below = self.levels[child];
+        if below == 0 {
+            return;
+        }
+        let deepest = u32::try_from(self.depth(parent))
+            .unwrap_or(u32::MAX)
+            .saturating_add(below);
+        if deepest > max_depth {
+            self.depth_exceeded = true;
+        }
+        let mut carry = below;
+        let mut at = parent;
+        loop {
+            let own = u32::from(matches!(self.nodes[at].kind, Kind::Element { .. }));
+            let levels = carry.saturating_add(own);
+            if levels <= self.levels[at] {
+                break;
+            }
+            self.levels[at] = levels;
+            carry = levels;
+            match self.nodes[at].parent {
+                Some(up) => at = up,
+                None => break,
+            }
+        }
+    }
+
+    fn attach(&mut self, parent: Handle, child: Handle, max_depth: u32) {
         if parent == child {
             return;
         }
         self.detach(child);
         self.nodes[child].parent = Some(parent);
         self.nodes[parent].children.push(child);
+        self.note_attached(parent, child, max_depth);
     }
 
-    fn insert_before(&mut self, sibling: Handle, child: Handle) {
+    fn insert_before(&mut self, sibling: Handle, child: Handle, max_depth: u32) {
         let Some(parent) = self.nodes[sibling].parent else {
             return;
         };
@@ -200,9 +257,10 @@ impl Dom {
             .unwrap_or(self.nodes[parent].children.len());
         self.nodes[child].parent = Some(parent);
         self.nodes[parent].children.insert(position, child);
+        self.note_attached(parent, child, max_depth);
     }
 
-    fn append_text(&mut self, parent: Handle, text: &str, max_nodes: usize) {
+    fn append_text(&mut self, parent: Handle, text: &str, max_nodes: usize, max_depth: u32) {
         if let Some(&last) = self.nodes[parent].children.last()
             && let Kind::Text(existing) = &mut self.nodes[last].kind
         {
@@ -210,10 +268,16 @@ impl Dom {
             return;
         }
         let h = self.create(Kind::Text(text.to_owned()), max_nodes);
-        self.attach(parent, h);
+        self.attach(parent, h, max_depth);
     }
 
-    fn insert_text_before(&mut self, sibling: Handle, text: &str, max_nodes: usize) {
+    fn insert_text_before(
+        &mut self,
+        sibling: Handle,
+        text: &str,
+        max_nodes: usize,
+        max_depth: u32,
+    ) {
         let Some(parent) = self.nodes[sibling].parent else {
             return;
         };
@@ -230,7 +294,7 @@ impl Dom {
             }
         }
         let h = self.create(Kind::Text(text.to_owned()), max_nodes);
-        self.insert_before(sibling, h);
+        self.insert_before(sibling, h, max_depth);
     }
 }
 
@@ -240,22 +304,26 @@ impl Dom {
 pub struct BoundedSink {
     dom: RefCell<Dom>,
     max_nodes: usize,
+    max_depth: u32,
     quirks: Cell<QuirksMode>,
 }
 
 impl BoundedSink {
-    /// A sink that reports the bound at `max_nodes` nodes.
-    pub fn new(max_nodes: u32) -> Self {
+    /// A sink that reports the bounds at `max_nodes` nodes and at an
+    /// element deeper than `max_depth` (the document is depth 0).
+    pub fn new(max_nodes: u32, max_depth: u32) -> Self {
         BoundedSink {
             dom: RefCell::new(Dom::new()),
             max_nodes: usize::try_from(max_nodes).unwrap_or(usize::MAX).max(1),
+            max_depth: max_depth.max(1),
             quirks: Cell::new(QuirksMode::NoQuirks),
         }
     }
 
-    /// Whether the bound has been reached.
+    /// Whether a bound has been reached: the node bound or the depth bound.
     pub fn truncated(&self) -> bool {
-        self.dom.borrow().truncated
+        let dom = self.dom.borrow();
+        dom.truncated || dom.depth_exceeded
     }
 
     fn create(&self, kind: Kind) -> Handle {
@@ -305,8 +373,10 @@ impl TreeSink for BoundedSink {
     fn append(&self, parent: &Handle, child: NodeOrText<Handle>) {
         let mut dom = self.dom.borrow_mut();
         match child {
-            NodeOrText::AppendNode(h) => dom.attach(*parent, h),
-            NodeOrText::AppendText(text) => dom.append_text(*parent, &text, self.max_nodes),
+            NodeOrText::AppendNode(h) => dom.attach(*parent, h, self.max_depth),
+            NodeOrText::AppendText(text) => {
+                dom.append_text(*parent, &text, self.max_nodes, self.max_depth)
+            }
         }
     }
 
@@ -354,9 +424,9 @@ impl TreeSink for BoundedSink {
     fn append_before_sibling(&self, sibling: &Handle, new_node: NodeOrText<Handle>) {
         let mut dom = self.dom.borrow_mut();
         match new_node {
-            NodeOrText::AppendNode(h) => dom.insert_before(*sibling, h),
+            NodeOrText::AppendNode(h) => dom.insert_before(*sibling, h, self.max_depth),
             NodeOrText::AppendText(text) => {
-                dom.insert_text_before(*sibling, &text, self.max_nodes);
+                dom.insert_text_before(*sibling, &text, self.max_nodes, self.max_depth);
             }
         }
     }
@@ -381,7 +451,7 @@ impl TreeSink for BoundedSink {
         let children = std::mem::take(&mut dom.nodes[*node].children);
         for child in children {
             dom.nodes[child].parent = None;
-            dom.attach(*new_parent, child);
+            dom.attach(*new_parent, child, self.max_depth);
         }
     }
 }
@@ -397,12 +467,15 @@ static NOT_AN_ELEMENT: std::sync::LazyLock<QualName> = std::sync::LazyLock::new(
 });
 
 /// Parses HTML into a bounded tree. The input is fed in chunks of
-/// [`FEED_CHUNK_BYTES`]; feeding stops once the sink reports the bound, so
-/// the tree holds at most `max_nodes` plus one chunk's nodes. Scripting is
+/// [`FEED_CHUNK_BYTES`]; feeding stops once the sink reports a bound, so
+/// the tree holds at most `max_nodes` plus one chunk's nodes, and no element
+/// deeper than `max_depth` plus those of one chunk (LIM-F11: the depth is
+/// bounded while parsing because the parser's time grows with its square).
+/// Scripting is
 /// reported as disabled so that `<noscript>` content is parsed as markup
 /// (and then excluded by the extractor like any other non-rendered
 /// content).
-pub fn parse(html: &str, max_nodes: u32) -> Dom {
+pub fn parse(html: &str, max_nodes: u32, max_depth: u32) -> Dom {
     let opts = html5ever::ParseOpts {
         tree_builder: html5ever::tree_builder::TreeBuilderOpts {
             scripting_enabled: false,
@@ -411,7 +484,7 @@ pub fn parse(html: &str, max_nodes: u32) -> Dom {
         },
         ..Default::default()
     };
-    let mut parser = html5ever::parse_document(BoundedSink::new(max_nodes), opts);
+    let mut parser = html5ever::parse_document(BoundedSink::new(max_nodes, max_depth), opts);
     let mut from = 0;
     while from < html.len() {
         let mut to = (from + FEED_CHUNK_BYTES).min(html.len());

@@ -5,8 +5,11 @@
 use super::*;
 use crate::html::dom::parse;
 
+/// The LIM-F11 value, for tests that are not about depth.
+const DEPTH: u32 = crate::limits::defaults::HTML_MAX_DEPTH;
+
 fn content_text(html: &str) -> (String, Extraction) {
-    let dom = parse(html, 100_000);
+    let dom = parse(html, 100_000, DEPTH);
     let extraction = extract(&dom, 256);
     let (text, _) = text_of(&dom, extraction.root, &extraction.excluded, 256);
     (
@@ -106,7 +109,7 @@ fn req_page_006_depth_bound_is_reported() {
         html.push_str("</div>");
     }
     html.push_str("</main></body></html>");
-    let dom = parse(&html, 100_000);
+    let dom = parse(&html, 100_000, DEPTH);
     let extraction = extract(&dom, 256);
     assert!(extraction.depth_truncated);
     let (text, truncated) = text_of(&dom, extraction.root, &extraction.excluded, 256);

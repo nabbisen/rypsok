@@ -6,8 +6,11 @@ use std::collections::HashSet;
 use super::*;
 use crate::html::dom::parse;
 
+/// The LIM-F11 value, for tests that are not about depth.
+const DEPTH: u32 = crate::limits::defaults::HTML_MAX_DEPTH;
+
 fn md(html: &str) -> String {
-    let dom = parse(html, 100_000);
+    let dom = parse(html, 100_000, DEPTH);
     let body = dom.first("body").unwrap();
     render(
         &dom,

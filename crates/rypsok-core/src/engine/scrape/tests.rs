@@ -6,6 +6,9 @@ use crate::boundary::Provenance;
 use crate::engine::drivers::duckduckgo::{DuckDuckGo, SHAPE};
 use crate::html::dom::parse;
 
+/// The LIM-F11 value, for tests that are not about depth.
+const DEPTH: u32 = crate::limits::defaults::HTML_MAX_DEPTH;
+
 fn fixture(name: &str) -> String {
     std::fs::read_to_string(format!(
         "{}/fixtures/scrape/duckduckgo/{name}",
@@ -19,7 +22,7 @@ fn fixture(name: &str) -> String {
 /// empty, and `max_results` respected.
 #[test]
 fn req_test_018_results_in_order_with_wrappers_unwrapped() {
-    let dom = parse(&fixture("results.html"), 50_000);
+    let dom = parse(&fixture("results.html"), 50_000, DEPTH);
     let Page::Results(results) = read(&dom, &SHAPE, 10, &DuckDuckGo::unwrap_link) else {
         panic!("results expected");
     };
@@ -46,22 +49,22 @@ fn req_test_018_results_in_order_with_wrappers_unwrapped() {
 /// REQ-ENG-015: the three other page states are told apart.
 #[test]
 fn req_test_018_no_results_challenge_and_drift_are_told_apart() {
-    let no = parse(&fixture("no-results.html"), 50_000);
+    let no = parse(&fixture("no-results.html"), 50_000, DEPTH);
     assert_eq!(
         read(&no, &SHAPE, 10, &DuckDuckGo::unwrap_link),
         Page::NoResults
     );
-    let challenge = parse(&fixture("challenge.html"), 50_000);
+    let challenge = parse(&fixture("challenge.html"), 50_000, DEPTH);
     assert_eq!(
         read(&challenge, &SHAPE, 10, &DuckDuckGo::unwrap_link),
         Page::Challenge
     );
-    let drifted = parse(&fixture("drifted.html"), 50_000);
+    let drifted = parse(&fixture("drifted.html"), 50_000, DEPTH);
     assert_eq!(
         read(&drifted, &SHAPE, 10, &DuckDuckGo::unwrap_link),
         Page::Drifted
     );
-    let empty = parse("", 50_000);
+    let empty = parse("", 50_000, DEPTH);
     assert_eq!(
         read(&empty, &SHAPE, 10, &DuckDuckGo::unwrap_link),
         Page::Drifted
@@ -75,7 +78,7 @@ fn req_test_018_the_node_bound_ends_parsing_without_a_panic() {
     let padding: String = "<span>x</span>".repeat(2_000);
     let after = fixture("results.html")
         .replace("<div id=\"links\"", &format!("{padding}<div id=\"links\""));
-    let dom = parse(&after, 300);
+    let dom = parse(&after, 300, DEPTH);
     assert!(dom.truncated());
     assert_eq!(
         read(&dom, &SHAPE, 10, &DuckDuckGo::unwrap_link),
@@ -85,7 +88,7 @@ fn req_test_018_the_node_bound_ends_parsing_without_a_panic() {
         "<div id=\"bottom_navigation\">",
         &format!("{padding}<div id=\"bottom_navigation\">"),
     );
-    let dom = parse(&before, 300);
+    let dom = parse(&before, 300, DEPTH);
     assert!(dom.truncated());
     assert!(
         matches!(read(&dom, &SHAPE, 10, &DuckDuckGo::unwrap_link), Page::Results(r) if !r.is_empty())
@@ -125,6 +128,7 @@ fn req_eng_015_selectors_match_by_tag_class_and_attribute() {
     let dom = parse(
         "<div class=\"a result b\"><a class=\"result__a\" href=\"/x\">t</a></div><form action=\"/html/anomaly\"></form>",
         1000,
+        DEPTH,
     );
     let div = dom.first("div").unwrap();
     assert!(Selector::class("div", "result").matches(&dom, div));
@@ -148,7 +152,7 @@ fn req_eng_015_selectors_match_by_tag_class_and_attribute() {
 #[test]
 fn req_sec_003_scraped_results_are_marked_decoded() {
     let page = r#"<html><body><div class="result"><a class="result__a" href="https://doc.rust-lang.org/std/vec/struct.Vec.html">std::vec::Vec&lt;T&gt; - Rust</a><a class="result__snippet" href="https://doc.rust-lang.org/">Use Vec&lt;T&gt; here.</a></div></body></html>"#;
-    let dom = parse(page, 50_000);
+    let dom = parse(page, 50_000, DEPTH);
     let Page::Results(results) = read(&dom, &SHAPE, 10, &DuckDuckGo::unwrap_link) else {
         panic!("results expected");
     };

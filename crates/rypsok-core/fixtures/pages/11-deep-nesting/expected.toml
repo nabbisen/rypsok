@@ -1,4 +1,7 @@
 title = "Deep"
-must_contain = ["Before the deep part.", "After the deep part."]
-must_not_contain = ["deepest text"]
+# The page nests 10,000 elements deep. The parse is cut at the depth bound (LIM-F11, 256) while
+# parsing (RFC 020 D-3), so what comes after the deep part is not read; before the change the
+# whole page was parsed and "After the deep part." was returned.
+must_contain = ["Before the deep part."]
+must_not_contain = ["deepest text", "After the deep part."]
 notices = ["extraction_partial"]

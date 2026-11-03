@@ -7,7 +7,7 @@ use rypsok_core::html::dom::parse;
 
 fuzz_target!(|data: &[u8]| {
     let Ok(html) = std::str::from_utf8(data) else { return };
-    let dom = parse(html, 4_000);
+    let dom = parse(html, 4_000, 256);
     match read(&dom, &SHAPE, 10, &DuckDuckGo::unwrap_link) {
         Page::Results(results) => {
             assert!(!results.is_empty() && results.len() <= 10);

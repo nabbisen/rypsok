@@ -120,7 +120,7 @@ pub fn render_document(
             partial: false,
         },
         Media::Html => {
-            let tree = dom::parse(&decoded.text, limits.html_max_nodes);
+            let tree = dom::parse(&decoded.text, limits.html_max_nodes, limits.html_max_depth);
             let extraction = extract::extract(&tree, limits.html_max_depth);
             let rendered = markdown::render(
                 &tree,
@@ -134,7 +134,10 @@ pub fn render_document(
             Document {
                 title: extraction.title,
                 content: rendered.markdown,
-                partial: tree.truncated() || extraction.depth_truncated || rendered.depth_truncated,
+                partial: tree.truncated()
+                    || tree.depth_exceeded()
+                    || extraction.depth_truncated
+                    || rendered.depth_truncated,
             }
         }
     }

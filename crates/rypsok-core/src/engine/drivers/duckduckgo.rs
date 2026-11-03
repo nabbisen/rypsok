@@ -235,7 +235,12 @@ impl Driver for DuckDuckGo {
         let page = tokio::task::spawn_blocking(move || {
             let _permit = permit;
             let decoded = charset::decode(&body, declared.as_deref());
-            let tree = dom::parse(&decoded.text, max_nodes);
+            // LIM-F11 is a fixed limit: the constant is the value everywhere.
+            let tree = dom::parse(
+                &decoded.text,
+                max_nodes,
+                crate::limits::defaults::HTML_MAX_DEPTH,
+            );
             scrape::read(&tree, &SHAPE, max_results, &DuckDuckGo::unwrap_link)
         })
         .await
