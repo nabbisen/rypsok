@@ -1158,7 +1158,6 @@ dependencies = [
  "html-escape",
  "html5ever",
  "ipnet",
- "markup5ever",
  "regex",
  "reqwest",
  "robotstxt",
