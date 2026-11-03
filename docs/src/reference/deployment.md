@@ -40,7 +40,12 @@ curl -sS http://127.0.0.1:8737/mcp \
 - `Host` and `Origin` are validated; a foreign `Host` is refused, and any
   `Origin` is refused unless listed.
 - Connections, request bodies and idle time are bounded (LIM-H1 to
-  LIM-H3).
+  LIM-H3). A connection that sends nothing is closed after the idle
+  time too. Every connection holds a file descriptor: set the descriptor
+  limit (`LimitNOFILE` in the unit, `--ulimit nofile` for a container) to at
+  least `max_connections` + 64. Below that, `accept` fails when the
+  descriptors run out; the listener then waits 100 ms between attempts and
+  logs `accept_failed` at most once per 10 s.
 
 A systemd unit for network mode, with the egress restrictions of the
 [integration guide](./integration-guide.md#restricting-egress-at-the-operating-system-level):
@@ -68,6 +73,7 @@ AmbientCapabilities=
 UMask=077
 MemoryMax=256M
 TasksMax=64
+LimitNOFILE=128   # max_connections (default 64) + 64
 IPAddressDeny=any
 IPAddressAllow=127.0.0.0/8 ::1 <the engines' addresses>
 ```
@@ -99,7 +105,7 @@ image that runs as a non-root user and reads `/etc/rypsok/rypsok.toml`:
 docker build -t rypsok .
 docker run --rm -p 127.0.0.1:8737:8737 \
   --read-only --cap-drop ALL --security-opt no-new-privileges \
-  --memory 256m --pids-limit 64 \
+  --memory 256m --pids-limit 64 --ulimit nofile=128:128 \
   -v "$PWD/rypsok.toml:/etc/rypsok/rypsok.toml:ro" \
   -e RYPSOK_TOKEN_MIMLYS=… rypsok
 ```

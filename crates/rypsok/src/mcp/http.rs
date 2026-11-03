@@ -52,6 +52,47 @@ pub const TOKEN_MIN_BYTES: usize = 32;
 /// connection is closed (LIM-H3 on HTTP/2).
 const H2_PING_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// How long the accept loop waits after an accept error before it tries
+/// again (NET-2). Without it, a descriptor limit below LIM-H1 made the loop
+/// spin on `EMFILE` at full speed.
+const ACCEPT_ERROR_DELAY: Duration = Duration::from_millis(100);
+
+/// The most often an accept error is logged: once per this interval, with the
+/// number of errors since the last line.
+const ACCEPT_ERROR_LOG_INTERVAL: Duration = Duration::from_secs(10);
+
+/// What the accept loop does after an error: wait, and log at most once per
+/// interval. A small struct with the clock as an argument, so that it is
+/// tested without descriptors.
+#[derive(Debug, Default)]
+struct AcceptBackoff {
+    last_logged: Option<std::time::Instant>,
+    errors_since_log: u64,
+}
+
+impl AcceptBackoff {
+    /// How long to wait before the next `accept`.
+    fn delay(&self) -> Duration {
+        ACCEPT_ERROR_DELAY
+    }
+
+    /// Records one error at `now`. Returns the number of errors since the
+    /// last line (this one included) when a line is due, and `None` while the
+    /// interval since the last line has not passed.
+    fn should_log(&mut self, now: std::time::Instant) -> Option<u64> {
+        self.errors_since_log += 1;
+        let due = self
+            .last_logged
+            .is_none_or(|last| now.saturating_duration_since(last) >= ACCEPT_ERROR_LOG_INTERVAL);
+        if due {
+            self.last_logged = Some(now);
+            Some(std::mem::take(&mut self.errors_since_log))
+        } else {
+            None
+        }
+    }
+}
+
 /// One authenticated caller: an identifier and its token by reference.
 #[derive(Debug, Clone)]
 pub struct Caller {
@@ -284,13 +325,26 @@ pub async fn run_with(
         .keep_alive_timeout(H2_PING_TIMEOUT)
         // LIM-H4: one connection cannot flood the listener with streams.
         .max_concurrent_streams(settings.max_streams);
+    let mut backoff = AcceptBackoff::default();
     loop {
         let (stream, remote) = tokio::select! {
             _ = shutdown.cancelled() => break,
             accepted = listener.accept() => match accepted {
                 Ok(accepted) => accepted,
                 Err(error) => {
-                    tracing::warn!(event = "accept_failed", error = %error, "accept failed");
+                    if let Some(errors) = backoff.should_log(std::time::Instant::now()) {
+                        tracing::warn!(
+                            event = "accept_failed",
+                            error = %error,
+                            errors_since_last_line = errors,
+                            "accept failed"
+                        );
+                    }
+                    // Wait before trying again, and leave at once on shutdown.
+                    tokio::select! {
+                        _ = shutdown.cancelled() => break,
+                        () = tokio::time::sleep(backoff.delay()) => {}
+                    }
                     continue;
                 }
             },

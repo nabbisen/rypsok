@@ -1432,3 +1432,49 @@ async fn req_sec_022_idle_closes_are_counted_and_not_logged() {
     );
     s.stop().await;
 }
+
+/// REQ-SEC-018 (handoff 020g, NET-2): after an accept error the loop waits
+/// 100 ms, and the error is logged at most once per 10 s, with the number of
+/// errors since the last line.
+#[test]
+fn req_sec_018_accept_errors_back_off_and_are_logged_once_per_interval() {
+    let start = std::time::Instant::now();
+    let mut backoff = AcceptBackoff::default();
+    assert_eq!(backoff.delay(), Duration::from_millis(100));
+    // The first error is logged, alone.
+    assert_eq!(backoff.should_log(start), Some(1));
+    // Errors inside the interval are counted, not logged.
+    for second in 1..10u64 {
+        assert_eq!(
+            backoff.should_log(start + Duration::from_secs(second)),
+            None
+        );
+    }
+    // The first error at or after 10 s is logged with the nine before it
+    // and itself: 9 suppressed (seconds 1 to 9) + 1.
+    assert_eq!(
+        backoff.should_log(start + Duration::from_secs(10)),
+        Some(10)
+    );
+    // The count starts again, and so does the interval.
+    assert_eq!(backoff.should_log(start + Duration::from_secs(11)), None);
+    assert_eq!(backoff.should_log(start + Duration::from_secs(19)), None);
+    assert_eq!(backoff.should_log(start + Duration::from_secs(20)), Some(3));
+}
+
+/// REQ-SEC-018: a clock that does not move forward never logs twice, and the
+/// delay does not depend on the history.
+#[test]
+fn req_sec_018_accept_backoff_survives_a_clock_that_stands_still() {
+    let now = std::time::Instant::now();
+    let mut backoff = AcceptBackoff::default();
+    assert_eq!(backoff.should_log(now), Some(1));
+    for _ in 0..1000 {
+        assert_eq!(backoff.should_log(now), None);
+        assert_eq!(backoff.delay(), Duration::from_millis(100));
+    }
+    assert_eq!(
+        backoff.should_log(now + ACCEPT_ERROR_LOG_INTERVAL),
+        Some(1001)
+    );
+}
