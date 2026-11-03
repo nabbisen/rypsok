@@ -32,6 +32,12 @@ announced here with both values.
   deployment page now advises `LimitNOFILE` of at least `max_connections` + 64.
 - The `Bearer` scheme of the `Authorization` header is matched without
   regard to case (RFC 9110), followed by one or more spaces.
+- A page nested hundreds of thousands of levels deep no longer holds the two
+  parse permits for ten seconds or more and keeps unrelated fetches waiting:
+  the nesting bound (LIM-F11, 256) is enforced while the page is parsed, as the
+  node bound is, because the HTML parser's time grew with the square of the
+  depth. A release build parses a page nested 100,000 deep in under a
+  millisecond (before: about 17 s for 80,000).
 
 ### Changed
 
@@ -57,6 +63,10 @@ announced here with both values.
   (no timestamp in the header), so that two builds of one commit give the same
   binary. The release notes name the compiler. No change to the files a
   release carries.
+- A page deeper than 256 levels is now read in part where it was read in
+  full: the text after the deep part is not returned, and the answer carries
+  the `extraction_partial` notice. LIM-F11 is a fixed limit (it was listed as
+  configurable and has no configuration key).
 
 ## [0.8.0] — 2026-10-29 — Corrections from the first independent review
 

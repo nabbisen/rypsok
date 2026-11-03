@@ -612,7 +612,9 @@ Malformed HTML shall yield partial content with the notice
 `extraction_partial`, or, when nothing can be extracted, the error
 `unsupported_content` with the reason `extraction_failed`; never a process
 failure. Parsing shall stop at LIM-F10 nodes or LIM-F11
-levels of nesting. (R-04)
+levels of nesting: both bounds are enforced while the document is parsed, so
+that a deeply nested page cannot occupy a parse permit for longer than a
+shallow one. (R-04, RFC 020 D-3)
 
 ### REQ-PAGE-007 Charset handling — M3 · T
 Documents shall be decoded according to the declared charset, with detection

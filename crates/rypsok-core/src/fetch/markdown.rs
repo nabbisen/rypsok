@@ -246,6 +246,13 @@ pub fn render(dom: &Dom, root: Handle, excluded: &HashSet<Handle>, options: Opti
                 if excluded.contains(&h) {
                     continue;
                 }
+                // Defense in depth. A page that came through `dom::parse` is
+                // cut at LIM-F11 while it is parsed (RFC 020 D-3), but the
+                // chunk that held the first element past the bound is
+                // already in the tree, so up to a chunk of elements can lie
+                // deeper: this check, counted from the root of the
+                // rendering, cuts them. It also bounds a tree that was built
+                // some other way.
                 if depth > options.max_depth {
                     depth_truncated = true;
                     continue;

@@ -54,7 +54,7 @@ it.
 | LIM-F8 | Ports | 80, 443 | operator | M-07 |
 | LIM-F9 | Length of `url` | 2048 characters | 256–8192 | — |
 | LIM-F10 | HTML nodes parsed | 100000 | operator | R-04 |
-| LIM-F11 | HTML nesting depth at rendering | 256 | operator | R-04 |
+| LIM-F11 | HTML nesting depth; enforced while parsing, a deeper page is read in part | 256 | fixed | R-04; RFC 020 D-3 |
 | LIM-F12 | robots.txt kept in memory | 24 hours | ≤ 24 hours | RFC 9309 §2.4 |
 | LIM-F13 | Size of a robots.txt read | 512 KiB | operator | Parser bound |
 | LIM-F14 | URLs remembered for strict mode | 10000 | operator | REQ-SEC-021; bounded memory (RFC 011) |

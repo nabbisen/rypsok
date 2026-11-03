@@ -832,6 +832,74 @@ async fn req_page_006_node_bomb_over_the_network_is_partial() {
     );
 }
 
+/// REQ-SEC-012 and REQ-PAGE-006 (RFC 020 D-3, NET-5): two pages nested
+/// 100,000 deep, on two hosts and fetched at once, do not keep a small page
+/// on a third host waiting. `html5ever` scans its stack of open elements, so
+/// the parse took time with the square of the depth and held the parse
+/// permits (LIM-C5) for 10 to 13 s in a release build; the depth bound ends
+/// the parse in milliseconds. The deep pages end `partial` or
+/// `extraction_failed`, never `deadline`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn req_sec_012_deep_pages_on_two_hosts_do_not_starve_a_third() {
+    let h = harness().await;
+    let deep = format!(
+        "<html><head><title>Deep</title></head><body><main><p>The start of the deep page, long enough to be read as its content and not as chrome around it.</p>{}x</main></body></html>",
+        "<div>".repeat(100_000)
+    );
+    for name in ["/deep-a", "/deep-b"] {
+        Mock::given(method("GET"))
+            .and(path(name))
+            .respond_with(page(&deep))
+            .mount(&h.server)
+            .await;
+    }
+    Mock::given(method("GET"))
+        .and(path("/tiny"))
+        .respond_with(page(ARTICLE))
+        .mount(&h.server)
+        .await;
+    let on = |host: &str, route: &str| h.url(route).replace("127.0.0.1", host);
+    let (deep_a, deep_b, tiny) = (
+        on("a.example", "/deep-a"),
+        on("b.example", "/deep-b"),
+        on("c.example", "/tiny"),
+    );
+    let deep_pages = async { tokio::join!(h.fetch(&deep_a), h.fetch(&deep_b)) };
+    let small_page = async {
+        // The deep pages are downloaded and being parsed by now.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let started = std::time::Instant::now();
+        let result = h.fetch(&tiny).await;
+        (result, started.elapsed())
+    };
+    let ((first, second), (small, waited)) = tokio::join!(deep_pages, small_page);
+    let small = small.expect("the small page is answered");
+    assert_eq!(small.title, "Hello");
+    assert!(
+        waited < Duration::from_secs(2),
+        "the small page waited {waited:?}"
+    );
+    for (name, result) in [("deep-a", first), ("deep-b", second)] {
+        match result {
+            Ok(response) => {
+                assert!(
+                    response
+                        .notices
+                        .iter()
+                        .any(|n| n.code == NoticeCode::ExtractionPartial),
+                    "{name}: a page cut at the depth bound is partial"
+                );
+                assert!(response.content.contains("The start of the deep page"));
+            }
+            Err(error) => assert_eq!(
+                error.detail.reason,
+                Some(DetailReason::ExtractionFailed),
+                "{name}: {error:?}"
+            ),
+        }
+    }
+}
+
 /// REQ-FETCH-003: `max_chars` defaults to LIM-F1, is bounded by the
 /// configured ceiling, and cuts at a character boundary with `truncated`.
 #[tokio::test]

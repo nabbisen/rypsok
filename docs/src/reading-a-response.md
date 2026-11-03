@@ -28,7 +28,7 @@ list; the agent never needs to parse free text.
 | `instruction_like_content` (with `count`) | A result carries text that looks like an instruction; it was kept, and it is data |
 | `credential_masked` (with `count`) | The query carried what looked like a secret and it was masked (only when the operator chose masking) |
 | `from_cache` (with `engine`) | That engine's answer came from the cache and may be a few minutes old |
-| `extraction_partial` (`web_fetch`) | The page was larger than rypsok reads and was read in part |
+| `extraction_partial` (`web_fetch`) | The page was larger than rypsok reads, or nested deeper than it reads (256 levels), and was read in part: what comes before the cut is returned, what comes after is not |
 
 | Suggests another call | It means | What to do |
 |---|---|---|

@@ -122,8 +122,9 @@ render are excluded; links keep absolute `http(s)` targets, images
 contribute their alternative text. `truncated` says whether content
 remains; `next_start_char` is where to continue. A continuation fetches
 the page again. Notices: `title_truncated`, `characters_removed`,
-`extraction_partial` (the document hit the node or depth bound and was
-read in part), `instruction_like_content`.
+`extraction_partial` (the document hit the node or depth bound, 100000
+nodes or 256 levels, and was read in part: the content before the cut is
+returned), `instruction_like_content`.
 
 Budgets count Unicode scalar values; Japanese text costs several times
 more tokens per character than English text, so the same `max_chars`

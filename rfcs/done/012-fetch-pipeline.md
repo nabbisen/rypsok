@@ -355,3 +355,22 @@ check and the hop count, and the verdict of a known origin is cached
 the redirecting URL (it was allowed); only the target is refused, as
 `denied`/`robots_txt`. With `robots_txt = false` nothing is checked, as before.
 REQ-CMP-005 now says "every URL fetched, including each redirect target".
+
+## Amendment to RFC 012 (2026-11-03, RFC 020 D-3, NET-5)
+
+"Parsing under bounds" said that the parser, past LIM-F10, "runs to the end of
+the input without growing the tree (bounded by LIM-F3 bytes, linear time)",
+and that the depth is enforced by the extractor's traversal. Both were wrong.
+The code stops feeding the parser at the next chunk boundary once the node
+bound is reached, and **the time of a parse is not linear in the depth**:
+`html5ever` scans its stack of open elements on many tokens, so 10,000 nested
+`div` took 0.12 s, 40,000 took 1.9 s and 80,000 took 7.8 s (release build)
+while the node bound stopped nothing, and the blocking task held the parse
+permits (LIM-C5) for 10 to 13 s. The depth is now bounded **while parsing**:
+the sink knows the depth of every element it attaches, also where the parser
+moves a subtree, and when an element is deeper than LIM-F11 it records
+`depth_exceeded`; the feed loop stops at the next chunk boundary exactly as
+for the node bound, and the document is `partial` with the notice
+`extraction_partial`. What was parsed before the cut is extracted. The depth
+check of the renderer and of the extractor stays as defense in depth. LIM-F11
+is a fixed limit (no configuration key).
