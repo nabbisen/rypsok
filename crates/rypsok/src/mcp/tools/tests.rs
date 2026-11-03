@@ -273,3 +273,49 @@ fn req_mcp_008_the_web_fetch_description_is_the_designs() {
     );
     assert!(WEB_FETCH_DESCRIPTION.contains("starting at `start_char`"));
 }
+
+/// REQ-MCP-011 (RFC 020, DAT-6): the whole `tools/list` result of a fixed
+/// reference configuration (two languages, two categories, `engine_status`
+/// enabled, the default limits) is a committed fixture: the three tools with
+/// their descriptions, their input schemas (names, types, bounds, defaults
+/// and enumerations), their annotations and their output schemas. Together
+/// with the three response fixtures this makes the sentence of the stability
+/// page true: a change to a tool definition cannot pass unnoticed. Write the
+/// file with `RYPSOK_UPDATE_FIXTURES=1` after reading the diff.
+#[test]
+fn req_mcp_011_tools_list_matches_the_fixture() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("fixtures")
+        .join("schemas")
+        .join("tools_list.json");
+    let tools = tool_list(&policy(&["en", "ja"]), &Limits::default(), true);
+    let result = rmcp::model::ListToolsResult::with_all_items(tools);
+    let rendered = serde_json::to_string_pretty(&result).unwrap() + "\n";
+    if std::env::var_os("RYPSOK_UPDATE_FIXTURES").is_some() {
+        std::fs::write(&path, &rendered).unwrap();
+    }
+    let expected = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!(
+            "{}: {e} (set RYPSOK_UPDATE_FIXTURES=1 to write it)",
+            path.display()
+        )
+    });
+    assert_eq!(
+        expected.replace("\r\n", "\n"),
+        rendered,
+        "{} changed; review it and set RYPSOK_UPDATE_FIXTURES=1 to accept",
+        path.display()
+    );
+    // The fixture says what it must: three tools, each with an input
+    // schema (engine_status has no parameters), annotations and an output
+    // schema.
+    let value: Value = serde_json::from_str(&rendered).unwrap();
+    let tools = value["tools"].as_array().unwrap();
+    assert_eq!(tools.len(), 3);
+    for tool in tools {
+        assert!(tool["description"].is_string(), "{tool}");
+        assert_eq!(tool["inputSchema"]["type"], "object", "{tool}");
+        assert!(tool["annotations"]["readOnlyHint"].is_boolean(), "{tool}");
+        assert!(tool["outputSchema"].is_object(), "{tool}");
+    }
+}
