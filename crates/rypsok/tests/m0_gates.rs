@@ -5,6 +5,10 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod workflow_yaml;
+
+use workflow_yaml::Yaml;
+
 fn repository_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
@@ -104,34 +108,369 @@ fn req_sec_020_supply_chain_policy_and_unsafe_forbidden() {
     }
 }
 
+/// A workflow file, parsed.
+fn workflow(name: &str) -> Yaml {
+    workflow_yaml::parse(&read(&format!(".github/workflows/{name}")))
+}
+
+/// The four workflow files by name.
+fn workflow_names() -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(repository_root().join(".github/workflows"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.ends_with(".yml"))
+        .collect();
+    names.sort();
+    names
+}
+
+/// The jobs of a workflow, by id.
+fn jobs(workflow: &Yaml) -> &[(String, Yaml)] {
+    workflow.get("jobs").expect("a workflow has jobs").entries()
+}
+
+/// Every line of every `run` of a workflow, trimmed.
+fn run_lines(workflow: &Yaml) -> Vec<String> {
+    workflow
+        .find_all("run")
+        .iter()
+        .filter_map(|run| run.scalar())
+        .flat_map(|text| text.lines().map(|line| line.trim().to_owned()))
+        .collect()
+}
+
+/// `1.2` or `1.2.3`: a version, not a moving name.
+fn is_version(text: &str) -> bool {
+    let parts: Vec<&str> = text.split('.').collect();
+    (2..=3).contains(&parts.len())
+        && parts
+            .iter()
+            .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+}
+
 /// REQ-TEST-012: the CI workflow runs every gate of RFC 002 on every change.
+/// The gates are looked for in the `run` lines of the parsed workflow, not in
+/// its text, so a gate that is only mentioned in a comment does not count.
 #[test]
 fn req_test_012_ci_workflow_lists_every_gate() {
-    let ci = read(".github/workflows/ci.yml");
+    let ci = workflow("ci.yml");
+    let runs = run_lines(&ci);
     for gate in [
         "cargo fmt --all --check",
-        "cargo clippy --workspace --all-targets -- -D warnings",
-        "cargo test --workspace",
+        "cargo clippy --workspace --all-targets --locked -- -D warnings",
+        "cargo test --workspace --locked",
         "tools/check-core-dependencies",
         "tools/check-requirements-coverage",
         "tools/check-limits",
         "cargo deny check advisories bans licenses sources",
-        "cargo doc --workspace --no-deps",
+        "cargo doc --workspace --no-deps --locked",
         "mdbook build docs",
     ] {
-        assert!(ci.contains(gate), "ci.yml lacks the gate `{gate}`");
+        assert!(
+            runs.iter().any(|line| line == gate),
+            "ci.yml has no step that runs the gate `{gate}`"
+        );
     }
-    assert!(ci.contains("pull_request"), "ci.yml runs on pull requests");
-    assert!(ci.contains("push"), "ci.yml runs on pushes");
-    for os in ["ubuntu-latest", "macos-latest", "windows-latest"] {
-        assert!(ci.contains(os), "ci.yml runs on {os}");
+    let on = ci.get("on").expect("ci.yml has triggers");
+    assert!(
+        on.get("pull_request").is_some(),
+        "ci.yml runs on pull requests"
+    );
+    assert!(on.get("push").is_some(), "ci.yml runs on pushes");
+    let matrix = ci.at(&["jobs", "test", "strategy", "matrix"]).unwrap();
+    let os: Vec<&str> = matrix
+        .get("os")
+        .unwrap()
+        .items()
+        .iter()
+        .filter_map(Yaml::scalar)
+        .collect();
+    for wanted in ["ubuntu-latest", "macos-latest", "windows-latest"] {
+        assert!(os.contains(&wanted), "ci.yml runs on {wanted}");
     }
-    assert!(ci.contains("1.88"), "ci.yml tests the MSRV");
+    let msrv = matrix
+        .get("include")
+        .unwrap()
+        .items()
+        .iter()
+        .any(|entry| entry.get("toolchain").and_then(Yaml::scalar) == Some("1.88"));
+    assert!(msrv, "ci.yml tests the MSRV");
     let lints = read("Cargo.toml");
     assert!(
         lints.contains("print_stdout = \"deny\""),
         "the lint that forbids printing to stdout is on"
     );
+}
+
+/// RFC 020 (DEP-5, DEP-6): every workflow declares `permissions`, and at the
+/// workflow level they only read; a job writes only what this table allows.
+#[test]
+fn req_sec_020_every_workflow_declares_least_permissions() {
+    // (workflow, job, the permissions the job may write)
+    const MAY_WRITE: [(&str, &str, &[&str]); 2] = [
+        ("docs.yml", "deploy", &["pages", "id-token"]),
+        ("release.yml", "attach", &["contents"]),
+    ];
+    for name in workflow_names() {
+        let file = workflow(&name);
+        let top = file
+            .get("permissions")
+            .unwrap_or_else(|| panic!("{name} declares no top-level `permissions`"));
+        assert_eq!(
+            top.get("contents").and_then(Yaml::scalar),
+            Some("read"),
+            "{name}: the workflow reads the contents and nothing else by default"
+        );
+        for (permission, level) in top.entries() {
+            assert_eq!(
+                level.scalar(),
+                Some("read"),
+                "{name}: `{permission}` is granted to the whole workflow"
+            );
+        }
+        for (job, body) in jobs(&file) {
+            let allowed: &[&str] = MAY_WRITE
+                .iter()
+                .find(|(w, j, _)| *w == name && j == job)
+                .map_or(&[], |(_, _, writes)| writes);
+            let granted: Vec<&str> = body.get("permissions").map_or_else(Vec::new, |p| {
+                p.entries()
+                    .iter()
+                    .filter(|(_, level)| level.scalar() == Some("write"))
+                    .map(|(permission, _)| permission.as_str())
+                    .collect()
+            });
+            for permission in &granted {
+                assert!(
+                    allowed.contains(permission),
+                    "{name}: job `{job}` may not write `{permission}`"
+                );
+            }
+            for permission in allowed {
+                assert!(
+                    granted.contains(permission),
+                    "{name}: job `{job}` should write `{permission}` and holds no such grant"
+                );
+            }
+        }
+    }
+}
+
+/// RFC 020 (DEP-7): a failed scheduled run fails (GitHub notifies the owner)
+/// and a Brave check that cannot run says so.
+#[test]
+fn req_test_003_scheduled_checks_fail_loudly_and_say_when_they_skip() {
+    let scheduled = workflow("scheduled.yml");
+    assert!(
+        scheduled.find_all("continue-on-error").is_empty(),
+        "scheduled.yml: a failed run must fail"
+    );
+    let ids: Vec<&str> = jobs(&scheduled).iter().map(|(id, _)| id.as_str()).collect();
+    assert_eq!(ids, ["fuzz", "live-checks"], "two independent jobs");
+    for (id, body) in jobs(&scheduled) {
+        assert!(body.get("needs").is_none(), "job `{id}` waits for no other");
+    }
+    let steps = scheduled.at(&["jobs", "live-checks", "steps"]).unwrap();
+    let position = |needle: &str| {
+        steps.items().iter().position(|step| {
+            step.get("run")
+                .and_then(Yaml::scalar)
+                .is_some_and(|run| run.contains(needle))
+        })
+    };
+    let warns = position("::warning").expect("a step warns about a missing key");
+    let live = position("--ignored").expect("the live checks run");
+    assert!(warns < live, "the warning comes before the checks");
+    let step = &steps.items()[warns];
+    let run = step.get("run").and_then(Yaml::scalar).unwrap();
+    assert!(
+        run.contains("-z \"$BRAVE_API_KEY\""),
+        "it tests for an empty key"
+    );
+    assert!(
+        run.contains("Brave check skipped: no key") && run.contains("GITHUB_STEP_SUMMARY"),
+        "it writes the skip to the step summary"
+    );
+}
+
+/// RFC 020 (DEP-8): each fuzz target runs 300 s and the job's limit follows
+/// the number of targets (five minutes each and fifteen for the rest).
+#[test]
+fn req_sec_023_every_fuzz_target_runs_300_s_within_a_matching_limit() {
+    let manifest = read("fuzz/Cargo.toml");
+    let declared = manifest.matches("[[bin]]").count();
+    let files = std::fs::read_dir(repository_root().join("fuzz/fuzz_targets"))
+        .unwrap()
+        .count();
+    assert_eq!(
+        declared, files,
+        "every target file is a [[bin]] of fuzz/Cargo.toml"
+    );
+    let scheduled = workflow("scheduled.yml");
+    let fuzz = scheduled.at(&["jobs", "fuzz"]).unwrap();
+    let limit: usize = fuzz
+        .get("timeout-minutes")
+        .and_then(Yaml::scalar)
+        .expect("the fuzz job has a timeout")
+        .parse()
+        .unwrap();
+    assert_eq!(
+        limit,
+        declared * 5 + 15,
+        "timeout-minutes = targets x 5 + 15"
+    );
+    assert!(
+        run_lines(&scheduled)
+            .iter()
+            .any(|line| line.contains("-max_total_time=300")),
+        "each target runs 300 s"
+    );
+}
+
+/// RFC 020 (DEP-3, DEP-5, DEP-13): no tool is installed at a moving version
+/// and the release compiler is a named one.
+#[test]
+fn req_sec_020_tools_and_the_release_compiler_are_pinned() {
+    for name in workflow_names() {
+        let file = workflow(&name);
+        for with in file.find_all("with") {
+            for (key, value) in with.entries() {
+                let Some(text) = value.scalar() else { continue };
+                match key.as_str() {
+                    "tool" => {
+                        for tool in text.split(',').map(str::trim) {
+                            let (_, version) = tool
+                                .split_once('@')
+                                .unwrap_or_else(|| panic!("{name}: tool `{tool}` has no @version"));
+                            assert!(is_version(version), "{name}: tool `{tool}` is not pinned");
+                        }
+                    }
+                    "mdbook-version" => {
+                        assert!(
+                            is_version(text),
+                            "{name}: mdbook-version `{text}` is not pinned"
+                        );
+                    }
+                    _ => assert_ne!(text, "latest", "{name}: `{key}: latest`"),
+                }
+            }
+        }
+    }
+    let release = workflow("release.yml");
+    let toolchains = release.find_all("toolchain");
+    assert!(!toolchains.is_empty(), "the release names a toolchain");
+    for toolchain in toolchains {
+        let text = toolchain.scalar().unwrap();
+        assert!(
+            is_version(text),
+            "release.yml builds with `{text}`, not a named compiler"
+        );
+    }
+}
+
+/// RFC 020 (DEP-9): the cargo commands that build, test, lint or document
+/// use the lock file, in every workflow.
+#[test]
+fn req_test_012_cargo_commands_of_the_workflows_are_locked() {
+    let mut seen = 0;
+    for name in workflow_names() {
+        for line in run_lines(&workflow(&name)) {
+            let mut words = line.split_whitespace();
+            if words.next() != Some("cargo") {
+                continue;
+            }
+            let subcommand = words.find(|word| !word.starts_with('+'));
+            if matches!(subcommand, Some("build" | "test" | "clippy" | "doc")) {
+                seen += 1;
+                assert!(
+                    line.contains("--locked"),
+                    "{name}: `{line}` is not --locked"
+                );
+            }
+        }
+    }
+    assert!(seen >= 5, "{seen} cargo commands found");
+}
+
+/// RFC 020 (DEP-4): the Windows release build links reproducibly.
+#[test]
+fn req_sec_020_the_windows_release_build_links_with_brepro() {
+    let release = workflow("release.yml");
+    let build = release.at(&["jobs", "build"]).unwrap();
+    let windows = build
+        .at(&["strategy", "matrix", "include"])
+        .unwrap()
+        .items()
+        .iter()
+        .find(|entry| entry.get("os").and_then(Yaml::scalar) == Some("windows-latest"))
+        .expect("a Windows entry");
+    assert!(
+        windows
+            .get("rustflags")
+            .and_then(Yaml::scalar)
+            .is_some_and(|flags| flags.contains("link-arg=/Brepro")),
+        "the Windows entry sets /Brepro"
+    );
+    assert_eq!(
+        build.at(&["env", "RUSTFLAGS"]).and_then(Yaml::scalar),
+        Some("${{ matrix.rustflags }}"),
+        "the build takes its flags from the matrix entry"
+    );
+}
+
+/// RFC 020 (handoff 020o): the reader of the workflow files reads what they
+/// use, and refuses what it does not know.
+#[test]
+fn req_sec_020_the_workflow_reader_reads_block_yaml_and_refuses_the_rest() {
+    let text = "\
+# comment
+on:
+  push:
+    tags: [\"[0-9]*\", other]
+jobs:
+  a:
+    steps:
+      - uses: x/y@abc # v1
+        with:
+          tool: t@1.2.3
+      - name: Two
+        run: |
+          echo one # kept
+          echo two
+    list:
+    - plain
+    - key: value
+";
+    let yaml = workflow_yaml::parse(text);
+    let tags: Vec<&str> = yaml
+        .at(&["on", "push", "tags"])
+        .unwrap()
+        .items()
+        .iter()
+        .filter_map(Yaml::scalar)
+        .collect();
+    assert_eq!(tags, ["[0-9]*", "other"]);
+    let steps = yaml.at(&["jobs", "a", "steps"]).unwrap().items();
+    assert_eq!(steps[0].get("uses").and_then(Yaml::scalar), Some("x/y@abc"));
+    assert_eq!(
+        steps[0].at(&["with", "tool"]).and_then(Yaml::scalar),
+        Some("t@1.2.3")
+    );
+    assert_eq!(
+        steps[1].get("run").and_then(Yaml::scalar),
+        Some("echo one # kept\necho two")
+    );
+    let list = yaml.at(&["jobs", "a", "list"]).unwrap().items();
+    assert_eq!(list[0].scalar(), Some("plain"));
+    assert_eq!(list[1].get("key").and_then(Yaml::scalar), Some("value"));
+    for name in workflow_names() {
+        assert!(
+            !jobs(&workflow(&name)).is_empty(),
+            "{name} has jobs once parsed"
+        );
+    }
+    let refused = std::panic::catch_unwind(|| workflow_yaml::parse("a: &anchor 1\n"));
+    assert!(refused.is_err(), "an anchor is refused, not read");
 }
 
 /// REQ-RUST-002: CI builds and tests on Linux, macOS and Windows; the
