@@ -560,6 +560,188 @@ fn req_sec_020_ci_actions_are_pinned() {
     assert!(seen >= 15, "{seen} action references found");
 }
 
+/// The `pub struct` and `pub enum` items of a Rust source file, with whether
+/// the block of doc comments and attributes above each carries
+/// `#[non_exhaustive]`. Only declarations that start a line are read (a
+/// `pub(crate)` item is not public).
+fn public_types(source: &str) -> Vec<(String, bool)> {
+    let lines: Vec<&str> = source.lines().collect();
+    let mut found = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        let trimmed = line.trim_start();
+        let Some(rest) = trimmed
+            .strip_prefix("pub struct ")
+            .or_else(|| trimmed.strip_prefix("pub enum "))
+        else {
+            continue;
+        };
+        if line.len() != trimmed.len() {
+            continue; // indented: inside a module or an impl, not a top-level item
+        }
+        let name: String = rest
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        let mut exhaustive_marker = false;
+        for above in lines[..index].iter().rev() {
+            if above.trim().is_empty() {
+                break;
+            }
+            if above.trim() == "#[non_exhaustive]" {
+                exhaustive_marker = true;
+            }
+        }
+        found.push((name, exhaustive_marker));
+    }
+    found
+}
+
+/// The entries of the first fenced block after the heading that contains
+/// `heading` in a page: the name before a `:` or a space, per line.
+fn page_list(page: &str, heading: &str) -> Vec<String> {
+    let after = page
+        .split_once(heading)
+        .unwrap_or_else(|| panic!("the page has no heading `{heading}`"))
+        .1;
+    let block = after
+        .split("```")
+        .nth(1)
+        .unwrap_or_else(|| panic!("no fenced list after `{heading}`"));
+    block
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with("text"))
+        .map(|l| {
+            l.split([':', ' '])
+                .next()
+                .expect("a line has a first part")
+                .to_owned()
+        })
+        .collect()
+}
+
+/// REQ-ARCH-007 and RFC 016 (RFC 020, DAT-5): the stability page lists the
+/// public types of the frozen surface of `rypsok-core` (the facade and the
+/// `model` module) in two fenced lists, and the source agrees with them. The
+/// types that carry `#[non_exhaustive]` are exactly the first list; every
+/// other public type of the surface is on the second, "deliberately
+/// exhaustive", with a reason. A type added to `model` fails this test until
+/// it is on one of the lists.
+#[test]
+fn req_arch_007_stability_page_lists_match_the_source() {
+    let mut sources = vec![read("crates/rypsok-core/src/lib.rs")];
+    sources.push(read("crates/rypsok-core/src/model.rs"));
+    let model_dir = repository_root().join("crates/rypsok-core/src/model");
+    for entry in std::fs::read_dir(&model_dir).unwrap() {
+        let path = entry.unwrap().path();
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        if name.ends_with(".rs") && name != "tests.rs" {
+            sources.push(read(&format!("crates/rypsok-core/src/model/{name}")));
+        }
+    }
+    let mut all = std::collections::BTreeSet::new();
+    let mut marked = std::collections::BTreeSet::new();
+    for source in &sources {
+        for (name, non_exhaustive) in public_types(source) {
+            all.insert(name.clone());
+            if non_exhaustive {
+                marked.insert(name);
+            }
+        }
+    }
+    assert!(all.len() >= 30, "{} public types found", all.len());
+    assert!(all.contains("Rypsok") && all.contains("SearchResponse"));
+
+    let page = read("docs/src/reference/stability.md");
+    let listed_marked: std::collections::BTreeSet<String> =
+        page_list(&page, "### Types marked `#[non_exhaustive]`")
+            .into_iter()
+            .collect();
+    let listed_exhaustive: std::collections::BTreeSet<String> =
+        page_list(&page, "### Types that are deliberately exhaustive")
+            .into_iter()
+            .collect();
+    assert_eq!(
+        listed_marked, marked,
+        "the page's list of `#[non_exhaustive]` types equals the source"
+    );
+    let unmarked: std::collections::BTreeSet<String> = all.difference(&marked).cloned().collect();
+    assert_eq!(
+        listed_exhaustive, unmarked,
+        "every other public type of the surface is on the exhaustive list, and nothing else"
+    );
+    for named in [
+        "Outcome",
+        "ErrorKind",
+        "CallError",
+        "EngineState",
+        "TimeRange",
+    ] {
+        assert!(
+            listed_exhaustive.contains(named),
+            "{named} is deliberately exhaustive (RFC 016 amendment)"
+        );
+    }
+    // Each exhaustive entry says why.
+    let exhaustive_block = page
+        .split_once("### Types that are deliberately exhaustive")
+        .unwrap()
+        .1
+        .split("```")
+        .nth(1)
+        .unwrap();
+    for line in exhaustive_block
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with("text"))
+    {
+        let (_, reason) = line
+            .split_once(": ")
+            .unwrap_or_else(|| panic!("`{line}` gives no reason after a colon"));
+        assert!(reason.len() >= 10, "`{line}`: the reason is too short");
+    }
+}
+
+/// RFC 020 (DAT-5): the scanner of the test above reads what it must.
+#[test]
+fn req_arch_007_the_type_scanner_reads_attributes_and_ignores_the_rest() {
+    let source = "\
+/// Doc.
+#[derive(
+    Debug,
+    Clone,
+)]
+#[non_exhaustive]
+pub struct Marked {
+    a: u8,
+}
+
+/// Doc.
+#[derive(Debug)]
+pub enum Open {
+    A,
+}
+
+#[non_exhaustive]
+
+pub struct SeparatedByABlankLine;
+
+pub(crate) struct Hidden;
+
+mod inner {
+    pub struct Indented;
+}
+";
+    assert_eq!(
+        public_types(source),
+        vec![
+            ("Marked".to_owned(), true),
+            ("Open".to_owned(), false),
+            ("SeparatedByABlankLine".to_owned(), false),
+        ]
+    );
+}
+
 /// REQ-DOC-001 (RFC 019 D7): every page of the book is in its summary, so
 /// that no page is built without a way to reach it and no link in another
 /// page leads to a file the book does not publish.

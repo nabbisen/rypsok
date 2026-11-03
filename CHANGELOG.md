@@ -134,6 +134,15 @@ announced here with both values.
   sixteen-character tail (an `ASIA` followed by a 16-letter word has none); one
   beginning `AKIA` does not. The Slack, OpenAI, Stripe, JWT and Bearer shapes
   are stricter (the real format, not any run of letters).
+- The stability page now says what the code holds about `rypsok-core`
+  (D-11): the frozen surface is the facade (`Rypsok`) and the types of the
+  `model` module; the other public items of the crate are public for the
+  `rypsok` crate and are outside the promise until 1.0.0 decides what else is
+  frozen. The page lists the types that are `#[non_exhaustive]` and the
+  types that are deliberately exhaustive (`Outcome`, `ErrorKind`,
+  `CallError`, `EngineState`, `TimeRange` and the validated identifiers), and
+  a test keeps the lists equal to the source. It used to say that all public
+  types are `#[non_exhaustive]`, which 16 of the surface's types are.
 
 ## [0.8.0] — 2026-10-29 — Corrections from the first independent review
 

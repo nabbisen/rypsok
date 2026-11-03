@@ -15,7 +15,7 @@ may change, so that nobody builds on a detail the project never promised.
 | Protocol | MCP over stdio and over Streamable HTTP; the revisions served (2026-07-28 and the handshake-based revisions the SDK serves); the path `/mcp`; the statuses and who answers them: the gate answers 401, 404, 408, 413 and 503, the pinned SDK answers 400, 403 and 406, hyper answers 431 for a header block above LIM-H7, and an SDK upgrade that changes one of them is a contract change; the per-request headers of the 2026-07-28 revision; nothing on stdout but protocol messages | A new revision | Dropping a served revision; the path; a status's meaning |
 | Configuration | `config_version = 1`: every key's name, type and meaning; unknown keys refused; secrets by reference only | A new key with a default; a new driver type; a wider range | A key's name, type or meaning; a narrower range; `config_version = 2` |
 | Command line | `serve --transport stdio\|http`, `check`, `--version`, `--config`, `RYPSOK_CONFIG`; exit codes 0 (success), 1 (configuration), 2 (usage); `serve` writes nothing to stdout | A new subcommand or flag | A subcommand's or flag's meaning; an exit code |
-| `rypsok-core` | The documented public interface, under Rust semantic versioning; the public types are `#[non_exhaustive]` and grow through new fields, variants and setters | New items, fields, variants and setters | Anything `cargo semver-checks` reports as breaking |
+| `rypsok-core` | The facade (`Rypsok` and its three services, `search`, `fetch` and `status`) and the types of the `model` module, under Rust semantic versioning; the types marked `#[non_exhaustive]` (listed [below](#the-public-types-of-rypsok-core)) grow through new fields, variants and setters. The other public items of the crate are public so that the `rypsok` command-line crate can use them: they are **not** part of the promise until the maintainer decides, before 1.0.0, what else is frozen | New items; new fields, variants and setters on the types marked below | Anything `cargo semver-checks` reports as breaking in the facade or in the `model` types |
 
 ## What may change, and how you learn of it
 
@@ -42,10 +42,65 @@ may change, so that nobody builds on a detail the project never promised.
 - **The protocol SDK.** `rmcp` is pinned to an exact version. An upgrade
   that changes nothing on this page is a patch version.
 
+## The public types of `rypsok-core`
+
+The frozen surface of `rypsok-core` is the facade and the `model` module.
+Not every public type there is `#[non_exhaustive]`, and the page does not
+say so: it lists which are and which are not. A test reads the source and
+fails when either list differs from it, so a type added to `model` has to be
+put on one of them.
+
+### Types marked `#[non_exhaustive]`
+
+These grow through new fields, variants and setters in a minor version.
+
+```text
+Category
+DetailReason
+DisabledReason
+ErrorDetail
+FetchRequest
+FetchResponse
+EngineStatus
+Notice
+NoticeCode
+Reason
+SearchRequest
+SearchResponse
+SearchResult
+SecretKind
+StatusResponse
+ToolError
+```
+
+### Types that are deliberately exhaustive
+
+A new variant or field of these is a compile error in the code of a host,
+which is what "needs a major version" should feel like. Each has a reason.
+
+```text
+Outcome: the outcomes `ok`, `partial` and `empty` are frozen; a new one is a major version
+ErrorKind: the error kinds are frozen; a new one is a major version
+CallError: the two ways a call ends (an error object, or cancelled); a third is a major version
+EngineState: the circuit states of `engine_status`; a new state is a major version
+TimeRange: the periods `day`, `week`, `month` and `year` of the search parameter
+Decision: the result of the outcome decision table of the external design, which is closed
+ErrorEnvelope: the shape `{"error": …}` of an error response
+Cleaned: a marker with no data, proof that text passed the content boundary
+EngineId: a validated identifier with a private field, so there is nothing to add
+CallerId: a validated identifier with a private field, so there is nothing to add
+Language: a validated language tag with a private field, so there is nothing to add
+Date: a validated date with a private field, so there is nothing to add
+InvalidEngineId: the error of the validating constructor, which has no fields
+InvalidLanguage: the error of the validating constructor, which has no fields
+InvalidDate: the error of the validating constructor, which has no fields
+Rypsok: the facade; its fields are private and it grows through methods
+```
+
 ## How a breaking change is caught
 
-A schema fixture test compares every tool definition and every response
-schema with the committed fixtures, so a change to the contract cannot
-pass unnoticed; from the first commit after 1.0.0 a CI job runs
+A fixture test compares the whole `tools/list` result (every tool's
+description, input schema and annotations) and every response schema with the
+committed fixtures, so a change to the contract cannot pass unnoticed; from the first commit after 1.0.0 a CI job runs
 `cargo semver-checks` against the latest published crates. Every
 intentional change to this page is an RFC.

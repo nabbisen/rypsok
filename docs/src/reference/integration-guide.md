@@ -92,7 +92,8 @@ there is nothing to return. A host that assembles its own `Registry` and
 `FetchService` shares the parsing permits between them with
 `FetchService::with_parsing`, as `Rypsok::from_parts` does, so that one
 bound (LIM-C5) holds for the process. From 1.0.0 the interface follows
-the [stability page](./stability.md): the public types are
-`#[non_exhaustive]` and grow through new fields, variants and setters,
-so match them with a wildcard arm and build requests and driver types
-through their constructors.
+the [stability page](./stability.md): the facade and the `model` types
+are the frozen surface, and the types that page lists as `#[non_exhaustive]`
+grow through new fields, variants and setters, so match them with a wildcard
+arm and build requests and driver types through their constructors. The
+other public items of the crate are not part of the promise before 1.0.0.
