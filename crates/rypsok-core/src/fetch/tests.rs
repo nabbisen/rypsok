@@ -380,6 +380,123 @@ async fn req_fetch_006_redirect_table() {
     );
 }
 
+/// How many requests the mock server received for `path`.
+async fn requests_for(server: &MockServer, path: &str) -> usize {
+    server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|request| request.url.path() == path)
+        .count()
+}
+
+/// REQ-CMP-005 (D-1 of the audit, NET-3): the target of every redirect hop
+/// is checked against robots.txt, the same host included. The verdict of the
+/// origin is cached, so the check costs no request. The first request has
+/// gone to the redirecting URL (allowed); only the target is refused.
+#[tokio::test]
+async fn req_cmp_005_every_redirect_target_is_checked_against_robots_txt() {
+    let mut h = harness().await;
+    Mock::given(method("GET"))
+        .and(path("/robots.txt"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_string("User-agent: *\nDisallow: /private\n"),
+        )
+        .mount(&h.server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/private"))
+        .respond_with(page(ARTICLE))
+        .mount(&h.server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/ok"))
+        .respond_with(page(ARTICLE))
+        .mount(&h.server)
+        .await;
+    for (from, to) in [
+        ("/start-same", "/private"),
+        ("/to-allowed", "/ok"),
+        ("/hop-a", "/hop-b"),
+        ("/hop-b", "/private"),
+    ] {
+        Mock::given(method("GET"))
+            .and(path(from))
+            .respond_with(ResponseTemplate::new(302).insert_header("location", to))
+            .mount(&h.server)
+            .await;
+    }
+
+    // The path itself is disallowed, directly ...
+    let direct = h.fetch(&h.url("/private")).await.unwrap_err();
+    assert_eq!(direct.detail.reason, Some(DetailReason::RobotsTxt));
+    // ... and as the target of a same-host redirect.
+    let via_redirect = h.fetch(&h.url("/start-same")).await.unwrap_err();
+    assert_eq!(via_redirect.kind, ErrorKind::Denied);
+    assert_eq!(via_redirect.detail.reason, Some(DetailReason::RobotsTxt));
+    // The redirecting URL was requested (it is allowed); the target never.
+    assert_eq!(requests_for(&h.server, "/start-same").await, 1);
+    assert_eq!(requests_for(&h.server, "/private").await, 0);
+
+    // A same-host hop to an allowed path still returns the page.
+    let allowed = h.fetch(&h.url("/to-allowed")).await.unwrap();
+    assert_eq!(allowed.url, h.url("/ok"));
+
+    // A chain A -> B -> C is refused at C, after A and B were requested.
+    let chain = h.fetch(&h.url("/hop-a")).await.unwrap_err();
+    assert_eq!(chain.detail.reason, Some(DetailReason::RobotsTxt));
+    assert_eq!(requests_for(&h.server, "/hop-a").await, 1);
+    assert_eq!(requests_for(&h.server, "/hop-b").await, 1);
+    assert_eq!(requests_for(&h.server, "/private").await, 0);
+
+    // The verdict of the origin is cached: five fetches, one robots.txt read.
+    assert_eq!(requests_for(&h.server, "/robots.txt").await, 1);
+    assert_eq!(h.counters.refusals_of("web_fetch", "robots_txt"), 3);
+
+    // With the check off, the redirect to the disallowed path returns the page.
+    h.robots_txt = false;
+    let page = h.fetch(&h.url("/start-same")).await.unwrap();
+    assert_eq!(page.url, h.url("/private"));
+    assert_eq!(requests_for(&h.server, "/robots.txt").await, 1);
+}
+
+/// REQ-CMP-005 (D-1): the cross-host cases are as before: with following
+/// off the target is `redirected` (robots.txt is not asked about it), with
+/// following on its own origin's robots.txt decides.
+#[tokio::test]
+async fn req_cmp_005_cross_host_redirects_keep_their_behaviour() {
+    let mut h = harness().await;
+    let other = h.url("/private").replace("127.0.0.1", "mirror.example");
+    Mock::given(method("GET"))
+        .and(path("/robots.txt"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("User-agent: *\nAllow: /\n"))
+        .mount(&h.server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/cross"))
+        .respond_with(ResponseTemplate::new(302).insert_header("location", other.as_str()))
+        .mount(&h.server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/private"))
+        .respond_with(page(ARTICLE))
+        .mount(&h.server)
+        .await;
+    let off = h.fetch(&h.url("/cross")).await.unwrap_err();
+    assert_eq!(off.kind, ErrorKind::Redirected);
+    assert_eq!(off.detail.location.as_deref(), Some(other.as_str()));
+    // One robots.txt read: the origin of the first URL.
+    assert_eq!(requests_for(&h.server, "/robots.txt").await, 1);
+
+    h.follow_cross_host_redirects = true;
+    let on = h.fetch(&h.url("/cross")).await.unwrap();
+    assert_eq!(on.url, other);
+    // The other origin's robots.txt was read too (the mock server answers
+    // for both names): two reads in all.
+    assert_eq!(requests_for(&h.server, "/robots.txt").await, 2);
+}
+
 /// REQ-FETCH-011: a 4xx or 5xx ends the call with `unavailable` and the
 /// status; the body is never returned.
 #[tokio::test]

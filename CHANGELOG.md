@@ -42,6 +42,10 @@ announced here with both values.
   the header list on HTTP/2) is bounded at 16 KiB, a new fixed limit LIM-H7.
   A larger block is now answered 431 (HTTP/2: the connection is closed); hyper's
   default for HTTP/1 was about 400 KB.
+- A redirect target is checked against robots.txt on the same host too (it
+  was only checked on another host). A call whose redirect target robots.txt
+  disallows now answers `denied`/`robots_txt` where it returned the page.
+  The verdict of the origin is cached, so the check costs no request.
 - The release binaries are built with a named compiler (1.99.1) instead of
   the day's `stable`, and the Windows executable is linked with `/Brepro`
   (no timestamp in the header), so that two builds of one commit give the same

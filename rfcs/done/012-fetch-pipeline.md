@@ -342,3 +342,16 @@ answer describes an intention, not the code: the pipeline returns
 `unavailable`/`http_status` before reading the body, which is the safer
 reading (nothing of an error page is read at all). The sentence is
 corrected to that.
+
+## Amendment to RFC 012 (2026-11-03, RFC 020 D-1, NET-3)
+
+The redirect table (Request, redirects and status) is read with one more
+rule: **the target of every followed hop passes robots.txt, the same host
+included.** The table did not say it, and the code skipped the check when the
+target had the host of the hop it left, so a redirect on the same host carried
+the call to a path robots.txt disallows. The check runs after the policy
+check and the hop count, and the verdict of a known origin is cached
+(LIM-F12), so a same-host hop costs no request. The first request has gone to
+the redirecting URL (it was allowed); only the target is refused, as
+`denied`/`robots_txt`. With `robots_txt = false` nothing is checked, as before.
+REQ-CMP-005 now says "every URL fetched, including each redirect target".

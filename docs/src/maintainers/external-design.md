@@ -382,7 +382,7 @@ Two profiles, applied by one component (REQ-SEC-005).
 | Milestone | M3 | M1 |
 | Byte limit | LIM-F3 while streaming | Driver-declared bound |
 | Timeouts | LIM-F6, LIM-F4 | LIM-S5 |
-| robots.txt | Honored (REQ-CMP-005) unless disabled | Not applicable |
+| robots.txt | Honored (REQ-CMP-005) unless disabled, for the URL and for every redirect target, the same host included | Not applicable |
 
 The profile cannot be relaxed by a caller. Operators relax it only through
 explicit allow rules in configuration (Principle P4).

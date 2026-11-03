@@ -536,7 +536,11 @@ async fn network(
             if hops > limits.fetch_max_redirects {
                 return Err(ToolError::network());
             }
-            if !same_host && p.robots_txt {
+            // Every hop, the same host included (REQ-CMP-005): a redirect
+            // must not carry the call past a path robots.txt disallows. The
+            // verdict of a known origin is cached, so a same-host hop costs
+            // no request.
+            if p.robots_txt {
                 let decision = p
                     .service
                     .robots

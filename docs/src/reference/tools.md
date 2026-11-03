@@ -134,7 +134,8 @@ call with `unsupported_content` naming it. A 4xx or 5xx answer is
 `unavailable` with the status and never content. A redirect to another
 host is returned as `redirected` with the target, not followed, unless the
 operator configured following. The site's robots.txt is honored for the
-product token `rypsok` and `*`; a disallowed page is `denied`.
+product token `rypsok` and `*`; a disallowed page is `denied`, and so is a
+page that a redirect leads to (on the same host or another).
 
 rypsok returns the main content of one page, bounded by `max_chars`, and
 never retains it. Every destination passes the egress policy: loopback,

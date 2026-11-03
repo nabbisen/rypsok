@@ -43,7 +43,7 @@ list; the agent never needs to parse free text.
 | Kind | It means | What the agent can change |
 |---|---|---|
 | `invalid_request` | A parameter is wrong; `detail.parameter` names it, with `min`/`max` or `allowed` | Fix that parameter and call again |
-| `denied` | The query or URL looks like it carries a secret, or the policy refuses the destination (`detail.reason`: `secret_in_query`, `secret_in_url`, `egress`, `robots_txt`, `strict_mode`, `scheme`, `credential_in_url`) | Nothing: do not retry. For a secret, remove it (the position is given, never the value) |
+| `denied` | The query or URL looks like it carries a secret, or the policy refuses the destination (`detail.reason`: `secret_in_query`, `secret_in_url`, `egress`, `robots_txt`, `strict_mode`, `scheme`, `credential_in_url`). `robots_txt` also answers when a redirect leads to a page the site's robots.txt disallows | Nothing: do not retry. For a secret, remove it (the position is given, never the value) |
 | `unavailable` | No engine serves the category, every engine failed, the deadline passed, a rate limit or a concurrency limit was reached, a site could not be reached (`network`, whatever the cause), or a page answered 4xx or 5xx (`detail.reason`) | Wait `detail.retry_after_ms` when present, then retry; for `no_engine`, use another category |
 | `redirected` | The page moved to another host; `detail.location` is where | Call `web_fetch` with `location` if that page is wanted |
 | `unsupported_content` | The page is not HTML, XHTML, plain text or Markdown, or nothing could be extracted | Choose another page |

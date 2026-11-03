@@ -829,7 +829,9 @@ record requires it. (C-16, D-07)
 ### REQ-CMP-005 robots.txt — M3 · T
 Before an agent-directed fetch, rypsok shall read and honor the site's
 robots.txt for its own product token and for `*`, caching it for at most
-LIM-F12 and reading at most LIM-F13. A disallowed URL ends the call with
+LIM-F12 and reading at most LIM-F13, for every URL fetched, including each
+redirect target (the verdict of a known origin is cached, so a hop on the
+same host costs no request). A disallowed URL ends the call with
 `denied` and the reason `robots_txt`. An unreachable robots.txt (server
 error) counts as disallow, as RFC 9309 requires. The operator may disable
 the check. (M-01, D-08)

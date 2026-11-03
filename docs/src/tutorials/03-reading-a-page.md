@@ -65,7 +65,7 @@ machine:
 ```
 
 Other answers you will meet: `denied` with reason `robots_txt` (the site
-asks not to be read), `unavailable` with `http_status` and the status
+asks not to be read, at the address you gave or at a page it redirected to), `unavailable` with `http_status` and the status
 (the page answered 4xx or 5xx; its body is never returned),
 `unsupported_content` (not HTML, XHTML, plain text or Markdown), and
 `too_large` (above the byte limit).
