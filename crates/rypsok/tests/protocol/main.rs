@@ -149,7 +149,8 @@ fn req_search_002_unserved_category_is_refused() {
 
 /// REQ-STATUS-001 and REQ-STATUS-002: `engine_status` lists every
 /// configured engine with exactly three fields; a keyed engine without a
-/// credential is `disabled`.
+/// credential is `disabled`, and a disabled engine carries a fourth field,
+/// `reason` (RFC 020, DAT-18): `no_credential` here.
 #[test]
 fn req_status_001_engine_status_lists_configured_engines() {
     let mut s = Session::start(None);
@@ -163,10 +164,23 @@ fn req_status_001_engine_status_lists_configured_engines() {
     assert_eq!(response["outcome"], "ok");
     let engines = response["engines"].as_array().unwrap();
     assert_eq!(engines.len(), 2);
+    let mut states = Vec::new();
     for engine in engines {
         let keys: Vec<&String> = engine.as_object().unwrap().keys().collect();
-        assert_eq!(keys, vec!["id", "latency_ms", "state"]);
+        if engine["state"] == "disabled" {
+            assert_eq!(keys, vec!["id", "latency_ms", "reason", "state"]);
+            assert_eq!(engine["reason"], "no_credential");
+        } else {
+            assert_eq!(keys, vec!["id", "latency_ms", "state"]);
+        }
+        states.push(engine["state"].as_str().unwrap().to_owned());
     }
+    states.sort();
+    assert_eq!(
+        states,
+        vec!["closed", "disabled"],
+        "wikipedia in use, brave without a key"
+    );
     s.finish();
 }
 

@@ -12,7 +12,7 @@ use super::limiter::EngineLimiter;
 use super::{Driver, EngineProperties};
 use crate::config::Config;
 use crate::egress;
-use crate::model::{Category, EngineId};
+use crate::model::{Category, DisabledReason, EngineId};
 
 /// One configured engine.
 pub struct Engine {
@@ -26,6 +26,10 @@ pub struct Engine {
     pub preference: u32,
     /// The driver, when the engine is active.
     pub driver: Option<Box<dyn Driver>>,
+    /// Why there is no driver, when the engine was configured and could not
+    /// be used (`engine_status` reports it); none for an active engine and
+    /// for a driver that could not be built for another reason.
+    pub disabled_reason: Option<DisabledReason>,
     /// The limiter.
     pub limiter: EngineLimiter,
 }
@@ -57,6 +61,7 @@ impl Engine {
             categories,
             preference,
             driver: Some(driver),
+            disabled_reason: None,
             limiter,
         }
     }
@@ -105,8 +110,10 @@ impl Registry {
             .iter()
             .map(|(id, table)| {
                 let id = EngineId::new(id.as_str()).expect("validated identifier");
+                let mut disabled_reason = None;
                 let driver = if !table.enabled {
                     tracing::info!(event = "engine_disabled", engine = %id, "engine disabled by configuration");
+                    disabled_reason = Some(DisabledReason::Disabled);
                     None
                 } else {
                     let secret = match table.secret_source().map(|s| s.resolve()) {
@@ -126,6 +133,9 @@ impl Registry {
                             Err(())
                         }
                     };
+                    if secret.is_err() {
+                        disabled_reason = Some(DisabledReason::NoCredential);
+                    }
                     secret.ok().and_then(|secret| match drivers::build(table, secret.as_ref(), &context) {
                         Ok(driver) => Some(driver),
                         Err(error) => {
@@ -144,6 +154,7 @@ impl Registry {
                     categories: table.categories.clone(),
                     preference: table.preference,
                     driver,
+                    disabled_reason,
                     limiter: EngineLimiter::new(per_minute, max_in_flight),
                 }
             })

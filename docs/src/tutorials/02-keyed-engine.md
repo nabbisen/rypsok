@@ -53,8 +53,9 @@ returned appears once, ranked higher. Ask for the engines explicitly with
 
 Each engine's `state` is `closed` (in use), `open` (failing lately and
 skipped for a while), `half_open` (one probe in flight) or `disabled`
-(by configuration or for lack of a key). `latency_ms` is the median of
-its recent requests.
+(by configuration or for lack of a key; a disabled engine also has a
+`reason`, `disabled` or `no_credential`, which tells the two apart).
+`latency_ms` is the median of its recent requests.
 
 ## 4. When Brave refuses the key
 

@@ -94,3 +94,37 @@ fn req_eng_004_registry_rejects_unknown_driver_at_startup() {
         Some("wikipedia")
     );
 }
+
+/// REQ-STATUS-001 (RFC 020, DAT-18): `engine_status` says why an engine is
+/// `disabled`: `disabled` when the operator switched it off, `no_credential`
+/// when it needs a key and has none. Any other state carries no reason.
+#[test]
+fn req_status_001_a_disabled_engine_says_why() {
+    let config = config(
+        "config_version = 1\n\
+         [engines.off]\ntype = \"wikipedia\"\ncategories = [\"general\"]\nenabled = false\n\
+         [engines.keyed]\ntype = \"brave\"\ncategories = [\"general\"]\napi_key_env = \"RYPSOK_TEST_UNSET_KEY_43\"\n\
+         [engines.keyless]\ntype = \"brave\"\ncategories = [\"general\"]\n\
+         [engines.on]\ntype = \"wikipedia\"\ncategories = [\"general\"]\n",
+    );
+    let registry = Registry::build(&config, None, true);
+    let table = crate::telemetry::health::HealthTable::new(&registry, &config.limits());
+    let mut seen = std::collections::BTreeMap::new();
+    for status in table.snapshot() {
+        seen.insert(status.id.as_str().to_owned(), (status.state, status.reason));
+    }
+    use crate::model::{DisabledReason, EngineState};
+    assert_eq!(
+        seen["off"],
+        (EngineState::Disabled, Some(DisabledReason::Disabled))
+    );
+    assert_eq!(
+        seen["keyed"],
+        (EngineState::Disabled, Some(DisabledReason::NoCredential))
+    );
+    assert_eq!(
+        seen["keyless"],
+        (EngineState::Disabled, Some(DisabledReason::NoCredential))
+    );
+    assert_eq!(seen["on"], (EngineState::Closed, None));
+}

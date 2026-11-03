@@ -16,7 +16,7 @@ use tokio::time::Instant;
 use crate::engine::EngineErrorClass;
 use crate::engine::registry::Registry;
 use crate::limits::Limits;
-use crate::model::{EngineId, EngineState, EngineStatus};
+use crate::model::{DisabledReason, EngineId, EngineState, EngineStatus};
 use crate::sync;
 
 /// The circuit of one engine (external design §3.3; RFC 010).
@@ -167,6 +167,8 @@ struct Health {
     streak: u8,
     latencies: VecDeque<u32>,
     auth_warned: bool,
+    /// Why the engine is `Disabled`, when that is known.
+    disabled_reason: Option<DisabledReason>,
 }
 
 /// The circuit parameters (LIM-B1 to LIM-B3, LIM-S11).
@@ -189,20 +191,31 @@ impl HealthTable {
     /// One entry per engine of the registry: `Disabled` for an engine
     /// without a driver, `Closed` otherwise.
     pub fn new(registry: &Registry, limits: &Limits) -> Self {
-        Self::from_ids(
+        Self::from_parts(
             registry
                 .engines()
                 .iter()
-                .map(|e| (e.id.clone(), e.is_active())),
+                .map(|e| (e.id.clone(), e.is_active(), e.disabled_reason)),
             limits,
         )
     }
 
-    /// One entry per `(identifier, active)` pair.
+    /// One entry per `(identifier, active)` pair; a disabled engine has no
+    /// stated reason.
     pub fn from_ids(ids: impl IntoIterator<Item = (EngineId, bool)>, limits: &Limits) -> Self {
+        Self::from_parts(
+            ids.into_iter().map(|(id, active)| (id, active, None)),
+            limits,
+        )
+    }
+
+    fn from_parts(
+        ids: impl IntoIterator<Item = (EngineId, bool, Option<DisabledReason>)>,
+        limits: &Limits,
+    ) -> Self {
         let entries = ids
             .into_iter()
-            .map(|(id, active)| {
+            .map(|(id, active, disabled_reason)| {
                 let circuit = if active {
                     Circuit::Closed {
                         consecutive_failures: 0,
@@ -217,6 +230,7 @@ impl HealthTable {
                         streak: 0,
                         latencies: VecDeque::new(),
                         auth_warned: false,
+                        disabled_reason,
                     },
                 )
             })
@@ -393,6 +407,10 @@ impl HealthTable {
                 id: id.clone(),
                 state: health.circuit.state(),
                 latency_ms: median(&health.latencies),
+                reason: match health.circuit {
+                    Circuit::Disabled => health.disabled_reason,
+                    _ => None,
+                },
             })
             .collect()
     }

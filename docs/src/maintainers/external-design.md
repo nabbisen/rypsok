@@ -249,7 +249,7 @@ No parameters. Response:
   "notices": [],
   "engines": [
     { "id": "wikipedia", "state": "closed", "latency_ms": 180 },
-    { "id": "brave", "state": "open", "latency_ms": null }
+    { "id": "brave", "state": "disabled", "latency_ms": null, "reason": "no_credential" }
   ]
 }
 ```
@@ -259,6 +259,7 @@ No parameters. Response:
 | `engines[].id` | rypsok | The configured engine identifier | REQ-STATUS-001 |
 | `engines[].state` | rypsok | `disabled`, `closed`, `open`, `half_open` | REQ-STATUS-001 |
 | `engines[].latency_ms` | rypsok | Median over the last LIM-S11 completed requests, or null | REQ-STATUS-001 |
+| `engines[].reason` | rypsok | Only when `state` is `disabled`: `disabled` (the operator switched it off) or `no_credential` (it needs a key and none could be read); absent for every other state. A closed vocabulary; never a name, a path or an error text (RFC 020, DAT-18) | REQ-STATUS-001, REQ-STATUS-002 |
 
 No endpoint, credential or provider text appears (REQ-STATUS-002). The
 operator can remove the tool from the list (REQ-STATUS-003).

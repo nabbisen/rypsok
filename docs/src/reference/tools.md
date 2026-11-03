@@ -74,12 +74,15 @@ answering questions. No parameters.
   "notices": [],
   "engines": [
     { "id": "wikipedia", "state": "closed", "latency_ms": 180 },
-    { "id": "brave", "state": "open", "latency_ms": null }
+    { "id": "brave", "state": "disabled", "latency_ms": null, "reason": "no_credential" }
   ]
 }
 ```
 
-`state` is `disabled` (by configuration or for lack of a credential),
+`state` is `disabled` (by configuration or for lack of a credential; the
+entry then has a `reason`: `disabled` when the operator switched the engine
+off, `no_credential` when it needs a key and none could be read; no other
+state has a `reason`),
 `closed` (in use), `open` (skipped during a cooldown; it stays `open` until
 the first call after the cooldown, which carries the probe) or `half_open`
 (that one probe request in flight). Engines are listed in identifier order. `latency_ms` is the median of the last 20

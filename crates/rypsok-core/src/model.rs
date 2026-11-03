@@ -392,6 +392,18 @@ pub enum EngineState {
     HalfOpen,
 }
 
+/// Why an engine is `disabled`, from a closed vocabulary (REQ-STATUS-001;
+/// RFC 020, DAT-18). Never a secret, a path or an error text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum DisabledReason {
+    /// The operator disabled it in the configuration (`enabled = false`).
+    Disabled,
+    /// It needs a credential and none could be read.
+    NoCredential,
+}
+
 /// The state of one engine as `engine_status` reports it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[non_exhaustive]
@@ -402,6 +414,9 @@ pub struct EngineStatus {
     pub state: EngineState,
     /// Median latency of the last LIM-S11 completed requests, or null.
     pub latency_ms: Option<u32>,
+    /// Why the engine is `disabled`; absent for every other state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<DisabledReason>,
 }
 
 /// The response of `engine_status` (external design §3.3).
