@@ -54,6 +54,11 @@ announced here with both values.
   `?a=1%3Bb%3D2`, `?q=a%20b` became `?q=a+b`, `?a=%7e` became `?a=%7E` and
   `?x=%zz` became `?x=%25zz`. The query is now rebuilt only when a tracking
   parameter was removed, and the other parameters keep their text.
+- The secret check no longer refuses ordinary text: `sk-` or `xoxb-` followed
+  by hyphenated words, `bearer` and a phrase, a 20-letter word after `ASIA`,
+  `host.example:8080@mirror`, `ssh://git:@host/…`, three long dotted words
+  starting `eyJ`, `sk_test_` and a plain word, and `password=` followed by an
+  ordinary word all pass.
 
 ### Changed
 
@@ -115,6 +120,20 @@ announced here with both values.
   before, as is every other invisible character; a flag built with tag
   characters (Scotland's) still comes back as the black flag, with the tags
   counted.
+- The secret check recognizes more formats and names them in `detail.kind`
+  (new values `npm_token`, `gitlab_token`, `huggingface_token`,
+  `sendgrid_key`, `telegram_bot_token`, `twilio_key`, `aws_secret_key`,
+  `password_assignment`, `basic_auth_header`, `azure_account_key`): npm,
+  GitLab, Hugging Face, SendGrid, Telegram bot and Twilio keys, an AWS secret
+  access key named by its context, `password=`, `passwd=` and `secret=` with a
+  value that has a digit or a symbol, `Authorization: Basic …`, Azure
+  `AccountKey=`, `Bearer%20…`, a lower-case AWS key id, a key with a zero
+  width character inside and a GitHub token wrapped by a space. A request that
+  carried one of these used to pass; with `secret_detection = "refuse"` it is
+  now `denied`. An AWS key id beginning `ASIA` or `A3T` needs a digit in its
+  sixteen-character tail (an `ASIA` followed by a 16-letter word has none); one
+  beginning `AKIA` does not. The Slack, OpenAI, Stripe, JWT and Bearer shapes
+  are stricter (the real format, not any run of letters).
 
 ## [0.8.0] — 2026-10-29 — Corrections from the first independent review
 

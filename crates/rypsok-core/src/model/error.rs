@@ -131,6 +131,26 @@ pub enum SecretKind {
     BearerHeader,
     /// Credentials in a URL's userinfo.
     BasicAuthUrl,
+    /// An npm access token.
+    NpmToken,
+    /// A GitLab personal access token.
+    GitlabToken,
+    /// A Hugging Face access token.
+    HuggingfaceToken,
+    /// A SendGrid API key.
+    SendgridKey,
+    /// A Telegram bot token.
+    TelegramBotToken,
+    /// A Twilio API key.
+    TwilioKey,
+    /// An AWS secret access key, named in context.
+    AwsSecretKey,
+    /// A value assigned to `password`, `passwd` or `secret`.
+    PasswordAssignment,
+    /// An `Authorization: Basic` header with credentials.
+    BasicAuthHeader,
+    /// An Azure storage `AccountKey`.
+    AzureAccountKey,
 }
 
 impl SecretKind {
@@ -147,6 +167,16 @@ impl SecretKind {
             SecretKind::Jwt => "a json web token",
             SecretKind::BearerHeader => "a bearer token",
             SecretKind::BasicAuthUrl => "credentials in a url",
+            SecretKind::NpmToken => "an npm token",
+            SecretKind::GitlabToken => "a gitlab token",
+            SecretKind::HuggingfaceToken => "a hugging face token",
+            SecretKind::SendgridKey => "a sendgrid key",
+            SecretKind::TelegramBotToken => "a telegram bot token",
+            SecretKind::TwilioKey => "a twilio key",
+            SecretKind::AwsSecretKey => "an AWS secret key",
+            SecretKind::PasswordAssignment => "a password or secret value",
+            SecretKind::BasicAuthHeader => "a basic authorization header",
+            SecretKind::AzureAccountKey => "an azure account key",
         }
     }
 }

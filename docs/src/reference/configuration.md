@@ -159,6 +159,22 @@ without a leading dot: a rule with one is a configuration error.
 |---|---|---|---|
 | `secret_detection` | `"refuse"` | `off`, `warn`, `mask`, `refuse` | What happens when a query or URL looks like it carries a credential (LIM-P1) |
 
+What the check recognizes: credentials with a fixed prefix or structure and
+the length of the real format, never a guess from randomness. AWS access key
+ids and secret access keys (the latter by name: `aws_secret_access_key=…`),
+GitHub, GitLab, npm, Hugging Face, Slack, Stripe, Google, OpenAI and
+Anthropic keys, SendGrid, Telegram bot and Twilio keys, JSON Web Tokens,
+`Bearer` tokens (also written `Bearer%20…`), `Authorization: Basic` headers,
+Azure `AccountKey=` values, PEM private keys, user and password in a URL
+(`https://user:password@host/`), and a value given to `password=`, `passwd=`
+or `secret=` (also `client_secret=`) when it has a digit or a symbol. A
+credential with an invisible character inside, or in lower case, or a GitHub
+token wrapped by a space, is found too. Ordinary text near these shapes is
+not: `sk-` followed by hyphenated words, `bearer` and a phrase, a 20-letter
+word after `ASIA`, `host.example:8080@mirror` and `password=configuration` all
+pass. The check names the kind and the position, never the value. One mode
+applies to all patterns; there is no per-pattern setting.
+
 ## `[logging]`
 
 | Key | Default | Range | Meaning |

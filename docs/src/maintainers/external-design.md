@@ -420,7 +420,7 @@ result through the result cache; forgetting it errs on the safe side.
 
 | Control | Contract | Requirement |
 |---|---|---|
-| Secret check | Queries and URLs are scanned for high-confidence credential formats before any request; default refuse (LIM-P1) | REQ-PRIV-002 |
+| Secret check | Queries and URLs are scanned for high-confidence credential formats before any request, reading through invisible characters; the formats and the confirmation of each are in RFC 009 as amended on 2026-11-03; default refuse (LIM-P1) | REQ-PRIV-002 |
 | Retention | Nothing beyond the call unless cached under §12 | REQ-PRIV-003 |
 | Logs | No query text, no URL path or query string, no content; debug mode is explicit and warns | REQ-PRIV-004 |
 | Disclosure | Tool profiles (§3) state what leaves the host | REQ-PRIV-005 |

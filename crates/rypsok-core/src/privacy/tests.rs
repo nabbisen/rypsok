@@ -19,7 +19,11 @@ fn req_priv_002_patterns_match_positives_not_near_misses() {
         ),
         (
             SecretKind::SlackToken,
-            "xoxb-0000000000-1111111111-AbCdEfGhIjKl",
+            // Digits, digits, a 24-character secret (RFC 020: the real shape).
+            &cat(&[
+                "xoxb", "-123456", "789012-", "1234567", "89012-A", "bCdEfGh", "IjKlMnO",
+                "pQrStUv", "Wx",
+            ]),
         ),
         (
             SecretKind::GoogleApiKey,
@@ -31,7 +35,8 @@ fn req_priv_002_patterns_match_positives_not_near_misses() {
         ),
         (
             SecretKind::OpenaiKey,
-            &format!("sk-{}", "proj_abcdefghijklmnopqrstuvwxyz0123"),
+            // The legacy key: 48 base-62 characters (RFC 020).
+            &format!("sk-{}A1b2C3d4", "A1b2C3d4E5f6G7h8I9j0".repeat(2)),
         ),
         (SecretKind::PrivateKey, "-----BEGIN RSA PRIVATE KEY-----"),
         (
@@ -116,4 +121,471 @@ fn req_priv_004_sensitive_debug_shows_no_content() {
     let s = Sensitive::new("secret query text");
     assert_eq!(format!("{s:?}"), "Sensitive(17 chars)");
     assert_eq!(s.expose(), "secret query text");
+}
+
+// --- the corpus of RFC 020 (DAT-15, handoff 020n) ----------------------------
+//
+// The corpus is the specification of the secret check. Every key in it is
+// made up and obviously fake (a pattern of the documented shape, not an
+// issued credential). The first list is ordinary text that the check must
+// let through, the second is credential-shaped text that it must refuse,
+// with the kind it must name. A rule of `privacy.rs` that is not decided by
+// a line here has no business being there.
+
+/// Joins the pieces of a corpus string. Every string of the corpus that has
+/// the shape of a credential is written as pieces that do not have it, so
+/// that the source text holds no literal a secret scanner (GitHub push
+/// protection) would take for one; the test needs the string at run time,
+/// not in the source (task 027).
+fn cat(pieces: &[&str]) -> String {
+    pieces.concat()
+}
+
+/// Ordinary text that the check refused before RFC 020 (the first nine,
+/// found by audit 020c) or that is near a pattern's prefix (the rest).
+fn ordinary() -> Vec<String> {
+    vec![
+        // The audit's nine.
+        cat(&[
+            "css cla", "ss sk-f", "olding-", "cube-sp", "inner-c", "hild",
+        ]),
+        cat(&["sk-hyni", "x-semic", "onducto", "r-roadm", "ap-2026"]),
+        cat(&[
+            "bearer ", "authent", "ication", "-and-au", "thoriza", "tion-fl", "ow",
+        ]),
+        cat(&["ASIAPAC", "IFICTRA", "DEZONE"]),
+        "clone with ssh://git:@github.com/example/project.git".to_owned(),
+        "https://example.org:8080@mirror.example/path".to_owned(),
+        cat(&[
+            "eyJustA", "nExampl", "eOfAVer", "yLongWo", "rd.seco", "ndVeryL", "ongWord", "InTheTe",
+            "xt.thir", "dVeryLo", "ngWordH", "ereToo",
+        ]),
+        cat(&[
+            "eyJsonS", "chemaVa", "lidatio", "nLibrar", "yName.a", "notherE", "xtremel", "yLongId",
+            "entifie", "r.yetAn", "otherLo", "ngIdent", "ifierNa", "me",
+        ]),
+        cat(&[
+            "eyJavas", "criptRu", "ntimeEn", "vironme", "ntSetup", ".config", "uration", "Managem",
+            "entSyst", "em.depl", "oymentP", "ipeline", "Stages",
+        ]),
+        cat(&[
+            "sk_test", "_config", "uration", "forthes", "taginge", "nvironm", "ent",
+        ]),
+        cat(&["xoxb", "-featur", "e-branc", "h-namin", "g-conve", "ntion"]),
+        // Prefixes in prose.
+        cat(&[
+            "the bea", "rer of ", "this le", "tter is", " to be ", "admitte", "d",
+        ]),
+        cat(&[
+            "bearer ", "interna", "tionali", "zation-", "and-loc", "alizati", "on-supp", "ort-not",
+            "es",
+        ]),
+        cat(&[
+            "a short", " ghp_ p", "refix a", "nd an n", "pm_ pre", "fix are", " docume", "nted in",
+            " the gu", "ide",
+        ]),
+        cat(&[
+            "AKIA is", " the pr", "efix of", " an acc", "ess key", " id, AS", "IA the ", "prefix ",
+            "of a te", "mporary", " one",
+        ]),
+        cat(&[
+            "AKIA ke", "ys are ", "rotated", " every ", "ninety ", "days",
+        ]),
+        cat(&[
+            "AKIAIOS", "FODNN7 ", "is too ", "short t", "o be a ", "key id",
+        ]),
+        // Prefixes of the temporary and the older id with a word, not a key: the
+        // digit is asked for these two (RFC 020, N2 of the 020n review).
+        cat(&["A3TXPAC", "IFICTRA", "DEZONE"]),
+        cat(&["hf_ and", " glpat", "- are t", "oken pr", "efixes"]),
+        cat(&[
+            "SG. and", " SK and", " sk- an", "d xoxb", "- are p", "refixes",
+        ]),
+        // Words near the new formats.
+        "password reset instructions for the staff".to_owned(),
+        "my password is stored in the vault".to_owned(),
+        "password=configuration".to_owned(),
+        "secret=true".to_owned(),
+        "secret: hidden".to_owned(),
+        "password=********".to_owned(),
+        "password=<your-password>".to_owned(),
+        "password=${PASSWORD_FROM_ENV}".to_owned(),
+        "Authorization: Basic authentication is explained on this page".to_owned(),
+        cat(&["Account", "Key=<yo", "ur-acco", "unt-key", ">"]),
+        "aws_secret_access_key = <your key here>".to_owned(),
+        "https://example.org:443@mirror.example/".to_owned(),
+        // Each of these has the pattern of a rule and fails its confirmation, so
+        // that the confirmation is decided by a line (the mutation run of
+        // `evidence/020n/mutate-privacy.py` loosens each in turn).
+        cat(&[
+            "a wrapp", "ed line", ": ghp_a", "bcdefgh", "ij klmn", "opqrst",
+        ]),
+        cat(&[
+            "sk-inte", "rnation", "alizati", "onandlo", "calizat", "ionsupp", "ortdocs",
+        ]),
+        cat(&[
+            "sk-proj", "-roadma", "p-for-t", "he-spri", "ng-rele", "ase-of-", "the-new", "-planne",
+            "r",
+        ]),
+        cat(&[
+            "npm_abc", "defghij", "klmnopq", "rstuvwx", "yzabcde", "fghij",
+        ]),
+        cat(&["glpat", "-token-", "format-", "documen", "tation-", "page"]),
+        cat(&["glpat", "-abcdef", "ghijklm", "nopqrst", "uvwxyz"]),
+        cat(&["hf_abcd", "efghijk", "lmnopqr", "stuvwxy", "zabcdef", "gh"]),
+        cat(&[
+            "ratio 1", "2345678", "9:abcde", "fghijkl", "mnopqrs", "tuvwxyz", "abcdefg", "hi",
+        ]),
+        cat(&["SK12345", "6789012", "3456789", "0123456", "789012"]),
+        // Near misses of Slack and OpenAI shapes (they were in the first test).
+        cat(&[
+            "xoxb", "-000000", "0000-11", "1111111", "1-AbCdE", "fGhIjKl",
+        ]),
+        cat(&["sk-proj", "_abcdef", "ghijklm", "nopqrst", "uvwxyz0", "123"]),
+        // Hex and digits that are not credentials.
+        "sha256 d7a8fbb307d7809469ca9abcb0082e4f8d5651e46d3cdb762d02d0bf37c9e592".to_owned(),
+        "SK 12345".to_owned(),
+        cat(&["invoice", " 123456", "789:202", "6 total"]),
+    ]
+}
+
+/// Credential-shaped text that was passed before (the first fourteen kinds,
+/// found by audit 020c) or that was refused already, with the kind named.
+fn credentials() -> Vec<(&'static str, String, SecretKind)> {
+    let aws = cat(&["AKIAIOS", "FODNN7E", "XAMPLE"]);
+    vec![
+        // Passed before RFC 020.
+        (
+            "npm",
+            cat(&[
+                "npm_fjk", "kmNN0id", "HqHVRSG", "hlCWmuP", "GluuDV1", "vD4np",
+            ]),
+            SecretKind::NpmToken,
+        ),
+        (
+            "gitlab",
+            cat(&["glpat", "-Hhbetn", "HEohzxc", "fFi1YmL"]),
+            SecretKind::GitlabToken,
+        ),
+        (
+            "hugging face",
+            cat(&["hf_sqcK", "gvnBWoW", "EbPZLZF", "kUZciGg", "TzgSHgM", "wP"]),
+            SecretKind::HuggingfaceToken,
+        ),
+        (
+            "sendgrid",
+            cat(&[
+                "SG.qwQh", "hBw2gTG", "CP5xT1F", "9imp.MY", "hPUVKQy", "pJJraSS", "SEvJwR0",
+                "5eya0z4", "wUf_D3j", "ZzXXlX",
+            ]),
+            SecretKind::SendgridKey,
+        ),
+        (
+            "telegram bot",
+            cat(&[
+                "1234567", "89:3voi", "zpLuZ_9", "hLiF4KM", "2hpch7x", "oNsTSQj", "lkE",
+            ]),
+            SecretKind::TelegramBotToken,
+        ),
+        (
+            "twilio",
+            cat(&["SKde30e", "bad5b7f", "b2fa58e", "f7dd0b8", "e6522a"]),
+            SecretKind::TwilioKey,
+        ),
+        (
+            "aws secret access key",
+            "aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_owned(),
+            SecretKind::AwsSecretKey,
+        ),
+        (
+            "aws secret access key, env style",
+            "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_owned(),
+            SecretKind::AwsSecretKey,
+        ),
+        (
+            "password=",
+            "password=s3cretPassw0rd".to_owned(),
+            SecretKind::PasswordAssignment,
+        ),
+        (
+            "passwd=",
+            "passwd=Hunter22Hunter22".to_owned(),
+            SecretKind::PasswordAssignment,
+        ),
+        (
+            "secret= (hex)",
+            "secret=9f8e7d6c5b4a3210".to_owned(),
+            SecretKind::PasswordAssignment,
+        ),
+        (
+            "client_secret=",
+            "client_secret=Zq7!mK2vXw9p".to_owned(),
+            SecretKind::PasswordAssignment,
+        ),
+        (
+            "Authorization: Basic",
+            "Authorization: Basic ZmFrZXVzZXI6ZmFrZXBhc3N3b3JkMQ==".to_owned(),
+            SecretKind::BasicAuthHeader,
+        ),
+        (
+            "azure AccountKey=",
+            cat(&[
+                "Default", "Endpoin", "tsProto", "col=htt", "ps;Acco", "untName", "=fakeac",
+                "count;A", "ccountK", "ey=AAzR", "gpk1ut0", "ZSshwxO", "fjqFp/6", "8dVksMX",
+                "+gYAxqR", "H9wElDL", "2F0ylW7", "+phR9PX", "JaTzF6W", "WHyQL9Z", "OjPqVdP",
+                "ny/sw==",
+            ]),
+            SecretKind::AzureAccountKey,
+        ),
+        (
+            "Bearer%20",
+            cat(&[
+                "Authori", "zation=", "Bearer%", "20Zk3Qx", "9Lm2Vb7", "Nc4Rt8W", "y1Hd6Js",
+                "5Pf0Ga",
+            ]),
+            SecretKind::BearerHeader,
+        ),
+        (
+            "aws key with a zero width space inside",
+            format!("{}\u{200B}{}", &aws[..4], &aws[4..]),
+            SecretKind::AwsAccessKey,
+        ),
+        (
+            "lowercase aws key",
+            aws.to_lowercase(),
+            SecretKind::AwsAccessKey,
+        ),
+        // About 1 in 27 real ids has no digit in its tail; the AKIA pattern
+        // decides, a digit is not asked for (RFC 020, N2 of the 020n review).
+        (
+            "aws key id without a digit in the tail",
+            cat(&["AKIAJKL", "MNOPQRS", "TUVWXY"]),
+            SecretKind::AwsAccessKey,
+        ),
+        (
+            "aws key id without a digit, lower case",
+            cat(&["akiajkl", "mnopqrs", "tuvwxy"]),
+            SecretKind::AwsAccessKey,
+        ),
+        (
+            "aws temporary key id with a digit",
+            cat(&["ASIAIOS", "FODNN7E", "XAMPLE"]),
+            SecretKind::AwsAccessKey,
+        ),
+        (
+            "github token split by a space",
+            cat(&[
+                "ghp_SVw", "8BoQgHI", "v9nVWO4", "7 xlefH", "NabpesA", "g7tzR2",
+            ]),
+            SecretKind::GithubToken,
+        ),
+        // Refused before, and still.
+        ("aws", aws.to_owned(), SecretKind::AwsAccessKey),
+        (
+            "github",
+            cat(&[
+                "ghp_SVw", "8BoQgHI", "v9nVWO4", "7xlefHN", "abpesAg", "7tzR2",
+            ]),
+            SecretKind::GithubToken,
+        ),
+        (
+            "slack",
+            cat(&[
+                "xoxb", "-123456", "789012-", "1234567", "89012-f", "VkDVpgQ", "ninapdW",
+                "JULmzNC", "t0",
+            ]),
+            SecretKind::SlackToken,
+        ),
+        (
+            "stripe",
+            cat(&["sk_live", "_nlNAyf", "hrL83bF", "GPznoF6", "L1UH"]),
+            SecretKind::StripeKey,
+        ),
+        (
+            "openai",
+            cat(&[
+                "sk-GBTn", "gybjkOA", "uk2LgT1", "CjzVysY", "b4POsOE", "ppAdM9m", "vOtOiNo", "vz",
+            ]),
+            SecretKind::OpenaiKey,
+        ),
+        (
+            "openai project",
+            cat(&[
+                "sk-proj", "-PU7aCo", "zThSl_K", "xUbkxim", "0Xy5oMX", "lyODKGb", "w4jeCLW",
+                "jLjRkVJ", "ydVnNIH", "ShLJrxK", "Fs",
+            ]),
+            SecretKind::OpenaiKey,
+        ),
+        (
+            "anthropic",
+            cat(&[
+                "sk-ant-", "api03-1", "xKAnqCn", "Urbeobe", "4-RP7-h", "jGnMaAU", "0e7QvWC",
+                "66swX3R", "wKn26gt", "MggB6rX", "LK5rEpB", "KEFy6qZ", "NjtgXR9", "hsG2e3J",
+                "LyQwu",
+            ]),
+            SecretKind::OpenaiKey,
+        ),
+        (
+            "jwt",
+            cat(&[
+                "eyJhbGc", "iOiJIUz", "I1NiIsI", "nR5cCI6", "IkpXVCJ", "9.eyJzd", "WIiOiJm",
+                "YWtlLXV", "zZXIiLC", "JpYXQiO", "jE3MDAw", "MDAwMDB", "9.7fyq7", "CRgduF6",
+                "TcSNRd5", "UvCwZFV", "5GR6n8r", "TETBl1r", "X_m",
+            ]),
+            SecretKind::Jwt,
+        ),
+        (
+            "bearer",
+            cat(&[
+                "Authori", "zation:", " Bearer", " Zk3Qx9", "Lm2Vb7N", "c4Rt8Wy", "1Hd6Js5",
+                "Pf0Ga",
+            ]),
+            SecretKind::BearerHeader,
+        ),
+        (
+            "url with a password",
+            "https://deploy:Tr0ub4dor3@mirror.example/repo.git".to_owned(),
+            SecretKind::BasicAuthUrl,
+        ),
+        (
+            "url with a numeric password",
+            "ftp://backup:20261103@files.example/".to_owned(),
+            SecretKind::BasicAuthUrl,
+        ),
+        (
+            "private key",
+            "-----BEGIN OPENSSH PRIVATE KEY-----".to_owned(),
+            SecretKind::PrivateKey,
+        ),
+    ]
+}
+
+/// REQ-PRIV-002 (RFC 020, DAT-15): the ordinary strings pass, in a text of
+/// their own and inside a sentence.
+#[test]
+fn req_priv_002_the_corpus_of_ordinary_text_passes() {
+    let mut refused = Vec::new();
+    for sample in ordinary() {
+        for text in [sample.clone(), format!("how do I use {sample} in a build?")] {
+            let findings = scan(&text);
+            if !findings.is_empty() {
+                refused.push(format!("{text:?}: {findings:?}"));
+            }
+        }
+    }
+    assert!(
+        refused.is_empty(),
+        "{} refused:\n{}",
+        refused.len(),
+        refused.join("\n")
+    );
+}
+
+/// REQ-PRIV-002 (RFC 020, DAT-15): the credential-shaped strings are
+/// refused with the kind named, alone and inside a sentence, and the finding
+/// covers the credential from its first to its last character (the
+/// positions are in characters of the original text, a zero width character
+/// inside included).
+#[test]
+fn req_priv_002_the_corpus_of_credentials_is_refused() {
+    let mut wrong = Vec::new();
+    for (label, sample, kind) in credentials() {
+        let text = format!("please use {sample} for it");
+        let findings = scan(&text);
+        match findings.as_slice() {
+            [f] if f.kind == kind => {
+                let chars: Vec<char> = text.chars().collect();
+                let covered: String = chars[f.start as usize..f.end as usize].iter().collect();
+                if !sample.contains(&covered) && !covered.contains(&sample) {
+                    wrong.push(format!(
+                        "{label}: finding covers {covered:?}, sample {sample:?}"
+                    ));
+                }
+            }
+            other => wrong.push(format!("{label}: expected {kind:?}, found {other:?}")),
+        }
+        if check(&sample, SecretDetection::Refuse) == Verdict::Clean {
+            wrong.push(format!("{label}: alone, it passes"));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} wrong:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+/// REQ-PRIV-002 (RFC 020, DAT-15): mask mode replaces the whole credential,
+/// including a zero width character inside it, and nothing around it.
+#[test]
+fn req_priv_002_mask_covers_a_credential_with_an_invisible_character_inside() {
+    let aws = "AKIA\u{200B}IOSFODNN7EXAMPLE";
+    let text = format!("key {aws} end");
+    match check(&text, SecretDetection::Mask) {
+        Verdict::Masked { text, count } => {
+            assert_eq!(text, "key [redacted] end");
+            assert_eq!(count, 1);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// REQ-PRIV-002 (RFC 020, TST-7): the overlap rule of `scan`. Two findings
+/// that overlap are one finding, the one the table lists first (the more
+/// specific pattern comes before the general `Bearer` one); findings that
+/// only touch, or are apart, are both kept; mask mode never slices backwards.
+#[test]
+fn req_priv_002_overlapping_findings_are_one_finding() {
+    let github = cat(&[
+        "ghp_SVw", "8BoQgHI", "v9nVWO4", "7xlefHN", "abpesAg", "7tzR2",
+    ]);
+    let text = format!("Bearer {github}");
+    let findings = scan(&text);
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert_eq!(findings[0].kind, SecretKind::GithubToken);
+    assert_eq!((findings[0].start, findings[0].end), (7, 47));
+    match check(&text, SecretDetection::Mask) {
+        Verdict::Masked { text, count } => {
+            assert_eq!(text, cat(&["Bearer ", "[redact", "ed]"]));
+            assert_eq!(count, 1);
+        }
+        other => panic!("{other:?}"),
+    }
+    // Apart: two findings, in order, both masked.
+    let apart = format!("AKIAIOSFODNN7EXAMPLE and {github}");
+    let findings = scan(&apart);
+    assert_eq!(findings.len(), 2, "{findings:?}");
+    assert!(findings[0].end < findings[1].start);
+    match check(&apart, SecretDetection::Mask) {
+        Verdict::Masked { text, count } => {
+            assert_eq!(text, "[redacted] and [redacted]");
+            assert_eq!(count, 2);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// REQ-PRIV-002 (RFC 020, TST-7): the predicate itself, at its edges
+/// (the mutants of audit 020d that survived all sat on this line).
+#[test]
+fn req_priv_002_the_overlap_predicate_at_its_edges() {
+    let found = Finding {
+        kind: SecretKind::Jwt,
+        start: 10,
+        end: 20,
+    };
+    for (start, end, overlaps_it) in [
+        (0, 10, false),  // touches at the start
+        (20, 30, false), // touches at the end
+        (0, 5, false),
+        (25, 30, false),
+        (0, 11, true), // one character in
+        (19, 30, true),
+        (12, 15, true), // inside
+        (5, 25, true),  // around
+        (10, 20, true), // the same
+    ] {
+        assert_eq!(overlaps(&found, start, end), overlaps_it, "{start}..{end}");
+    }
 }
