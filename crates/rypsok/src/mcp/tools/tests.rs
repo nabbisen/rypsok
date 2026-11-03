@@ -245,3 +245,31 @@ fn req_search_003_an_unserved_category_lists_the_served_ones() {
     assert_eq!(unknown.detail.allowed, refused.detail.allowed);
     assert_eq!(unknown.message, refused.message);
 }
+
+/// The normative description of a tool in the external design: the
+/// paragraph after `**Description (normative):**` of its section, on one
+/// line.
+fn design_description(section: &str) -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../docs/src/maintainers/external-design.md");
+    let text = std::fs::read_to_string(&path)
+        .unwrap()
+        .replace("\r\n", "\n");
+    let from = text.find(section).expect("the section of the tool");
+    let rest = &text[from..];
+    let start =
+        rest.find("**Description (normative):**").unwrap() + "**Description (normative):**".len();
+    let paragraph = rest[start..].split("\n\n").next().unwrap();
+    paragraph.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// REQ-MCP-008 (RFC 020, DAT-19): the descriptions in code are the
+/// normative ones of the external design, word for word.
+#[test]
+fn req_mcp_008_the_web_fetch_description_is_the_designs() {
+    assert_eq!(
+        WEB_FETCH_DESCRIPTION,
+        design_description("### 3.2 `web_fetch`")
+    );
+    assert!(WEB_FETCH_DESCRIPTION.contains("starting at `start_char`"));
+}

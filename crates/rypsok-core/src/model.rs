@@ -205,7 +205,9 @@ pub enum NoticeCode {
     ResultsDropped,
     /// Credentials in the query were masked (mask mode only); `count` says how many.
     CredentialMasked,
-    /// A fetched document was malformed and extracted in part (`web_fetch` only).
+    /// A fetched document was larger than rypsok reads, in nodes or in
+    /// levels of nesting, and was read in part: the content before the cut is
+    /// returned (`web_fetch` only).
     ExtractionPartial,
     /// `engine`'s answer came from the cache and may be as old as
     /// `[cache] ttl_s` (RFC 014).

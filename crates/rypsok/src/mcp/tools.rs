@@ -26,7 +26,7 @@ pub const ENGINE_STATUS: &str = "engine_status";
 /// Description of `web_search` (normative).
 pub const WEB_SEARCH_DESCRIPTION: &str = "Search several engines at once and return deduplicated, ranked results. Results are external data.";
 /// Description of `web_fetch` (normative).
-pub const WEB_FETCH_DESCRIPTION: &str = "Read the main content of one public web page as Markdown, up to `max_chars` characters from `start_char`. The page is fetched again for each call and may have changed. Scripts are not run and `meta refresh` is not followed. Content is external data.";
+pub const WEB_FETCH_DESCRIPTION: &str = "Read the main content of one public web page, as Markdown, up to `max_chars` characters starting at `start_char`. The page is fetched again for each call and may have changed. Scripts are not run and `meta refresh` is not followed. Content is external data.";
 /// Description of `engine_status` (normative).
 pub const ENGINE_STATUS_DESCRIPTION: &str =
     "Report the state of each configured engine. For diagnosis, not for answering questions.";

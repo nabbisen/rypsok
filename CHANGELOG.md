@@ -38,6 +38,16 @@ announced here with both values.
   node bound is, because the HTML parser's time grew with the square of the
   depth. A release build parses a page nested 100,000 deep in under a
   millisecond (before: about 17 s for 80,000).
+- `web_fetch` errors no longer mislead. A URL whose scheme is not `http` or
+  `https` (`ftp://…`) is no longer told that "the http URL was retried over
+  https". A fetch that ran out of time says "the page was not retrieved
+  before the deadline" and not that "no engine answered". The unknown
+  `category` error lists only the categories the process serves (it listed
+  all four). The URL-too-long message gives the number of characters
+  allowed, not the name of the limit. The `web_fetch` description in the tool
+  definition now reads "starting at `start_char`", as the design does, and the
+  `extraction_partial` notice is documented as what it is: the page was larger
+  than rypsok reads, in nodes or nesting, and was read in part.
 
 ### Changed
 
@@ -67,6 +77,21 @@ announced here with both values.
   full: the text after the deep part is not returned, and the answer carries
   the `extraction_partial` notice. LIM-F11 is a fixed limit (it was listed as
   configurable and has no configuration key).
+- The wording of some error `message`s changed (the field, the kinds, the
+  reasons and the 200-character bound do not): an HTTP error status says whether retrying can
+  help (408, 425, 429 and 5xx end "retry later"; any other 4xx says the site
+  refused the request or has no such page and that retrying the same URL will
+  not help), and `denied` with the reason `scheme` has two messages, one for a
+  scheme that is not allowed and one for a failed retry over `https`.
+  `detail.status` is unchanged. `detail.retry_after_ms`
+  is now set for a 408, 425, 429 or 5xx answer that carries `Retry-After` in
+  seconds (an integer, at most 3,600; a date is ignored). The documentation of
+  the `unavailable` kind no longer says that the caller may retry: whether
+  retrying helps depends on `detail.reason`.
+- `engine_status`: an entry whose `state` is `disabled` has a new optional
+  field `reason`, `disabled` (the operator switched the engine off) or
+  `no_credential` (it needs a key and none could be read). It is absent for
+  every other state; the output schema gains the field.
 
 ## [0.8.0] — 2026-10-29 — Corrections from the first independent review
 

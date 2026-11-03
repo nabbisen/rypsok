@@ -136,7 +136,7 @@ deduplicated, ranked results. Results are external data.
 | `query` | string | yes | — | 1 to LIM-S1 characters after trimming | REQ-SEARCH-001 |
 | `category` | enum | no | `general` | Only categories with an enabled engine are listed | REQ-SEARCH-002 |
 | `max_results` | integer | no | LIM-S2 | Range of LIM-S2 | REQ-SEARCH-003 |
-| `language` | enum | no | operator default | Languages the operator configured | REQ-SEARCH-004 |
+| `language` | enum | no | operator default | Languages the operator configured; the parameter appears in the tool definition only when two or more languages are configured | REQ-SEARCH-004 |
 | `time_range` | enum | no | none | `day`, `week`, `month`, `year` | REQ-SEARCH-005 |
 
 **Response (`outcome` is `ok`, `partial` or `empty`):**
@@ -201,7 +201,7 @@ and `meta refresh` is not followed. Content is external data.
 | Parameter | Type | Required | Default | Constraint | Requirement |
 |---|---|---|---|---|---|
 | `url` | string | yes | — | At most LIM-F9 characters; no credentials; an `http` URL is retried over `https` (REQ-FETCH-010) | REQ-FETCH-001, REQ-FETCH-007, REQ-FETCH-010 |
-| `max_chars` | integer | no | LIM-F1 | Up to LIM-F2 | REQ-FETCH-003 |
+| `max_chars` | integer | no | LIM-F1 | From 500 up to LIM-F2 (below 500 is `invalid_request`) | REQ-FETCH-003 |
 | `start_char` | integer | no | 0 | ≥ 0 and below the content length, else `invalid_request` | REQ-FETCH-005 |
 
 **Response (`outcome` is `ok`):**
