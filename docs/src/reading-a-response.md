@@ -65,6 +65,20 @@ retryable `http_status`, `detail.retry_after_ms` is set when the site sent a
 ignored. `detail.status` is the site's status in every case, and the page is
 never returned.
 
+**Credentials in a URL** give two reasons, and which one depends on the
+form. A URL with a user name and a password (`https://user:password@host/`)
+or with text that has the shape of a key or token (`?token=AKIA…`) is
+`secret_in_url`: the message gives the kind of secret and its character
+position, never the value. A URL with a user name alone
+(`https://user@host/`) is `credential_in_url`: the URL carries credentials;
+remove them. Both are `denied` before any request is made.
+
+A `category` that no enabled engine serves is `invalid_request` with
+`detail.allowed` listing only the categories this process serves, whether the
+name is one the process does not know or one it knows and does not serve. A
+URL longer than the bound is `invalid_request` and the message states the
+number of characters allowed.
+
 A reason can have more than one message, because the cause differs while the
 rule is the same. `denied` with `scheme` has two: *the URL scheme is not
 allowed* (the URL, or a redirect target, is not `https` and not an `http` URL

@@ -149,7 +149,7 @@ impl ServerHandler for Adapter {
                 } else {
                     match tools::parse_search_arguments(
                         request.arguments.as_ref(),
-                        self.service.search_policy().max_results_ceiling,
+                        self.service.search_policy(),
                     ) {
                         Err(error) => self.render_error(error),
                         Ok(req) => match self

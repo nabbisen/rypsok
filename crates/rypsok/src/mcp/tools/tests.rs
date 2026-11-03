@@ -21,6 +21,14 @@ fn policy(languages: &[&str]) -> SearchPolicy {
     }
 }
 
+/// The policy with another `max_results` ceiling.
+fn with_ceiling(ceiling: u8) -> SearchPolicy {
+    SearchPolicy {
+        max_results_ceiling: ceiling,
+        ..policy(&["en"])
+    }
+}
+
 /// REQ-MCP-008: all definitions and the instructions fit LIM-I1; every
 /// tool has at most LIM-I2 parameters; every schema is flat (LIM-I3).
 #[test]
@@ -105,34 +113,48 @@ fn req_search_002_schema_enumerates_served_categories_and_languages() {
 #[test]
 fn req_mcp_004_arguments_are_validated_per_parameter() {
     let args = |v: Value| -> Option<JsonObject> { v.as_object().cloned() };
-    let err = parse_search_arguments(args(json!({})).as_ref(), 20).unwrap_err();
+    let err = parse_search_arguments(args(json!({})).as_ref(), &policy(&["en"])).unwrap_err();
     assert_eq!(
         (err.kind, err.detail.parameter.as_deref()),
         (ErrorKind::InvalidRequest, Some("query"))
     );
-    let err =
-        parse_search_arguments(args(json!({ "query": "x", "page": 2 })).as_ref(), 20).unwrap_err();
+    let err = parse_search_arguments(
+        args(json!({ "query": "x", "page": 2 })).as_ref(),
+        &policy(&["en"]),
+    )
+    .unwrap_err();
     assert!(!err.message.contains("page"));
     assert_eq!(err.detail.allowed.as_ref().map(Vec::len), Some(5));
-    let err = parse_search_arguments(args(json!({ "query": 5 })).as_ref(), 20).unwrap_err();
+    let err =
+        parse_search_arguments(args(json!({ "query": 5 })).as_ref(), &policy(&["en"])).unwrap_err();
     assert_eq!(err.message, "query must be a string");
     let err = parse_search_arguments(
         args(json!({ "query": "x", "max_results": "many" })).as_ref(),
-        20,
+        &policy(&["en"]),
     )
     .unwrap_err();
     assert_eq!(err.detail.parameter.as_deref(), Some("max_results"));
     let err = parse_search_arguments(
         args(json!({ "query": "x", "category": "shopping" })).as_ref(),
-        20,
+        &policy(&["en"]),
     )
     .unwrap_err();
     assert_eq!(err.detail.parameter.as_deref(), Some("category"));
     assert!(!err.message.contains("shopping"));
+    // DAT-17 (a): the error lists the categories this process serves
+    // (general and science here), not the four of the vocabulary.
+    assert_eq!(
+        err.detail.allowed,
+        Some(vec!["general".to_owned(), "science".to_owned()])
+    );
+    assert_eq!(
+        err.message, "category must be one of: general, science",
+        "the message agrees with the list"
+    );
     let ok = parse_search_arguments(
         args(json!({ "query": "x", "max_results": 3, "time_range": "week", "language": "ja" }))
             .as_ref(),
-        20,
+        &policy(&["en", "ja"]),
     )
     .unwrap();
     assert_eq!(ok.max_results, Some(3));
@@ -184,13 +206,42 @@ fn req_main_006_max_results_errors_name_the_configured_ceiling() {
     let args = |v: Value| -> Option<JsonObject> { v.as_object().cloned() };
     let huge = parse_search_arguments(
         args(json!({ "query": "x", "max_results": 300 })).as_ref(),
-        10,
+        &with_ceiling(10),
     )
     .unwrap_err();
     assert_eq!(huge.detail.parameter.as_deref(), Some("max_results"));
     assert_eq!(huge.detail.max, Some(10));
     assert!(huge.message.contains("10"), "{}", huge.message);
-    let zero = parse_search_arguments(args(json!({ "query": "x", "max_results": 0 })).as_ref(), 7)
-        .unwrap_err();
+    let zero = parse_search_arguments(
+        args(json!({ "query": "x", "max_results": 0 })).as_ref(),
+        &with_ceiling(7),
+    )
+    .unwrap_err();
     assert_eq!(zero.detail.max, Some(7));
+}
+
+/// REQ-SEARCH-003 (RFC 020, DAT-17a): a category of the vocabulary that no
+/// enabled engine serves is refused with the served list too: from the
+/// adapter's parse and from the core's validation, the two lists agree.
+#[test]
+fn req_search_003_an_unserved_category_lists_the_served_ones() {
+    let args = |v: Value| -> Option<JsonObject> { v.as_object().cloned() };
+    let served = policy(&["en"]);
+    let parsed = parse_search_arguments(
+        args(json!({ "query": "x", "category": "news" })).as_ref(),
+        &served,
+    )
+    .expect("a name of the vocabulary parses");
+    let refused = rypsok_core::search::validate(&parsed, &served).unwrap_err();
+    assert_eq!(
+        refused.detail.allowed,
+        Some(vec!["general".to_owned(), "science".to_owned()])
+    );
+    let unknown = parse_search_arguments(
+        args(json!({ "query": "x", "category": "shopping" })).as_ref(),
+        &served,
+    )
+    .unwrap_err();
+    assert_eq!(unknown.detail.allowed, refused.detail.allowed);
+    assert_eq!(unknown.message, refused.message);
 }

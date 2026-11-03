@@ -1147,6 +1147,71 @@ fn req_fetch_011_retry_after_accepts_delta_seconds_only() {
     }
 }
 
+/// REQ-FETCH-001 and REQ-ERR-004 (RFC 020, DAT-17b): a URL beyond the bound
+/// is refused with the number, the effective LIM-F9 of this process, not the
+/// name of the limit.
+#[tokio::test]
+async fn req_fetch_001_a_url_that_is_too_long_states_the_bound() {
+    for bound in [2048u32, 300] {
+        let h = harness_with(Limits {
+            url_max_chars: bound,
+            ..Limits::default()
+        })
+        .await;
+        let long = format!("https://example.org/{}", "a".repeat(bound as usize));
+        let error = h.fetch(&long).await.unwrap_err();
+        assert_eq!(error.kind, ErrorKind::InvalidRequest);
+        assert_eq!(error.detail.parameter.as_deref(), Some("url"));
+        assert_eq!(error.detail.max, Some(bound));
+        assert_eq!(
+            error.message,
+            format!("url must be an absolute http or https URL of at most {bound} characters")
+        );
+        assert!(!error.message.contains("LIM-"), "{}", error.message);
+    }
+}
+
+/// REQ-SEC-017 and REQ-PRIV-002 (RFC 020, DAT-17c): the two URL forms and
+/// the reason each gets, as the Reading page states it. Userinfo with a
+/// password (`user:password@host`) and key-shaped text are `secret_in_url`;
+/// a user name alone (`user@host`) is `credential_in_url`.
+#[tokio::test]
+async fn req_priv_002_the_two_credential_url_forms_have_their_reasons() {
+    let h = harness().await;
+    let port = h.server.address().port();
+    let cases = [
+        (
+            format!("http://user:password@127.0.0.1:{port}/x"),
+            DetailReason::SecretInUrl,
+            "url contains what looks like credentials in a url at character",
+        ),
+        (
+            "https://example.org/?token=AKIAIOSFODNN7EXAMPLE".to_owned(),
+            DetailReason::SecretInUrl,
+            "url contains what looks like an AWS access key at character",
+        ),
+        (
+            format!("http://user@127.0.0.1:{port}/x"),
+            DetailReason::CredentialInUrl,
+            "the URL carries credentials; remove them",
+        ),
+    ];
+    for (url, reason, message) in cases {
+        let error = h.fetch(&url).await.unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Denied, "{url}");
+        assert_eq!(error.detail.reason, Some(reason), "{url}");
+        assert!(
+            error.message.starts_with(message),
+            "{url}: {}",
+            error.message
+        );
+        assert!(
+            !error.message.contains("password"),
+            "{url}: the value is never echoed"
+        );
+    }
+}
+
 /// REQ-PAGE-001: the stages run in the documented order: the privacy check
 /// before the policy, strict mode before the policy, robots.txt before the
 /// page request, the policy before any request.

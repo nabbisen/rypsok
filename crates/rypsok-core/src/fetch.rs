@@ -300,10 +300,7 @@ async fn run_inner(
         return Err(ToolError::missing("url"));
     }
     if url_text.chars() > limits.url_max_chars as usize {
-        return Err(ToolError::wrong_type(
-            "url",
-            "an absolute http or https URL of at most LIM-F9 characters",
-        ));
+        return Err(ToolError::url_length(limits.url_max_chars));
     }
     let max_chars = req.max_chars.unwrap_or(limits.fetch_max_chars);
     if !(500..=limits.fetch_max_chars_ceiling).contains(&max_chars) {

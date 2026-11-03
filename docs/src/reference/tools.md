@@ -172,6 +172,12 @@ An error is a tool execution error (`isError: true`) whose content is:
 | `unsupported_content` | The media type cannot be extracted, or nothing could be extracted | `reason` (`media_type`, `extraction_failed`), `media_type` (external data, bounded) |
 | `too_large` | The response exceeded the byte limit (5 MiB after decompression by default) | `limit_bytes` |
 
+`denied` has two reasons for credentials in a URL: `secret_in_url` for
+`user:password@host` and for key-shaped text in the URL, `credential_in_url`
+for `user@host`. An unserved `category` is refused with the served
+categories listed; a URL beyond the bound is refused with the number of
+characters allowed.
+
 For `unavailable` with `http_status`, the message tells whether retrying
 can help: for 408, 425, 429 and 5xx it ends "retry later" (and
 `retry_after_ms` carries the site's `Retry-After` when that is a number of

@@ -203,8 +203,9 @@ pub fn parse_fetch_arguments(arguments: Option<&JsonObject>) -> Result<FetchRequ
 /// argument is reported without repeating it (REQ-MCP-004).
 pub fn parse_search_arguments(
     arguments: Option<&JsonObject>,
-    max_results_ceiling: u8,
+    policy: &SearchPolicy,
 ) -> Result<SearchRequest, ToolError> {
+    let max_results_ceiling = policy.max_results_ceiling;
     let empty = Map::new();
     let args = arguments.unwrap_or(&empty);
     for key in args.keys() {
@@ -223,15 +224,10 @@ pub fn parse_search_arguments(
             Category::ALL
                 .into_iter()
                 .find(|c| c.as_str() == s)
-                .ok_or_else(|| {
-                    ToolError::not_allowed(
-                        "category",
-                        Category::ALL
-                            .iter()
-                            .map(|c| c.as_str().to_owned())
-                            .collect(),
-                    )
-                })?,
+                // The categories this process serves, not the whole
+                // vocabulary: the core lists the same set for a name that is
+                // known and not served (RFC 020, DAT-17).
+                .ok_or_else(|| ToolError::not_allowed("category", policy.category_names()))?,
         ),
         Some(_) => return Err(ToolError::wrong_type("category", "a string")),
     };

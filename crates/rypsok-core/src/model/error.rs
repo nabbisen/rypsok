@@ -345,6 +345,20 @@ impl ToolError {
         )
     }
 
+    /// `invalid_request`: the URL is longer than the bound (LIM-F9, as
+    /// configured for this process); the message states the number.
+    pub fn url_length(max: u32) -> Self {
+        Self::new(
+            ErrorKind::InvalidRequest,
+            format!("url must be an absolute http or https URL of at most {max} characters"),
+            ErrorDetail {
+                parameter: Some("url".to_owned()),
+                max: Some(max),
+                ..Default::default()
+            },
+        )
+    }
+
     /// `denied`: the secret check found a credential in the query.
     pub fn secret_in_query(kind: SecretKind, position: u32) -> Self {
         Self::new(
