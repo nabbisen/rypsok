@@ -100,8 +100,11 @@ The statuses, by the party that answers:
 | 503 | A legacy handshake while LIM-H6 sessions are open; `Retry-After: 30` | The gate | `session_limit` |
 
 A connection beyond LIM-H1 is closed unanswered and logged as
-`too_many_connections`. Every refusal in the table, and that one, is counted
-under `http` and the reason. The statuses of the SDK are the contract of
+`too_many_connections`. A connection that sends no byte within LIM-H3 is
+closed too and counted as `idle_connection`, with no log line of its own, so
+that a flood of silent connections cannot write a flood of lines. Every
+refusal in the table, and those two, is counted under `http` and the
+reason. The statuses of the SDK are the contract of
 the pinned version (REQ-ARCH-008); an upgrade that changes one is a
 contract change.
 

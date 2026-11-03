@@ -56,6 +56,17 @@ impl Server {
         config_text: &str,
         counters: Option<Arc<rypsok_core::telemetry::Counters>>,
     ) -> Server {
+        Self::start_tuned(config_text, counters, |_| {}).await
+    }
+
+    /// Starts a listener after `tune` has changed its settings: the way a
+    /// test uses a bound the configuration check would not admit, such as
+    /// an idle time of a few hundred milliseconds (the range starts at 5 s).
+    async fn start_tuned(
+        config_text: &str,
+        counters: Option<Arc<rypsok_core::telemetry::Counters>>,
+        tune: impl FnOnce(&mut HttpSettings),
+    ) -> Server {
         let config = Config::parse(config_text).unwrap();
         config.validate().unwrap();
         let mut service = Rypsok::new(config).unwrap();
@@ -63,7 +74,8 @@ impl Server {
             service = service.with_counters(counters);
         }
         let service = Arc::new(service);
-        let settings = HttpSettings::from_config(service.config()).unwrap();
+        let mut settings = HttpSettings::from_config(service.config()).unwrap();
+        tune(&mut settings);
         let listener = bind(&settings).await.unwrap();
         let url = format!("http://{}{PATH}", listener.local_addr().unwrap());
         let shutdown = CancellationToken::new();
@@ -1008,5 +1020,415 @@ async fn req_sec_024_a_refused_handshake_is_503_over_http2_too() {
     }
     assert_eq!(statuses[0].0, 200, "{statuses:?}");
     assert_eq!(statuses[1], (503, Some("30".to_owned()), String::new()));
+    s.stop().await;
+}
+
+// ---------------------------------------------------------------------------
+// The bounds that had no test (handoff 020g item 1; audit NET-7): LIM-H1,
+// LIM-H3 and LIM-H4 observed as behavior, on raw sockets.
+// ---------------------------------------------------------------------------
+
+/// `host:port` of a started server.
+fn address(s: &Server) -> String {
+    s.url
+        .trim_start_matches("http://")
+        .trim_end_matches(PATH)
+        .to_owned()
+}
+
+/// What happened to a connection that was watched for a while.
+#[derive(Debug)]
+enum Watched {
+    /// The server closed it after this long; the bytes it sent first.
+    Closed(Duration, Vec<u8>),
+    /// Still open at the end of the watch.
+    Open,
+}
+
+/// Reads from `stream` until the server closes it or `limit` has passed.
+async fn watch(stream: &mut tokio::net::TcpStream, limit: Duration) -> Watched {
+    use tokio::io::AsyncReadExt;
+    let started = std::time::Instant::now();
+    let mut received = Vec::new();
+    let mut buffer = [0u8; 4096];
+    loop {
+        let left = limit.saturating_sub(started.elapsed());
+        match tokio::time::timeout(left, stream.read(&mut buffer)).await {
+            Err(_) => return Watched::Open,
+            Ok(Ok(0)) | Ok(Err(_)) => return Watched::Closed(started.elapsed(), received),
+            Ok(Ok(n)) => received.extend_from_slice(&buffer[..n]),
+        }
+    }
+}
+
+/// A legitimate request on a fresh connection is answered 200, within
+/// `within`; connections that are refused or still being freed are retried.
+async fn answered_within(s: &Server, within: Duration) -> bool {
+    let started = std::time::Instant::now();
+    while started.elapsed() < within {
+        if let Ok(response) = s.request("server/discover", json!({})).send().await
+            && response.status() == 200
+        {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    false
+}
+
+/// A server with `max_connections` and an idle time of 400 ms (a settings
+/// override; the configuration's range starts at 5 s).
+async fn short_idle_server(max_connections: u32) -> Server {
+    Server::start_tuned(
+        &LOOPBACK.replace(
+            "bind = \"127.0.0.1:0\"\n",
+            &format!("bind = \"127.0.0.1:0\"\nmax_connections = {max_connections}\n"),
+        ),
+        None,
+        |settings| settings.idle_timeout = Duration::from_millis(400),
+    )
+    .await
+}
+
+/// REQ-SEC-018 (LIM-H1): with `max_connections = 2` a third connection is
+/// closed without a response and counted as `too_many_connections`; once
+/// one connection closes, a new one works.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn req_sec_018_the_connection_cap_refuses_the_third_and_frees_on_close() {
+    let s = Server::start(&LOOPBACK.replace(
+        "bind = \"127.0.0.1:0\"\n",
+        "bind = \"127.0.0.1:0\"\nmax_connections = 2\n",
+    ))
+    .await;
+    let first = tokio::net::TcpStream::connect(address(&s)).await.unwrap();
+    let second = tokio::net::TcpStream::connect(address(&s)).await.unwrap();
+    // The accept loop takes connections in order; the third finds no permit.
+    let mut third = tokio::net::TcpStream::connect(address(&s)).await.unwrap();
+    match watch(&mut third, Duration::from_secs(3)).await {
+        Watched::Closed(_, bytes) => assert!(bytes.is_empty(), "no response: {bytes:?}"),
+        Watched::Open => panic!("the third connection was not closed"),
+    }
+    assert_eq!(
+        s.service
+            .counters()
+            .refusals_of("http", "too_many_connections"),
+        1
+    );
+    // The two held connections still hold their permits: a request is
+    // refused (closed without an answer) while both are open.
+    let refused = s
+        .client()
+        .post(&s.url)
+        .json(&json!({}))
+        .send()
+        .await
+        .is_err();
+    assert!(refused, "a fourth connection must not be served");
+    drop(first);
+    assert!(
+        answered_within(&s, Duration::from_secs(3)).await,
+        "a new connection works after one closed"
+    );
+    drop(second);
+    s.stop().await;
+}
+
+/// REQ-SEC-022 (LIM-H3), first case: a connection that sends **nothing** is
+/// closed after the idle time and frees its permit (NET-1).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn req_sec_022_a_silent_connection_is_closed_after_the_idle_time() {
+    let s = short_idle_server(1).await;
+    let mut silent = tokio::net::TcpStream::connect(address(&s)).await.unwrap();
+    match watch(&mut silent, Duration::from_secs(4)).await {
+        Watched::Closed(after, bytes) => {
+            assert!(
+                after >= Duration::from_millis(300),
+                "closed too early: {after:?}"
+            );
+            assert!(bytes.is_empty(), "no response to nothing: {bytes:?}");
+        }
+        Watched::Open => panic!("a silent connection was still open after 4 s"),
+    }
+    assert!(
+        answered_within(&s, Duration::from_secs(3)).await,
+        "the permit is free again"
+    );
+    s.stop().await;
+}
+
+/// REQ-SEC-022 (LIM-H3), NET-1 as the audit stated it: `max_connections`
+/// silent connections do not keep a legitimate caller out for longer than
+/// the idle time.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn req_sec_022_silent_connections_cannot_hold_every_permit() {
+    let s = short_idle_server(4).await;
+    let mut silent = Vec::new();
+    for _ in 0..4 {
+        silent.push(tokio::net::TcpStream::connect(address(&s)).await.unwrap());
+    }
+    // At once every permit is held and the caller is turned away ...
+    assert!(
+        s.request("server/discover", json!({}))
+            .send()
+            .await
+            .is_err()
+    );
+    // ... and after the idle time the caller is served, with the silent
+    // connections still open on the client side.
+    assert!(
+        answered_within(&s, Duration::from_secs(4)).await,
+        "the silent connections still hold the permits"
+    );
+    drop(silent);
+    s.stop().await;
+}
+
+/// REQ-SEC-022 (LIM-H3), second case: a connection that sent a **partial
+/// header** is closed after the idle time and frees its permit.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn req_sec_022_a_partial_header_is_closed_after_the_idle_time() {
+    use tokio::io::AsyncWriteExt;
+    let s = short_idle_server(1).await;
+    let mut slow = tokio::net::TcpStream::connect(address(&s)).await.unwrap();
+    slow.write_all(b"POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Slow: ")
+        .await
+        .unwrap();
+    match watch(&mut slow, Duration::from_secs(4)).await {
+        Watched::Closed(after, _) => {
+            assert!(
+                after >= Duration::from_millis(300),
+                "closed too early: {after:?}"
+            );
+        }
+        Watched::Open => panic!("a partial header was still open after 4 s"),
+    }
+    assert!(
+        answered_within(&s, Duration::from_secs(3)).await,
+        "the permit is free again"
+    );
+    s.stop().await;
+}
+
+/// REQ-SEC-022 (LIM-H3), third case: a keep-alive connection that is idle
+/// **between requests** is closed after the idle time and frees its permit.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn req_sec_022_an_idle_keep_alive_connection_is_closed_after_the_idle_time() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let s = short_idle_server(1).await;
+    let mut kept = tokio::net::TcpStream::connect(address(&s)).await.unwrap();
+    let body = json!({
+        "jsonrpc": "2.0", "id": 1, "method": "server/discover",
+        "params": { META: meta() }
+    })
+    .to_string();
+    kept.write_all(
+        format!(
+            "POST {PATH} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nAccept: application/json, text/event-stream\r\nMCP-Protocol-Version: 2026-07-28\r\nMcp-Method: server/discover\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        )
+        .as_bytes(),
+    )
+    .await
+    .unwrap();
+    // Read the whole answer: the head, then `Content-Length` bytes.
+    let mut answer = Vec::new();
+    let mut buffer = [0u8; 4096];
+    loop {
+        let n = tokio::time::timeout(Duration::from_secs(3), kept.read(&mut buffer))
+            .await
+            .expect("an answer within 3 s")
+            .unwrap();
+        assert!(n > 0, "closed before the answer");
+        answer.extend_from_slice(&buffer[..n]);
+        let text = String::from_utf8_lossy(&answer).into_owned();
+        if let Some(head_end) = text.find("\r\n\r\n") {
+            let length = text[..head_end]
+                .lines()
+                .find_map(|l| {
+                    l.to_ascii_lowercase()
+                        .strip_prefix("content-length:")
+                        .map(|v| v.trim().parse::<usize>().unwrap())
+                })
+                .expect("a content-length");
+            if answer.len() >= head_end + 4 + length {
+                break;
+            }
+        }
+    }
+    assert!(String::from_utf8_lossy(&answer).starts_with("HTTP/1.1 200"));
+    match watch(&mut kept, Duration::from_secs(4)).await {
+        Watched::Closed(after, bytes) => {
+            assert!(
+                after >= Duration::from_millis(300),
+                "closed too early: {after:?}"
+            );
+            assert!(bytes.is_empty(), "nothing more is sent: {bytes:?}");
+        }
+        Watched::Open => panic!("an idle keep-alive connection was still open after 4 s"),
+    }
+    assert!(
+        answered_within(&s, Duration::from_secs(3)).await,
+        "the permit is free again"
+    );
+    s.stop().await;
+}
+
+/// One HTTP/2 frame: length, type, flags, stream, payload.
+fn h2_frame(kind: u8, flags: u8, stream: u32, payload: &[u8]) -> Vec<u8> {
+    let length = u32::try_from(payload.len()).unwrap().to_be_bytes();
+    let mut frame = vec![length[1], length[2], length[3], kind, flags];
+    frame.extend_from_slice(&stream.to_be_bytes());
+    frame.extend_from_slice(payload);
+    frame
+}
+
+/// A header block of a POST to `/mcp` that promises a body and never sends
+/// it, written as HPACK literals (RFC 7541 §6.2.2, no Huffman, no index).
+fn h2_open_request_headers() -> Vec<u8> {
+    fn literal(block: &mut Vec<u8>, name: &str, value: &str) {
+        block.push(0x00);
+        block.push(u8::try_from(name.len()).unwrap());
+        block.extend_from_slice(name.as_bytes());
+        block.push(u8::try_from(value.len()).unwrap());
+        block.extend_from_slice(value.as_bytes());
+    }
+    let mut block = vec![0x83, 0x86]; // :method POST, :scheme http
+    block.extend_from_slice(&[0x04, 4]); // :path, literal value
+    block.extend_from_slice(PATH.as_bytes());
+    block.extend_from_slice(&[0x01, 9]); // :authority
+    block.extend_from_slice(b"127.0.0.1");
+    literal(&mut block, "content-type", "application/json");
+    literal(&mut block, "accept", "application/json, text/event-stream");
+    literal(&mut block, "mcp-protocol-version", "2026-07-28");
+    literal(&mut block, "mcp-method", "server/discover");
+    literal(&mut block, "content-length", "1000");
+    block
+}
+
+/// Reads one frame (kind, flags, stream, payload), or `None` at the end of
+/// the stream or after `limit`.
+async fn h2_read_frame(
+    stream: &mut tokio::net::TcpStream,
+    limit: Duration,
+) -> Option<(u8, u8, u32, Vec<u8>)> {
+    use tokio::io::AsyncReadExt;
+    let mut head = [0u8; 9];
+    tokio::time::timeout(limit, stream.read_exact(&mut head))
+        .await
+        .ok()?
+        .ok()?;
+    let length = u32::from_be_bytes([0, head[0], head[1], head[2]]) as usize;
+    let id = u32::from_be_bytes([head[5] & 0x7f, head[6], head[7], head[8]]);
+    let mut payload = vec![0u8; length];
+    tokio::time::timeout(limit, stream.read_exact(&mut payload))
+        .await
+        .ok()?
+        .ok()?;
+    Some((head[3], head[4], id, payload))
+}
+
+/// REQ-SEC-022 (LIM-H4): with `max_streams = 2` the server advertises
+/// `SETTINGS_MAX_CONCURRENT_STREAMS = 2`, serves two open streams and
+/// **refuses the third with `RST_STREAM(REFUSED_STREAM)`**: that is what
+/// the HTTP/2 implementation under hyper does (it does not queue the stream
+/// and does not close the connection), seen here with a client that ignores
+/// the advertised limit, because a compliant client queues the request on its
+/// own side and never lets the server see it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn req_sec_022_an_http2_stream_beyond_max_streams_is_refused() {
+    use tokio::io::AsyncWriteExt;
+    let s = Server::start(&LOOPBACK.replace(
+        "bind = \"127.0.0.1:0\"\n",
+        "bind = \"127.0.0.1:0\"\nmax_streams = 2\n",
+    ))
+    .await;
+    let mut stream = tokio::net::TcpStream::connect(address(&s)).await.unwrap();
+    stream
+        .write_all(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
+        .await
+        .unwrap();
+    stream.write_all(&h2_frame(0x4, 0, 0, &[])).await.unwrap();
+
+    // The server's SETTINGS: MAX_CONCURRENT_STREAMS (id 3) is max_streams.
+    let mut advertised = None;
+    while advertised.is_none() {
+        let (kind, flags, _, payload) = h2_read_frame(&mut stream, Duration::from_secs(3))
+            .await
+            .expect("the server's SETTINGS");
+        if kind == 0x4 && flags & 0x1 == 0 {
+            for entry in payload.chunks(6) {
+                if u16::from_be_bytes([entry[0], entry[1]]) == 3 {
+                    advertised = Some(u32::from_be_bytes([entry[2], entry[3], entry[4], entry[5]]));
+                }
+            }
+            stream.write_all(&h2_frame(0x4, 0x1, 0, &[])).await.unwrap();
+            break;
+        }
+    }
+    assert_eq!(advertised, Some(2), "the advertised stream limit");
+
+    // Streams 1 and 3 are opened and left waiting for their bodies.
+    let headers = h2_open_request_headers();
+    for id in [1u32, 3] {
+        stream
+            .write_all(&h2_frame(0x1, 0x4, id, &headers))
+            .await
+            .unwrap();
+    }
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    // Stream 5 is one too many.
+    stream
+        .write_all(&h2_frame(0x1, 0x4, 5, &headers))
+        .await
+        .unwrap();
+    let mut refused = false;
+    while let Some((kind, _, id, payload)) =
+        h2_read_frame(&mut stream, Duration::from_secs(3)).await
+    {
+        match kind {
+            0x3 if id == 5 => {
+                let code = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
+                assert_eq!(code, 0x7, "REFUSED_STREAM");
+                refused = true;
+                break;
+            }
+            0x7 => panic!("the connection was closed (GOAWAY) instead of the stream refused"),
+            _ => {}
+        }
+    }
+    assert!(refused, "stream 5 was not refused");
+    s.stop().await;
+}
+
+/// REQ-SEC-022 and REQ-OBS-007 (handoff 020g, NET-1): a silent connection
+/// closed after the idle time is counted as `http.idle_connection` and
+/// writes **no log line**, so that a flood of silent connections cannot write
+/// a flood of lines. (A current-thread runtime, so that the test's
+/// subscriber sees the listener's tasks.)
+#[tokio::test]
+async fn req_sec_022_idle_closes_are_counted_and_not_logged() {
+    use rypsok_core::telemetry::Counters;
+    let (log, _guard) = capture_log();
+    let counters = Arc::new(Counters::with_flush_interval(Duration::from_secs(3600)));
+    let s = Server::start_tuned(LOOPBACK, Some(Arc::clone(&counters)), |settings| {
+        settings.idle_timeout = Duration::from_millis(300);
+    })
+    .await;
+    let mut silent = Vec::new();
+    for _ in 0..5 {
+        silent.push(tokio::net::TcpStream::connect(address(&s)).await.unwrap());
+    }
+    for stream in &mut silent {
+        assert!(matches!(
+            watch(stream, Duration::from_secs(4)).await,
+            Watched::Closed(..)
+        ));
+    }
+    assert_eq!(counters.refusals_of("http", "idle_connection"), 5);
+    assert!(
+        events(&log, "http_refused").is_empty(),
+        "no per-connection log line: {}",
+        String::from_utf8_lossy(&log.lock().unwrap())
+    );
     s.stop().await;
 }

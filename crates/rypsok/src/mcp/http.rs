@@ -306,19 +306,39 @@ pub async fn run_with(
             drop(stream);
             continue;
         };
-        let connection = builder
-            .serve_connection_with_upgrades(
-                TokioIo::new(stream),
-                TowerToHyperService::new(Gate {
-                    family: address_family(&remote),
-                    ..gate.clone()
-                }),
-            )
-            .into_owned();
-        let connection = graceful.watch(connection);
+        // The wait for the first byte and the connection itself run in the
+        // connection's own task, never in this loop (NET-1).
+        let watcher = graceful.watcher();
+        let builder = builder.clone();
+        let service = TowerToHyperService::new(Gate {
+            family: address_family(&remote),
+            ..gate.clone()
+        });
+        let counters = Arc::clone(&counters);
+        let shutdown = shutdown.clone();
+        let idle_timeout = settings.idle_timeout;
         tokio::spawn(async move {
             let _permit = permit;
-            if let Err(error) = connection.await {
+            // LIM-H3 for a connection that never speaks: hyper's header read
+            // timeout starts with the first byte, so the wait for that byte
+            // is bounded here. A peer that sent nothing within the idle time
+            // is closed, which frees its LIM-H1 permit. Counted, not logged:
+            // a flood of silent connections must not write a flood of lines.
+            // `peek` waits for data without consuming it; `readable` can
+            // report readiness that is not there.
+            let mut probe = [0u8; 1];
+            let first_byte = tokio::select! {
+                _ = shutdown.cancelled() => return,
+                waited = tokio::time::timeout(idle_timeout, stream.peek(&mut probe)) => waited,
+            };
+            if first_byte.is_err() {
+                counters.refused_http("idle_connection");
+                return;
+            }
+            let connection = builder
+                .serve_connection_with_upgrades(TokioIo::new(stream), service)
+                .into_owned();
+            if let Err(error) = watcher.watch(connection).await {
                 tracing::debug!(event = "connection_ended", error = %error, "connection ended with an error");
             }
         });
