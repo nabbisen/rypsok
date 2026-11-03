@@ -1,11 +1,15 @@
 name: Scheduled checks
 
-# Reports only; never a gate (RFC 002): the fuzz targets of RFC 018 and the
-# live driver checks of REQ-TEST-003.
+# Never a gate (RFC 002): the fuzz targets of RFC 018 and the live driver
+# checks of REQ-TEST-003. A failed run fails and GitHub notifies the owner
+# (RFC 020, DEP-7); the two jobs are independent.
 on:
   schedule:
     - cron: "17 4 * * 1"
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   fuzz:
@@ -13,7 +17,8 @@ jobs:
     # fuzz target under fuzz/; each runs for a fixed time, report only.
     name: Fuzz targets (report only)
     runs-on: ubuntu-latest
-    continue-on-error: true
+    # 9 targets x 300 s + 15 minutes for the build and the setup.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-27
@@ -21,18 +26,18 @@ jobs:
           toolchain: nightly
       - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
-          tool: cargo-fuzz
+          tool: cargo-fuzz@0.13.2
       - name: Build the targets
         working-directory: fuzz
         # The runner's default target may be musl, where the sanitizer
         # cannot link statically; name the host target.
         run: cargo +nightly fuzz build --target x86_64-unknown-linux-gnu
-      - name: Run each target for 120 s
+      - name: Run each target for 300 s
         working-directory: fuzz
         run: |
           for target in $(cargo +nightly fuzz list); do
             echo "::group::$target"
-            cargo +nightly fuzz run --target x86_64-unknown-linux-gnu "$target" -- -max_total_time=120 -rss_limit_mb=2048 -timeout=30
+            cargo +nightly fuzz run --target x86_64-unknown-linux-gnu "$target" -- -max_total_time=300 -rss_limit_mb=2048 -timeout=30
             echo "::endgroup::"
           done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -44,15 +49,24 @@ jobs:
   live-checks:
     name: Live driver checks (report only)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-27
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Brave key present?
+        env:
+          BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
+        # The Brave test skips itself without a key and then passes; this
+        # step makes the skip visible (RFC 020, DEP-7).
+        run: |
+          if [ -z "$BRAVE_API_KEY" ]; then
+            echo "::warning title=Brave check skipped::BRAVE_API_KEY is not set, so the Brave live check did not run"
+            echo "Brave check skipped: no key" >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Live checks (REQ-TEST-003)
         env:
           BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
           RYPSOK_LIVE_CONTACT: ${{ vars.RYPSOK_LIVE_CONTACT }}
-        run: cargo test -p rypsok --test live -- --ignored --nocapture
+        run: cargo test -p rypsok --test live --locked -- --ignored --nocapture
