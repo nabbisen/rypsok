@@ -273,8 +273,38 @@ fn req_doc_001_every_page_is_in_the_summary() {
     );
 }
 
+/// The code of a source file before its test module: everything up to the
+/// first `#[cfg(test)]` that is followed by `mod tests`. A `#[cfg(test)]`
+/// helper function earlier in the file is not the end of the code.
+fn without_test_module(text: &str) -> &str {
+    let mut from = 0;
+    while let Some(at) = text[from..].find("#[cfg(test)]") {
+        let start = from + at;
+        let after = &text[start + "#[cfg(test)]".len()..];
+        if after.trim_start().starts_with("mod tests") {
+            return &text[..start];
+        }
+        from = start + 1;
+    }
+    text
+}
+
+/// REQ-SEC-014: the scan stops at the test module, not at the first
+/// `#[cfg(test)]`: code after a test-only helper is still scanned.
+#[test]
+fn req_sec_014_scan_stops_at_the_test_module_only() {
+    let text = "fn a() { m.lock().unwrap(); }\n#[cfg(test)]\nfn helper() {}\nfn b() { m.read().expect(\"x\"); }\n#[cfg(test)]\nmod tests;\nfn c() { m.write().unwrap(); }\n";
+    let code = without_test_module(text);
+    assert!(code.contains("fn a()"));
+    assert!(code.contains("fn b()"), "code after a helper is scanned");
+    assert!(!code.contains("fn c()"), "the test module is not scanned");
+    let inline = "fn a() {}\n#[cfg(test)]\nmod tests {\n fn t() {}\n}\n";
+    assert_eq!(without_test_module(inline), "fn a() {}\n");
+    assert_eq!(without_test_module("fn a() {}\n"), "fn a() {}\n");
+}
+
 /// REQ-SEC-014 with RFC 020 D3, handoff 020j (NET-13): a `std::sync` lock is never taken
-/// with `.expect(` in non-test source, so that a panic while one is held
+/// with `.expect(` or `.unwrap()` in non-test source, so that a panic while one is held
 /// cannot make every later call panic. The code goes through the `sync`
 /// helpers (`rypsok-core`) or recovers the guard itself. `cache.rs` is
 /// exempt: it disables itself on a poisoned lock (RFC 014, REQ-CACHE-006).
@@ -307,8 +337,7 @@ fn req_sec_014_no_expect_on_a_standard_library_lock() {
             continue;
         }
         let text = std::fs::read_to_string(&path).unwrap();
-        // Inline test modules sit at the end of a file: stop at the first.
-        let code = text.split("#[cfg(test)]").next().unwrap_or("");
+        let code = without_test_module(&text);
         let joined: String = code
             .lines()
             .map(str::trim)
@@ -316,18 +345,20 @@ fn req_sec_014_no_expect_on_a_standard_library_lock() {
             .collect::<Vec<_>>()
             .join("");
         for call in [".lock()", ".read()", ".write()"] {
-            let pattern = format!("{call}.expect(");
-            if joined.contains(&pattern) {
-                offenders.push(format!(
-                    "{}: `{pattern}`",
-                    path.strip_prefix(&root).unwrap().display()
-                ));
+            for panicking in [".expect(", ".unwrap()"] {
+                let pattern = format!("{call}{panicking}");
+                if joined.contains(&pattern) {
+                    offenders.push(format!(
+                        "{}: `{pattern}`",
+                        path.strip_prefix(&root).unwrap().display()
+                    ));
+                }
             }
         }
     }
     assert!(
         offenders.is_empty(),
-        "locks taken with expect (use the sync helpers):\n{}",
+        "locks taken with expect or unwrap (use the sync helpers):\n{}",
         offenders.join("\n")
     );
 }
