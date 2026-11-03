@@ -20,9 +20,11 @@ announced here with both values.
   panic: the counters, health table, limiters, robots.txt cache, returned
   URL memory and the per-caller limiters recover a poisoned lock instead of
   failing on it. The result cache keeps disabling itself on a poisoned lock.
-- A connection to the HTTP listener that never sends a byte is closed after
-  `idle_timeout_s` and frees its connection slot (LIM-H3 now holds for it
-  too). Before, `max_connections` silent connections kept every legitimate
+- A connection to the HTTP listener that never sends a byte, or that stops
+  before the protocol is known (a single `P`, or part of the HTTP/2 preface,
+  or a preface sent a byte at a time), is closed after `idle_timeout_s`
+  counted from accept, and frees its connection slot (LIM-H3 now holds for
+  it too). Before, `max_connections` such connections kept every legitimate
   caller out for as long as they stayed open.
 - The listener no longer spins and floods the log when `accept` fails (for
   instance when the descriptor limit is below `max_connections`): it waits
@@ -34,8 +36,8 @@ announced here with both values.
 ### Changed
 
 - New refusal reason `idle_connection` in the `counters` event (`refusals`,
-  under `http`): a silent connection closed after the idle time. It is
-  counted and not logged.
+  under `http`): a connection closed because it had not told its protocol
+  within the idle time. It is counted and not logged.
 - The header block of an HTTP request (request line and headers on HTTP/1,
   the header list on HTTP/2) is bounded at 16 KiB, a new fixed limit LIM-H7.
   A larger block is now answered 431 (HTTP/2: the connection is closed); hyper's

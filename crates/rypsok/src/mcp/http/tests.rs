@@ -1183,6 +1183,101 @@ async fn req_sec_022_silent_connections_cannot_hold_every_permit() {
     s.stop().await;
 }
 
+/// What a client sends before it stalls, for the protocol-detection tests:
+/// the whole connection must be closed after the idle time and free its
+/// permit (G1 of the 020g review). `counted` says whether the close belongs
+/// to the first-bytes deadline (counted as `idle_connection`) or to hyper's
+/// own header timeout once HTTP/1 is decided (not counted, like a partial
+/// header).
+async fn stalls_after_sending(prefix: &[u8], counted: bool) {
+    use tokio::io::AsyncWriteExt;
+    let s = short_idle_server(1).await;
+    let mut stalled = tokio::net::TcpStream::connect(address(&s)).await.unwrap();
+    stalled.write_all(prefix).await.unwrap();
+    match watch(&mut stalled, Duration::from_secs(4)).await {
+        Watched::Closed(after, bytes) => {
+            assert!(
+                after >= Duration::from_millis(300),
+                "closed too early: {after:?}"
+            );
+            assert!(bytes.is_empty(), "no response to {prefix:?}: {bytes:?}");
+        }
+        Watched::Open => panic!("{prefix:?} then silence: still open after 4 s"),
+    }
+    assert!(
+        answered_within(&s, Duration::from_secs(3)).await,
+        "the permit is free again after {prefix:?}"
+    );
+    assert_eq!(
+        s.service.counters().refusals_of("http", "idle_connection"),
+        u64::from(counted),
+        "counted under the same reason: {counted}"
+    );
+    s.stop().await;
+}
+
+/// REQ-SEC-022 (LIM-H3), G1: one byte that is both the start of `POST` and
+/// of the HTTP/2 preface decides nothing; the connection is still closed
+/// after the idle time.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn req_sec_022_one_ambiguous_byte_then_silence_is_closed_after_the_idle_time() {
+    stalls_after_sending(b"P", true).await;
+}
+
+/// REQ-SEC-022 (LIM-H3), G1: `PO` already differs from `PRI` at the second
+/// byte, so HTTP/1 is decided and hyper's header timeout closes it (it
+/// passed on the tree before the fix; kept as the boundary of the case).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn req_sec_022_two_bytes_that_decide_http1_then_silence_is_closed_after_the_idle_time() {
+    stalls_after_sending(b"PO", false).await;
+}
+
+/// REQ-SEC-022 (LIM-H3), G1: 21 of the 24 bytes of the HTTP/2 preface.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn req_sec_022_a_partial_http2_preface_then_silence_is_closed_after_the_idle_time() {
+    stalls_after_sending(b"PRI * HTTP/2.0\r\n\r\nSM\r\n", true).await;
+}
+
+/// REQ-SEC-022 (LIM-H3), G1: a valid preface sent one byte every third of
+/// the idle time is closed at the idle time from accept, not extended by
+/// each byte.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn req_sec_022_a_trickled_preface_does_not_extend_the_deadline() {
+    use tokio::io::AsyncWriteExt;
+    const PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
+    let s = short_idle_server(1).await;
+    let mut trickle = tokio::net::TcpStream::connect(address(&s)).await.unwrap();
+    let started = std::time::Instant::now();
+    let mut closed_at = None;
+    for byte in PREFACE {
+        if trickle.write_all(&[*byte]).await.is_err() {
+            closed_at = Some(started.elapsed());
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(130)).await;
+        if started.elapsed() > Duration::from_secs(4) {
+            break;
+        }
+    }
+    let closed_at = match closed_at {
+        Some(at) => at,
+        None => match watch(&mut trickle, Duration::from_secs(1)).await {
+            Watched::Closed(_, _) => started.elapsed(),
+            Watched::Open => panic!("the trickle held the connection open"),
+        },
+    };
+    // 24 bytes at 130 ms would take 3.1 s; the deadline is 400 ms.
+    assert!(
+        closed_at < Duration::from_millis(1500),
+        "closed only after {closed_at:?}"
+    );
+    assert!(
+        answered_within(&s, Duration::from_secs(3)).await,
+        "the permit is free again"
+    );
+    s.stop().await;
+}
+
 /// REQ-SEC-022 (LIM-H3), second case: a connection that sent a **partial
 /// header** is closed after the idle time and frees its permit.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

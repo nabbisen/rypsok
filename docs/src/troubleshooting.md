@@ -74,8 +74,9 @@ gate logs `http_refused` with a `reason` for `too_many_connections`,
 never the address or a header value. A missing protocol header (400) and a
 wrong `Accept` (406) are not logged per request; every refusal of the gate
 and of the SDK behind it is counted, per reason, in the `counters` event
-(`refusals`, under `http`). A connection that sent nothing and was closed
-after the idle time is counted there as `idle_connection` and not logged.
+(`refusals`, under `http`). A connection that sent nothing, or only the first
+bytes of a request or of the HTTP/2 preface, and was closed after the idle
+time is counted there as `idle_connection` and not logged.
 The SDK writes its own warning for a refused
 `Host` or `Origin`, and one error line for each refused handshake. The
 query text never appears in a log unless `[logging] log_queries = true`
