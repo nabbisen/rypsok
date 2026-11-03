@@ -218,8 +218,17 @@ fn req_test_007_hostile_corpus_keeps_the_envelope_intact() {
             "{}: a string introduced a field",
             path.display()
         );
-        let again: crate::model::SearchResponse = serde_json::from_str(&text).unwrap();
-        assert_eq!(again, response);
+        // The strings survive the JSON round trip as they are. (A result
+        // cannot be read back into the type: it has no `Deserialize`, so
+        // that only the boundary builds one; RFC 020, DAT-10.)
+        assert_eq!(
+            parsed["results"][0]["title"].as_str(),
+            Some(response.results[0].title.as_str())
+        );
+        assert_eq!(
+            parsed["results"][0]["snippet"].as_str(),
+            Some(response.results[0].snippet.as_str())
+        );
     }
     assert!(seen >= 5, "the corpus has {seen} entries");
 }

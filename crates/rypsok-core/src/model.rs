@@ -319,7 +319,7 @@ impl Notice {
 
 /// One result of `web_search`. The title, URL, snippet and date are external
 /// data, cleaned and bounded by the content boundary (REQ-CTX-002).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[non_exhaustive]
 pub struct SearchResult {
     /// The page title, cleaned and bounded by LIM-S10.
@@ -348,7 +348,7 @@ pub struct SearchResult {
 pub struct Cleaned;
 
 /// The response of `web_search` (external design §3.1).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[non_exhaustive]
 pub struct SearchResponse {
     /// The outcome.

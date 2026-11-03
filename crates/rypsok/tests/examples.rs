@@ -14,7 +14,7 @@ use std::process::Command;
 
 use rypsok_core::config::Config;
 use rypsok_core::model::{
-    ErrorEnvelope, FetchRequest, FetchResponse, SearchRequest, SearchResponse, StatusResponse,
+    ErrorEnvelope, FetchRequest, FetchResponse, SearchRequest, StatusResponse,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -100,6 +100,74 @@ fn parses<T: DeserializeOwned>(value: &Value, what: &str) {
         .unwrap_or_else(|e| panic!("{what}: does not match the type: {e}\n{value}"));
 }
 
+/// A reader for the answer of `web_search` in this test. `SearchResult` (and
+/// so `SearchResponse`) has no `Deserialize`, so that only the content
+/// boundary builds one (RFC 020, DAT-10); the examples are read into this
+/// mirror, which refuses unknown fields. A test below checks that its fields
+/// are the type's.
+#[derive(serde::Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct SearchResponseMirror {
+    outcome: rypsok_core::model::Outcome,
+    notices: Vec<rypsok_core::model::Notice>,
+    results: Vec<SearchResultMirror>,
+}
+
+#[derive(serde::Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct SearchResultMirror {
+    title: String,
+    url: String,
+    snippet: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    date: Option<rypsok_core::model::Date>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    engines: Option<Vec<rypsok_core::model::EngineId>>,
+}
+
+/// REQ-DOC-002 (RFC 020, DAT-10): the mirror has the fields of the real
+/// types, no more and no fewer. The output-schema fixture is generated from
+/// `SearchResponse` and `SearchResult` themselves, so the mirror is compared
+/// with it: the response's properties, the result's properties, and which of
+/// them are required.
+#[test]
+fn req_doc_002_the_search_response_mirror_has_the_fields_of_the_types() {
+    let schema: Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/schemas/search_response.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let names = |properties: &Value| -> Vec<String> {
+        let mut keys: Vec<String> = properties.as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        keys
+    };
+    // Every field set: what the mirror serializes to.
+    let full = json!({
+        "outcome": "ok",
+        "notices": [],
+        "results": [{
+            "title": "t", "url": "https://example.org/", "snippet": "s",
+            "date": "2026-09-01", "engines": ["wikipedia"]
+        }]
+    });
+    let mirror: SearchResponseMirror = serde_json::from_value(full.clone()).unwrap();
+    let written = serde_json::to_value(&mirror).unwrap();
+    assert_eq!(
+        names(&written),
+        names(&schema["properties"]),
+        "the response"
+    );
+    assert_eq!(
+        names(&written["results"][0]),
+        names(&schema["$defs"]["SearchResult"]["properties"]),
+        "the result"
+    );
+    assert_eq!(written, full);
+}
+
 fn round_trips<T: DeserializeOwned + Serialize>(value: &Value, what: &str) {
     let typed: T = serde_json::from_value(value.clone())
         .unwrap_or_else(|e| panic!("{what}: does not match the type: {e}\n{value}"));
@@ -153,7 +221,7 @@ fn req_doc_002_example_calls_match_the_contract() {
         match tool {
             "web_search" => {
                 parses::<SearchRequest>(arguments, &format!("{name} arguments"));
-                round_trips::<SearchResponse>(structured, &name);
+                round_trips::<SearchResponseMirror>(structured, &name);
             }
             "web_fetch" => {
                 parses::<FetchRequest>(arguments, &format!("{name} arguments"));

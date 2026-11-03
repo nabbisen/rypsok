@@ -23,19 +23,38 @@ fn example_search_response() -> Value {
     })
 }
 
-/// REQ-CTX-002: the `web_search` example of external design §3.1 round-trips
-/// through the types without a changed byte.
+/// REQ-CTX-002: the `web_search` example of external design §3.1 is what the
+/// types serialize to, byte for byte. The response is built the way a
+/// response is built, through the content boundary: `SearchResult` has no
+/// `Deserialize` (RFC 020, DAT-10), so the example is not read into it.
 #[test]
-fn req_ctx_002_search_response_example_round_trips() {
+fn req_ctx_002_search_response_example_is_what_the_types_serialize_to() {
     let example = example_search_response();
-    let parsed: SearchResponse =
-        serde_json::from_value(example.clone()).expect("example deserializes");
-    assert_eq!(parsed.outcome, Outcome::Partial);
-    assert_eq!(parsed.notices[0].reason, Some(Reason::RateLimited));
-    assert_eq!(serde_json::to_value(&parsed).expect("serializes"), example);
-    let text = serde_json::to_string(&parsed).expect("serializes");
-    let again: SearchResponse = serde_json::from_str(&text).expect("text deserializes");
-    assert_eq!(again, parsed);
+    let (result, _) = crate::boundary::make_result(
+        "…",
+        "…",
+        "https://example.org/page".to_owned(),
+        Some(Date::new("2026-09-01").unwrap()),
+        Some(vec![EngineId::new("wikipedia").unwrap()]),
+        150,
+        300,
+    );
+    let response = SearchResponse {
+        outcome: Outcome::Partial,
+        notices: vec![
+            Notice::engine(
+                NoticeCode::EngineUnavailable,
+                EngineId::new("brave").unwrap(),
+                Reason::RateLimited,
+            ),
+            Notice::counted(NoticeCode::SnippetTruncated, 2),
+        ],
+        results: vec![result],
+    };
+    assert_eq!(
+        serde_json::to_value(&response).expect("serializes"),
+        example
+    );
 }
 
 /// REQ-CTX-002: the `engine_status` example of external design §3.3 round-trips.

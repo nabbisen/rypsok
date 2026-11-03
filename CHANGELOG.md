@@ -143,6 +143,12 @@ announced here with both values.
   `CallError`, `EngineState`, `TimeRange` and the validated identifiers), and
   a test keeps the lists equal to the source. It used to say that all public
   types are `#[non_exhaustive]`, which 16 of the surface's types are.
+- `SearchResult` and `SearchResponse` no longer implement `Deserialize`
+  (public items of `rypsok-core`): a result is built only by the content
+  boundary, and reading one from JSON would have been a second way. Nothing
+  in the tree needed to read them back; the tests that did compare the
+  serialized form instead, or read the documentation examples into a
+  private mirror of the type.
 
 ## [0.8.0] — 2026-10-29 — Corrections from the first independent review
 

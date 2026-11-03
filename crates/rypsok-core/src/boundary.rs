@@ -34,6 +34,18 @@
 //!     engines: None,
 //! };
 //! ```
+//!
+//! Nor can it be read from JSON, which would build one without the boundary:
+//! `SearchResult` has no `Deserialize`, and neither has `SearchResponse`,
+//! which holds results (RFC 020, DAT-10).
+//!
+//! ```compile_fail
+//! let _ = serde_json::from_str::<rypsok_core::model::SearchResult>("{}");
+//! ```
+//!
+//! ```compile_fail
+//! let _ = serde_json::from_str::<rypsok_core::model::SearchResponse>("{}");
+//! ```
 
 use unicode_general_category::{GeneralCategory, get_general_category};
 use unicode_normalization::UnicodeNormalization;
