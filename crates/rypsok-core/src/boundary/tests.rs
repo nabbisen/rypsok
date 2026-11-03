@@ -389,3 +389,275 @@ proptest! {
         prop_assert!(!once.text.starts_with(' ') && !once.text.ends_with(' '));
     }
 }
+
+// --- joiners (RFC 020 D-10, DAT-16) ------------------------------------------
+
+const ZWNJ: char = '\u{200C}';
+const ZWJ: char = '\u{200D}';
+
+/// Both cleaners and the content cleaner on one text: the text and the
+/// number of characters removed.
+fn cleaned_three_ways(input: &str) -> [(String, u32); 3] {
+    let markup = clean_markup_text(input, 400);
+    let decoded = clean_decoded_text(input, 400);
+    let content = clean_content(input, 0, 400).unwrap();
+    [
+        (markup.text, markup.removed),
+        (decoded.text, decoded.removed),
+        (content.text, content.removed),
+    ]
+}
+
+/// REQ-SEC-015 and REQ-SEC-003 (RFC 020 D-10): a joiner that carries
+/// orthography is kept: ZWNJ in Persian, ZWJ in an Indic conjunct (after a
+/// virama), ZWJ between emoji. Nothing is removed, so nothing is counted.
+#[test]
+fn req_sec_015_joiners_that_carry_orthography_are_kept() {
+    let kept = [
+        ("Persian", format!("می{ZWNJ}خواهم")),
+        ("Persian, a plural", format!("کتاب{ZWNJ}ها")),
+        ("Hindi half form", format!("क्{ZWJ}ष")),
+        ("Bengali ya-phala", format!("র{ZWJ}্য")),
+        ("family", format!("\u{1F468}{ZWJ}\u{1F469}{ZWJ}\u{1F467}")),
+        ("rainbow flag", format!("\u{1F3F3}\u{FE0F}{ZWJ}\u{1F308}")),
+        ("skin tone", format!("\u{1F9D1}\u{1F3FD}{ZWJ}\u{1F4BB}")),
+    ];
+    for (name, text) in &kept {
+        for (way, (cleaned, removed)) in cleaned_three_ways(text).into_iter().enumerate() {
+            assert_eq!(&cleaned, text, "{name}, cleaner {way}");
+            assert_eq!(removed, 0, "{name}, cleaner {way}");
+        }
+    }
+    // The same inside a sentence.
+    let sentence = format!("نام من می{ZWNJ}خواهم است. {}", kept[4].1);
+    assert_eq!(clean_markup_text(&sentence, 400).text, sentence);
+}
+
+/// REQ-SEC-015 (RFC 020 D-10): a joiner anywhere else is removed and
+/// counted, which closes the hidden channel between letters: Latin, CJK,
+/// the start and the end of a text, a joiner beside a space, ZWNJ outside
+/// Arabic and Indic scripts, ZWJ between Arabic letters or between emoji
+/// and a letter.
+#[test]
+fn req_sec_015_joiners_anywhere_else_are_removed_and_counted() {
+    let removed = [
+        ("ZWJ between Latin letters", format!("a{ZWJ}b"), "ab"),
+        ("ZWNJ between Latin letters", format!("a{ZWNJ}b"), "ab"),
+        ("ZWNJ between CJK", format!("日{ZWNJ}本"), "日本"),
+        ("ZWNJ at the start", format!("{ZWNJ}می"), "می"),
+        ("ZWNJ at the end", format!("می{ZWNJ}"), "می"),
+        ("ZWJ at the start", format!("{ZWJ}क"), "क"),
+        ("ZWJ at the end", format!("क्{ZWJ}"), "क्"),
+        ("ZWNJ before a space", format!("می{ZWNJ} خواهم"), "می خواهم"),
+        ("ZWJ between Arabic letters", format!("ك{ZWJ}ت"), "كت"),
+        (
+            "ZWNJ between emoji",
+            format!("\u{1F468}{ZWNJ}\u{1F469}"),
+            "\u{1F468}\u{1F469}",
+        ),
+        (
+            "ZWJ between emoji and a letter",
+            format!("\u{1F468}{ZWJ}a"),
+            "\u{1F468}a",
+        ),
+        (
+            "ZWJ between letters of different scripts",
+            format!("क{ZWJ}ب"),
+            "कب",
+        ),
+        ("ZWJ without a virama", format!("क{ZWJ}ष"), "कष"),
+        ("ZWNJ between Arabic and Latin", format!("ب{ZWNJ}a"), "بa"),
+    ];
+    for (name, text, expected) in &removed {
+        for (way, (cleaned, count)) in cleaned_three_ways(text).into_iter().enumerate() {
+            assert_eq!(&cleaned, expected, "{name}, cleaner {way}");
+            assert_eq!(count, 1, "{name}, cleaner {way}");
+        }
+    }
+}
+
+/// REQ-SEC-015 (RFC 020 D-10): never more than one joiner in a row. A run
+/// keeps the first joiner that is allowed by its neighbours and the others
+/// are counted.
+#[test]
+fn req_sec_015_never_more_than_one_joiner_in_a_row() {
+    let cases = [
+        (format!("می{ZWNJ}{ZWNJ}خواهم"), format!("می{ZWNJ}خواهم"), 1),
+        (
+            format!("می{ZWNJ}{ZWNJ}{ZWNJ}خواهم"),
+            format!("می{ZWNJ}خواهم"),
+            2,
+        ),
+        (format!("می{ZWJ}{ZWNJ}خواهم"), format!("می{ZWNJ}خواهم"), 1),
+        (format!("می{ZWNJ}{ZWJ}خواهم"), format!("می{ZWNJ}خواهم"), 1),
+        (format!("क्{ZWJ}{ZWJ}ष"), format!("क्{ZWJ}ष"), 1),
+        (
+            format!("\u{1F468}{ZWJ}{ZWJ}\u{1F469}"),
+            format!("\u{1F468}{ZWJ}\u{1F469}"),
+            1,
+        ),
+        (format!("a{ZWNJ}{ZWJ}b"), "ab".to_owned(), 2),
+    ];
+    for (input, expected, count) in cases {
+        for (way, (cleaned, removed)) in cleaned_three_ways(&input).into_iter().enumerate() {
+            assert_eq!(cleaned, expected, "{input:?}, cleaner {way}");
+            assert_eq!(removed, count, "{input:?}, cleaner {way}");
+        }
+    }
+}
+
+/// REQ-SEC-015 (RFC 020 D-10): everything else in `Cf` stays removed and
+/// counted, also next to a joiner that is kept; a character removed between
+/// a joiner and its neighbour does not make the joiner stay or go by luck.
+#[test]
+fn req_sec_015_other_format_characters_are_still_removed() {
+    let text = format!("می\u{200B}{ZWNJ}\u{2060}خواهم");
+    let cleaned = clean_markup_text(&text, 400);
+    assert_eq!(cleaned.text, format!("می{ZWNJ}خواهم"));
+    assert_eq!(
+        cleaned.removed, 2,
+        "the zero width space and the word joiner"
+    );
+    for c in [
+        '\u{200B}',
+        '\u{2060}',
+        '\u{FEFF}',
+        '\u{200E}',
+        '\u{200F}',
+        '\u{202A}',
+        '\u{2066}',
+        '\u{00AD}',
+        '\u{E0067}',
+    ] {
+        let text = format!("می{c}خواهم");
+        let cleaned = clean_decoded_text(&text, 400);
+        assert_eq!(cleaned.text, "میخواهم", "{c:?}");
+        assert_eq!(cleaned.removed, 1, "{c:?}");
+    }
+}
+
+/// REQ-SEC-015 (RFC 020 D-10, DAT-16): the Scotland flag is a black flag
+/// followed by six tag characters; the tags are removed and counted, the
+/// flag stays.
+#[test]
+fn req_sec_015_the_scotland_flag_loses_its_six_tag_characters() {
+    let flag = "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}";
+    for (cleaned, removed) in cleaned_three_ways(flag) {
+        assert_eq!(cleaned, "\u{1F3F4}");
+        assert_eq!(removed, 6);
+    }
+}
+
+/// REQ-SEC-015 (RFC 020 D-10): the hidden channel. A text of Latin letters
+/// that carries one bit per gap in joiners comes out without any of them.
+#[test]
+fn req_sec_015_joiners_cannot_carry_a_message_through_latin_text() {
+    let bits = [true, false, true, true, false, false, true, false];
+    let mut carrier = String::new();
+    for (i, bit) in bits.iter().enumerate() {
+        carrier.push(char::from(b'a' + i as u8));
+        if *bit {
+            carrier.push(if i % 2 == 0 { ZWJ } else { ZWNJ });
+        }
+    }
+    let cleaned = clean_markup_text(&carrier, 400);
+    assert_eq!(cleaned.text, "abcdefgh");
+    assert_eq!(cleaned.removed, 4);
+}
+
+/// REQ-CTX-006 and REQ-TEST-013 (RFC 020 D-10): cutting at the bound never
+/// leaves a joiner at the end of the text.
+#[test]
+fn req_ctx_006_a_cut_never_ends_in_a_joiner() {
+    let text = format!("{}{ZWNJ}خواهم", "می".repeat(30));
+    for max in 55..70u32 {
+        let cleaned = clean_markup_text(&text, max);
+        assert!(
+            !cleaned.text.ends_with(ZWNJ) && !cleaned.text.ends_with(ZWJ),
+            "{max}: {:?}",
+            cleaned.text
+        );
+        assert_eq!(
+            clean_markup_text(&cleaned.text, max).text,
+            cleaned.text,
+            "{max}"
+        );
+    }
+}
+
+proptest! {
+    /// REQ-TEST-013 (RFC 020 D-10): with joiners, Arabic, Indic and emoji
+    /// letters in the input, cleaning is idempotent in all three cleaners,
+    /// and in the result no joiner is first, last or beside another, and
+    /// every joiner is one the rules allow.
+    #[test]
+    fn req_test_013_joiners_survive_only_where_allowed_and_cleaning_stays_idempotent(
+        raw in proptest::collection::vec(
+            prop_oneof![
+                Just('\u{200C}'), Just('\u{200D}'), Just('\u{094D}'), Just('\u{FE0F}'),
+                Just(' '), Just('a'), Just('ب'), Just('ی'), Just('क'), Just('ष'),
+                Just('র'), Just('য'), Just('\u{1F468}'), Just('\u{1F469}'),
+                Just('\u{1F3FD}'), Just('\u{200B}'), Just('\u{00AD}'),
+            ],
+            0..40,
+        ),
+        max in 5u32..60,
+    ) {
+        let raw: String = raw.into_iter().collect();
+        let once = clean_markup_text(&raw, max);
+        let twice = clean_markup_text(&once.text, max);
+        prop_assert_eq!(&twice.text, &once.text);
+        prop_assert_eq!(twice.removed, 0);
+        let decoded_once = clean_decoded_text(&raw, max);
+        let decoded_twice = clean_decoded_text(&decoded_once.text, max);
+        prop_assert_eq!(&decoded_twice.text, &decoded_once.text);
+        let content_once = clean_content(&raw, 0, 400).map(|c| c.text).unwrap_or_default();
+        let content_twice = clean_content(&content_once, 0, 400).map(|c| c.text).unwrap_or_default();
+        prop_assert_eq!(&content_twice, &content_once);
+        for text in [&once.text, &decoded_once.text, &content_once] {
+            let chars: Vec<char> = text.chars().collect();
+            for (i, c) in chars.iter().enumerate() {
+                if matches!(c, '\u{200C}' | '\u{200D}') {
+                    prop_assert!(i > 0 && i + 1 < chars.len(), "joiner first or last in {:?}", text);
+                    let (before, after) = (chars[i - 1], chars[i + 1]);
+                    prop_assert!(
+                        !matches!(before, '\u{200C}' | '\u{200D}') && !matches!(after, '\u{200C}' | '\u{200D}'),
+                        "two joiners in a row in {:?}", text
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// REQ-SEC-015 (RFC 020 D-10): the private range table of
+/// `Extended_Pictographic` equals the property as the `regex` crate knows it
+/// (Unicode 16.0 in `regex-syntax` 0.8), for every scalar value. The table
+/// stays in the code (no dependency on the property at run time); this test
+/// is its proof.
+#[test]
+fn req_sec_015_the_emoji_range_table_equals_the_unicode_property() {
+    let property = regex::Regex::new(r"^\p{Extended_Pictographic}$").unwrap();
+    let mut differences = Vec::new();
+    let mut buffer = [0u8; 4];
+    for value in 0..=0x10FFFFu32 {
+        let Some(c) = char::from_u32(value) else {
+            continue;
+        };
+        let expected = property.is_match(c.encode_utf8(&mut buffer));
+        let in_table = EXTENDED_PICTOGRAPHIC
+            .iter()
+            .any(|&(lo, hi)| (lo..=hi).contains(&value));
+        if expected != in_table {
+            differences.push(format!(
+                "U+{value:04X}: property {expected}, table {in_table}"
+            ));
+        }
+    }
+    assert!(
+        differences.is_empty(),
+        "{} differences, first: {:?}",
+        differences.len(),
+        &differences[..differences.len().min(10)]
+    );
+}

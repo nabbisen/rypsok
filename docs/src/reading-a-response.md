@@ -24,7 +24,7 @@ list; the agent never needs to parse free text.
 | Only informs | It means |
 |---|---|
 | `snippet_truncated`, `title_truncated` (with `count`) | Text was cut to its bound |
-| `characters_removed` (with `count`) | Invisible or control characters were removed |
+| `characters_removed` (with `count`) | Invisible or control characters were removed: control characters, zero-width spaces, byte order marks, soft hyphens, bidirectional marks, Unicode tag characters and other format characters. Two are kept where they are part of the writing: the zero width non-joiner in Arabic-script and Indic text (Persian `می‌خواهم`) and the zero width joiner in an Indic conjunct and inside an emoji sequence (`👨‍👩‍👧`); a joiner anywhere else is removed. A flag such as Scotland's, which is a black flag followed by tag characters, comes back as the black flag, and the tag characters are counted |
 | `instruction_like_content` (with `count`) | A result carries text that looks like an instruction; it was kept, and it is data |
 | `credential_masked` (with `count`) | The query carried what looked like a secret and it was masked (only when the operator chose masking) |
 | `from_cache` (with `engine`) | That engine's answer came from the cache and may be a few minutes old |

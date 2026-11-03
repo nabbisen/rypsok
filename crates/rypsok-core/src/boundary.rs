@@ -331,8 +331,186 @@ fn strip_tags(raw: &str) -> String {
     out
 }
 
-/// Whether a character is removed by step 3 (REQ-SEC-015).
+/// Zero width non-joiner and zero width joiner. They are `Cf` and are
+/// decided in context, not by their category (RFC 020 D-10).
+const ZWNJ: char = '\u{200C}';
+const ZWJ: char = '\u{200D}';
+
+fn is_joiner(c: char) -> bool {
+    c == ZWNJ || c == ZWJ
+}
+
+/// Whether the secret check should read past a character: one that step 3
+/// removes or may remove (a joiner too).
+pub(crate) fn is_invisible(c: char) -> bool {
+    is_joiner(c) || is_removed(c)
+}
+
+/// The scripts in which a joiner carries orthography.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JoinerScript {
+    Arabic,
+    Indic,
+}
+
+/// Arabic: Arabic, Arabic Supplement, Arabic Extended-A, Presentation
+/// Forms-A and -B. Indic: Devanagari to Sinhala (U+0900 to U+0DFF, which
+/// takes in Bengali, Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada and
+/// Malayalam). A small private table, not a dependency.
+fn joiner_script(c: char) -> Option<JoinerScript> {
+    match c {
+        '\u{0600}'..='\u{06FF}'
+        | '\u{0750}'..='\u{077F}'
+        | '\u{08A0}'..='\u{08FF}'
+        | '\u{FB50}'..='\u{FDFF}'
+        | '\u{FE70}'..='\u{FEFF}' => Some(JoinerScript::Arabic),
+        '\u{0900}'..='\u{0DFF}' => Some(JoinerScript::Indic),
+        _ => None,
+    }
+}
+
+/// The viramas (halants) of the scripts in U+0900 to U+0DFF.
+fn is_virama(c: char) -> bool {
+    matches!(
+        c,
+        '\u{094D}'
+            | '\u{09CD}'
+            | '\u{0A4D}'
+            | '\u{0ACD}'
+            | '\u{0B4D}'
+            | '\u{0BCD}'
+            | '\u{0C4D}'
+            | '\u{0CCD}'
+            | '\u{0D4D}'
+            | '\u{0DCA}'
+    )
+}
+
+/// `Extended_Pictographic` of the Unicode emoji data (emoji-data.txt),
+/// as ranges. Over-inclusive for unassigned code points inside a range,
+/// which step 3 removes anyway. A test compares it with the property of the
+/// `regex` crate for every scalar value.
+const EXTENDED_PICTOGRAPHIC: &[(u32, u32)] = &[
+    (0x00A9, 0x00A9),
+    (0x00AE, 0x00AE),
+    (0x203C, 0x203C),
+    (0x2049, 0x2049),
+    (0x2122, 0x2122),
+    (0x2139, 0x2139),
+    (0x2194, 0x2199),
+    (0x21A9, 0x21AA),
+    (0x231A, 0x231B),
+    (0x2328, 0x2328),
+    (0x2388, 0x2388),
+    (0x23CF, 0x23CF),
+    (0x23E9, 0x23F3),
+    (0x23F8, 0x23FA),
+    (0x24C2, 0x24C2),
+    (0x25AA, 0x25AB),
+    (0x25B6, 0x25B6),
+    (0x25C0, 0x25C0),
+    (0x25FB, 0x25FE),
+    (0x2600, 0x2605),
+    (0x2607, 0x2612),
+    (0x2614, 0x2685),
+    (0x2690, 0x2705),
+    (0x2708, 0x2712),
+    (0x2714, 0x2714),
+    (0x2716, 0x2716),
+    (0x271D, 0x271D),
+    (0x2721, 0x2721),
+    (0x2728, 0x2728),
+    (0x2733, 0x2734),
+    (0x2744, 0x2744),
+    (0x2747, 0x2747),
+    (0x274C, 0x274C),
+    (0x274E, 0x274E),
+    (0x2753, 0x2755),
+    (0x2757, 0x2757),
+    (0x2763, 0x2767),
+    (0x2795, 0x2797),
+    (0x27A1, 0x27A1),
+    (0x27B0, 0x27B0),
+    (0x27BF, 0x27BF),
+    (0x2934, 0x2935),
+    (0x2B05, 0x2B07),
+    (0x2B1B, 0x2B1C),
+    (0x2B50, 0x2B50),
+    (0x2B55, 0x2B55),
+    (0x3030, 0x3030),
+    (0x303D, 0x303D),
+    (0x3297, 0x3297),
+    (0x3299, 0x3299),
+    (0x1F000, 0x1F0FF),
+    (0x1F10D, 0x1F10F),
+    (0x1F12F, 0x1F12F),
+    (0x1F16C, 0x1F171),
+    (0x1F17E, 0x1F17F),
+    (0x1F18E, 0x1F18E),
+    (0x1F191, 0x1F19A),
+    (0x1F1AD, 0x1F1E5),
+    (0x1F201, 0x1F20F),
+    (0x1F21A, 0x1F21A),
+    (0x1F22F, 0x1F22F),
+    (0x1F232, 0x1F23A),
+    (0x1F23C, 0x1F23F),
+    (0x1F249, 0x1F3FA),
+    (0x1F400, 0x1F53D),
+    (0x1F546, 0x1F64F),
+    (0x1F680, 0x1F6FF),
+    (0x1F774, 0x1F77F),
+    (0x1F7D5, 0x1F7FF),
+    (0x1F80C, 0x1F80F),
+    (0x1F848, 0x1F84F),
+    (0x1F85A, 0x1F85F),
+    (0x1F888, 0x1F88F),
+    (0x1F8AE, 0x1F8FF),
+    (0x1F90C, 0x1F93A),
+    (0x1F93C, 0x1F945),
+    (0x1F947, 0x1FAFF),
+    (0x1FC00, 0x1FFFD),
+];
+
+/// An emoji, or a code point that belongs to an emoji sequence: an
+/// `Extended_Pictographic` character, the variation selector 16 and the skin
+/// tone modifiers U+1F3FB to U+1F3FF.
+fn is_emoji_neighbour(c: char) -> bool {
+    let v = c as u32;
+    v == 0xFE0F
+        || (0x1F3FB..=0x1F3FF).contains(&v)
+        || EXTENDED_PICTOGRAPHIC
+            .iter()
+            .any(|&(lo, hi)| (lo..=hi).contains(&v))
+}
+
+/// Whether the joiner `j` between `previous` and `next` (neither is a
+/// joiner) carries orthography (RFC 020 D-10):
+/// - ZWNJ between two characters of Arabic script, or between two of an
+///   Indic script (Persian `می‌خواهم`);
+/// - ZWJ in an Indic conjunct: between two Indic characters, next to a
+///   virama (Hindi `क्‍ष`, Bengali `র‍্য`);
+/// - ZWJ between two emoji (`👨‍👩‍👧`, `🏳️‍🌈`).
+fn joiner_is_orthography(j: char, previous: Option<char>, next: Option<char>) -> bool {
+    let (Some(before), Some(after)) = (previous, next) else {
+        return false;
+    };
+    if j == ZWNJ {
+        return match (joiner_script(before), joiner_script(after)) {
+            (Some(a), Some(b)) => a == b,
+            _ => false,
+        };
+    }
+    let indic = |c| joiner_script(c) == Some(JoinerScript::Indic);
+    (indic(before) && indic(after) && (is_virama(before) || is_virama(after)))
+        || (is_emoji_neighbour(before) && is_emoji_neighbour(after))
+}
+
+/// Whether a character is removed by step 3 (REQ-SEC-015). The joiners
+/// ZWNJ and ZWJ are not decided here but by `remove_invisible`, in context.
 fn is_removed(c: char) -> bool {
+    if is_joiner(c) {
+        return false;
+    }
     if matches!(c, '\t' | '\n' | '\r' | '\u{0B}' | '\u{0C}') {
         return false;
     }
@@ -345,15 +523,47 @@ fn is_removed(c: char) -> bool {
     )
 }
 
+/// Removes invisible and control characters and counts them. Every `Cc`,
+/// `Cf` and unassigned character goes, except that a joiner stays where it
+/// carries orthography (RFC 020 D-10): the decision is made on the text
+/// after every other removal, with the run of joiners as a unit, so that
+/// cleaning the result again changes nothing. At most one joiner is kept
+/// from a run, and none at the start or the end of the text.
 fn remove_invisible(text: &str) -> (String, u32) {
-    let mut out = String::with_capacity(text.len());
     let mut removed = 0u32;
-    for c in text.chars() {
-        if is_removed(c) {
-            removed += 1;
-        } else {
+    let chars: Vec<char> = text
+        .chars()
+        .filter(|&c| {
+            let drop = is_removed(c);
+            removed += u32::from(drop);
+            !drop
+        })
+        .collect();
+    let mut out = String::with_capacity(text.len());
+    let mut previous: Option<char> = None;
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if !is_joiner(c) {
             out.push(c);
+            previous = Some(c);
+            i += 1;
+            continue;
         }
+        let end = chars[i..]
+            .iter()
+            .position(|&n| !is_joiner(n))
+            .map_or(chars.len(), |offset| i + offset);
+        let next = chars.get(end).copied();
+        let kept = chars[i..end]
+            .iter()
+            .copied()
+            .find(|&j| joiner_is_orthography(j, previous, next));
+        if let Some(j) = kept {
+            out.push(j);
+        }
+        removed += (end - i) as u32 - u32::from(kept.is_some());
+        i = end;
     }
     (out, removed)
 }
@@ -378,7 +588,13 @@ fn bound(text: &str, max_chars: usize) -> (String, bool) {
         Some(offset) => window_start + offset,
         None => cut_at,
     };
-    (head[..cut].trim_end().to_owned(), true)
+    // A cut can leave a joiner at the end, where no joiner is kept (RFC 020
+    // D-10): drop it, and the space before it, so that cleaning the result
+    // again changes nothing.
+    let cut_text = head[..cut]
+        .trim_end_matches(|c: char| c.is_whitespace() || is_joiner(c))
+        .to_owned();
+    (cut_text, true)
 }
 
 #[cfg(test)]

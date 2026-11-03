@@ -168,3 +168,38 @@ output contains no removed code point; JSON round-trips.
   This is also the safer reading: a hidden character that makes one
   reader see text and the next see a tag is a bypass, and the boundary
   now strips what the next reader would strip.
+
+## Amendment to RFC 005 (2026-11-03, RFC 020 D-10, DAT-16)
+
+Step 3 removed every `Cc`, `Cf` and unassigned scalar. That is right for a
+hidden channel, and it changed real text: the zero width non-joiner of Persian
+(`می‌خواهم` became `میخواهم`), the zero width joiner of Indic conjuncts and of
+emoji sequences (`👨‍👩‍👧` fell apart into three emoji). The owner decided
+(D-10) to keep orthography and close the channel:
+
+- **ZWNJ (U+200C) is kept only between two characters of Arabic script
+  (U+0600 to U+06FF, U+0750 to U+077F, U+08A0 to U+08FF, U+FB50 to U+FDFF,
+  U+FE70 to U+FEFF) or between two of an Indic script (U+0900 to U+0DFF,
+  Devanagari to Sinhala).** The two neighbours are of the same family.
+- **ZWJ (U+200D) is kept only in an Indic conjunct** (between two Indic
+  characters, with a virama on one side: after it for `क्‍ष`, before it for the
+  Bengali `র‍্য`) **or between two emoji** (`Extended_Pictographic`, U+FE0F
+  and the skin tone modifiers U+1F3FB to U+1F3FF count as emoji neighbours).
+  The `Extended_Pictographic` ranges are a private table, checked by a test
+  against the property of the `regex` crate (Unicode 16.0) for every scalar
+  value; no dependency was added.
+- **Never more than one joiner in a row, and none at the start or the end of
+  the text.** A run of joiners is judged as a unit on the text after every
+  other removal; the first joiner of the run that its neighbours allow is
+  kept, the others are removed and counted. A cut at the bound that would
+  leave a joiner at the end removes it, so that cleaning stays idempotent
+  (REQ-TEST-013).
+- Everything else in `Cf` (tag characters, bidirectional marks, soft hyphen,
+  the byte order mark, the zero width space, the word joiner and every other
+  format character) stays removed and counted in `characters_removed`. The
+  notice is unchanged. A flag made with tag characters (Scotland's) comes
+  back as the black flag, and the six tags are counted.
+- The residual channel: a joiner may still be present or absent at the
+  positions where the orthography allows it (one bit per such position). It
+  needs a text in Arabic or Indic script or an emoji sequence to carry it; in
+  Latin, Han, Kana and every other text there is no position.

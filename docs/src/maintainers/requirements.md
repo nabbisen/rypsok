@@ -662,7 +662,11 @@ configuration, or trigger a request other than the one the caller made.
 ### REQ-SEC-015 Invisible characters — M1 · T
 Zero-width characters, Unicode tag characters, bidirectional controls and
 other control characters shall be removed from external text, and a notice
-shall report the removal. (R-03, CLR-11)
+shall report the removal. The two joiners (U+200C, U+200D) are kept only
+where they carry orthography: ZWNJ between two characters of Arabic script
+or of an Indic script, ZWJ in an Indic conjunct (next to a virama) or
+between two emoji; never more than one in a row, and none at the start or
+the end of the text. (R-03, CLR-11; RFC 020 D-10)
 
 ### REQ-SEC-016 Fixed error vocabulary — M1 · T
 Error kinds, notice codes and engine error classes shall come from fixed

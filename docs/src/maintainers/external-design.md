@@ -398,7 +398,7 @@ explicit allow rules in configuration (Principle P4).
 | JSON as default text; encoded renderings only | Every response | REQ-CTX-003, REQ-SEC-002 |
 | Markup removal, entity decoding, whitespace collapsing | Titles, snippets | REQ-CTX-004 |
 | Exclusion of hidden and non-rendered content | Fetched pages | REQ-CTX-005 |
-| Removal of invisible and control characters, with notice | All external text | REQ-SEC-015 |
+| Removal of invisible and control characters, with notice; a joiner (ZWNJ, ZWJ) is kept only where it carries orthography | All external text | REQ-SEC-015 |
 | Instruction-like patterns: notice, optional drop with count | All external text | REQ-SEC-003 |
 | Bounds with truncation signal | All external text | REQ-CTX-006, REQ-CTX-007 |
 | Fixed vocabularies for everything rypsok asserts | Envelope, errors, status | REQ-SEC-016 |

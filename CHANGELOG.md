@@ -107,6 +107,14 @@ announced here with both values.
   merge, the result shows the `https` URL even if the `http` one ranked
   first. Strict mode is not affected: it remembers returned URLs without
   their fragment, so a returned URL may be fetched with any fragment.
+- Joiners keep the orthography they carry (D-10): the zero width non-joiner in
+  Arabic-script and Indic text (Persian `می‌خواهم`), the zero width joiner in
+  Indic conjuncts and between emoji (`👨‍👩‍👧`) are no longer removed, and no longer
+  counted in `characters_removed`. A joiner anywhere else, a second one in a
+  row, and one at the start or the end of a text are removed and counted as
+  before, as is every other invisible character; a flag built with tag
+  characters (Scotland's) still comes back as the black flag, with the tags
+  counted.
 
 ## [0.8.0] — 2026-10-29 — Corrections from the first independent review
 
