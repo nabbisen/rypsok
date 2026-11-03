@@ -46,6 +46,12 @@ announced here with both values.
   was only checked on another host). A call whose redirect target robots.txt
   disallows now answers `denied`/`robots_txt` where it returned the page.
   The verdict of the origin is cached, so the check costs no request.
+- The built-in refusal table now follows the IANA special-purpose address
+  registries (read 2026-11-03). These blocks are now refused: `2001:db8::/32`
+  and `3fff::/20` (documentation), `5f00::/16` (segment routing),
+  `100:0:0:1::/64` (dummy prefix), and the deprecated `::/96` (IPv4-compatible)
+  and `fec0::/10` (site-local). A fetch of an address in them is `denied`
+  (`egress`) unless an `allow` rule admits it, as for every built-in refusal.
 - The release binaries are built with a named compiler (1.99.1) instead of
   the day's `stable`, and the Windows executable is linked with `/Brepro`
   (no timestamp in the header), so that two builds of one commit give the same

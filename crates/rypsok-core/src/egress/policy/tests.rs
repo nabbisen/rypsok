@@ -57,7 +57,173 @@ fn req_sec_006_every_refused_range_refuses_and_public_addresses_pass() {
         p.judge_address(&name("x.example"), IpAddr::V4(Ipv4Addr::BROADCAST)),
         Err(Denial::Address)
     );
-    assert_eq!(REFUSED_RANGES.len(), 26, "the table is the one of RFC 011");
+}
+
+/// The special-purpose registries of the IANA as test data (RFC 020 D-2): a
+/// committed file, not derived from `REFUSED_RANGES`.
+const SPECIAL_PURPOSE: &str = include_str!("special_purpose.csv");
+
+/// Blocks that the registry calls globally reachable and the table refuses
+/// all the same, because they sit inside a larger refused block (stricter
+/// than the registry, on purpose): `192.0.0.0/24` and `2001::/23` are
+/// refused whole, and `64:ff9b::/96` (NAT64) is refused whole because the
+/// address it carries is another host's.
+const STRICTER_THAN_THE_REGISTRY: &[&str] = &[
+    "192.0.0.9/32",
+    "192.0.0.10/32",
+    "64:ff9b::/96",
+    "2001:1::1/128",
+    "2001:1::2/128",
+    "2001:1::3/128",
+    "2001:3::/32",
+    "2001:4:112::/48",
+    "2001:20::/28",
+    "2001:30::/28",
+];
+
+/// The block judged by the IPv4 address it maps, not refused as a block.
+const JUDGED_AS_IPV4: &str = "::ffff:0:0/96";
+
+/// (block, globally_reachable) of every row of the data file.
+fn special_purpose() -> Vec<(IpNet, String)> {
+    SPECIAL_PURPOSE
+        .lines()
+        .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
+        .map(|line| {
+            let fields: Vec<&str> = line.split(',').collect();
+            assert_eq!(
+                fields.len(),
+                4,
+                "block,name,globally_reachable,date: {line}"
+            );
+            let block: IpNet = fields[0].parse().unwrap_or_else(|_| panic!("{line}"));
+            (block, fields[2].to_owned())
+        })
+        .collect()
+}
+
+/// The first, an inner and the last address of a block.
+fn probes(block: &IpNet) -> [IpAddr; 3] {
+    let (first, last) = (block.network(), block.broadcast());
+    let inner = match (first, last) {
+        (IpAddr::V4(a), IpAddr::V4(b)) => IpAddr::V4(Ipv4Addr::from(
+            u32::from(a) + (u32::from(b) - u32::from(a)) / 2,
+        )),
+        (IpAddr::V6(a), IpAddr::V6(b)) => IpAddr::V6(Ipv6Addr::from(
+            u128::from(a) + (u128::from(b) - u128::from(a)) / 2,
+        )),
+        _ => unreachable!("a network has one family"),
+    };
+    [first, inner, last]
+}
+
+/// REQ-SEC-006 (RFC 020 D-2, NET-4): every block of the IANA special-purpose
+/// registries whose "Globally Reachable" is not true, and the two deprecated
+/// forms, is refused at its first, an inner and its last address; a block the
+/// registry calls globally reachable is admitted, except the ones named as
+/// stricter. No packet is sent: the judgment is a lookup in a table.
+#[test]
+fn req_sec_006_every_special_purpose_block_is_refused() {
+    let p = policy();
+    let rows = special_purpose();
+    assert!(
+        rows.len() >= 50,
+        "{} rows: the data file is whole",
+        rows.len()
+    );
+    for needed in [
+        "2001:db8::/32",
+        "3fff::/20",
+        "5f00::/16",
+        "100:0:0:1::/64",
+        "::/96",
+        "fec0::/10",
+    ] {
+        let needed: IpNet = needed.parse().unwrap();
+        assert!(
+            rows.iter().any(|(b, _)| *b == needed),
+            "{needed} is in the data"
+        );
+    }
+    let mut failures: Vec<String> = Vec::new();
+    for (block, reachable) in &rows {
+        let stricter = STRICTER_THAN_THE_REGISTRY.contains(&block.to_string().as_str());
+        for address in probes(block) {
+            let judged = p.judge_address(&name("example.org"), address);
+            let expected = if block.to_string() == JUDGED_AS_IPV4 {
+                // Judged as the IPv4 address it maps (the first and the last
+                // map to 0.0.0.0 and 255.255.255.255, which are refused).
+                p.judge_address(&name("example.org"), canonical(address))
+            } else if reachable == "true" && !stricter {
+                Ok(())
+            } else {
+                Err(Denial::Address)
+            };
+            if judged != expected {
+                failures.push(format!(
+                    "{address} in {block} ({reachable}): judged {judged:?}, expected {expected:?}"
+                ));
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} wrong:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+    for entry in STRICTER_THAN_THE_REGISTRY {
+        let entry: IpNet = entry.parse().unwrap();
+        assert!(
+            rows.iter().any(|(b, r)| *b == entry && r == "true"),
+            "{entry} is a registry block marked globally reachable"
+        );
+    }
+    let mapped = |text: &str| p.judge_address(&name("example.org"), text.parse().unwrap());
+    assert_eq!(mapped("::ffff:10.0.0.1"), Err(Denial::Address));
+    assert_eq!(mapped("::ffff:93.184.216.34"), Ok(()));
+}
+
+/// REQ-SEC-006 (RFC 020 D-2): the addresses the audit named.
+#[test]
+fn req_sec_006_the_addresses_of_the_audit_are_refused() {
+    let p = policy();
+    for literal in [
+        "::7f00:1",
+        "fec0::1",
+        "2001:db8::1",
+        "3fff::1",
+        "5f00::1",
+        "100:0:0:1::1",
+    ] {
+        let ip: IpAddr = literal.parse().unwrap();
+        assert_eq!(
+            p.judge_address(&name("example.org"), ip),
+            Err(Denial::Address),
+            "{literal}"
+        );
+        let url = Url::parse(&format!("http://[{literal}]/")).unwrap();
+        assert_eq!(
+            http_policy().judge_url(&url),
+            Err(Denial::Address),
+            "{literal}"
+        );
+    }
+    for public in [
+        "2001:4860:4860::8888",
+        "2606:4700::1111",
+        "2620:4f:8000::1",
+        "192.31.196.1",
+        "192.52.193.1",
+        "192.175.48.1",
+    ] {
+        let ip: IpAddr = public.parse().unwrap();
+        assert_eq!(
+            p.judge_address(&name("example.org"), ip),
+            Ok(()),
+            "{public}"
+        );
+    }
 }
 
 /// REQ-SEC-006 and REQ-TEST-005: an IPv4-mapped IPv6 address is judged as

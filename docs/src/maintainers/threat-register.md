@@ -13,7 +13,7 @@ controls as requirements and the tests that verify them.
 | THR-02 | Boundary forgery: external text imitates the envelope, a field, or a closing marker | B4 | Injection appears as rypsok's own statement | REQ-SEC-002, REQ-CTX-003, REQ-SEC-016 | REQ-TEST-007 |
 | THR-03 | Hidden and invisible content: `display:none`, comments, zero-width and tag characters, bidirectional controls | B3 | Instructions invisible to a reviewer | REQ-CTX-005, REQ-SEC-015 | REQ-TEST-007 |
 | THR-04 | Injection through the error path: provider or page text in an error, status or log | B2, B3 | Injection bypasses the boundary | REQ-SEC-016, REQ-STATUS-002, REQ-ERR-004 | REQ-TEST-007 |
-| THR-05 | SSRF: a fetch reaches loopback, private, link-local, metadata or other internal destinations | B3 | Internal network access | REQ-SEC-005, REQ-SEC-006, REQ-SEC-009 | REQ-TEST-005 |
+| THR-05 | SSRF: a fetch reaches loopback, private, link-local, metadata or other internal destinations. The built-in refusal table follows the IANA IPv4 and IPv6 Special-Purpose Address Registries, read on 2026-11-03 | B3 | Internal network access | REQ-SEC-005, REQ-SEC-006, REQ-SEC-009 | REQ-TEST-005 |
 | THR-06 | Check-to-connect gap: the address validated is not the address connected to (DNS rebinding, address literals bypassing the resolver, environment proxies) | B3 | SSRF despite validation | REQ-SEC-007 | REQ-TEST-005 |
 | THR-07 | Redirect abuse: a public URL redirects to an internal destination or to a site the caller did not approve | B3 | SSRF; bypass of a host's own limits | REQ-SEC-008, REQ-FETCH-006 | REQ-TEST-005 |
 | THR-08 | Credential leakage on redirect: an engine's key header sent to another origin | B2 | Key theft | REQ-SEC-017 | REQ-TEST-015 |
@@ -64,3 +64,4 @@ controls as requirements and the tests that verify them.
 | 2026-10-27 | M5 | THR-17 reviewed against the cache; the scraping threat added (as THR-20, renumbered THR-25 on 2026-10-27) |
 | 2026-10-27 | M7 | Revision against the delivered system (RFC 018): THR-22 extended to CI actions, THR-26 added, two residual risks recorded, the threat model page added |
 | 2026-10-29 | RFC 019 | THR-27 added (session exhaustion by legacy handshakes) with REQ-SEC-024 and LIM-H6; three residual risks recorded (slot exhaustion, SDK error lines, SDK warning with the caller's Host or Origin) |
+| 2026-11-03 | RFC 020 (handoff 020h) | THR-05: the built-in refusal table completed against the IANA special-purpose registries (six blocks added, `special_purpose.csv` as independent test data); THR-07: the target of every redirect hop is checked against robots.txt, the same host included |

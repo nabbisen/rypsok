@@ -196,6 +196,15 @@ pub struct EgressPolicy {
 /// Ranges that are never globally routable unicast (REQ-SEC-006). One
 /// line per range with the document that defines it; tests iterate this
 /// table.
+///
+/// The table follows the IANA IPv4 and IPv6 Special-Purpose Address
+/// Registries, read on 2026-11-03 (both last modified 2026-10-13; RFC 020
+/// D-2): every block whose "Globally Reachable" is False, plus multicast
+/// (which the registries do not list) and the deprecated `::/96` and
+/// `fec0::/10`. An independent copy of the registries is the test data in
+/// `policy/special_purpose.csv`. Where a block is refused although the
+/// registry calls it globally reachable, the entry says so: it sits inside
+/// a larger refused block (`192.0.0.0/24`, `2001::/23`), or it is NAT64.
 pub const REFUSED_RANGES: &[(&str, &str)] = &[
     ("0.0.0.0/8", "this network (RFC 791)"),
     ("10.0.0.0/8", "private (RFC 1918)"),
@@ -209,34 +218,55 @@ pub const REFUSED_RANGES: &[(&str, &str)] = &[
         "link-local (RFC 3927); includes cloud metadata 169.254.169.254",
     ),
     ("172.16.0.0/12", "private (RFC 1918)"),
-    ("192.0.0.0/24", "IETF protocol assignments (RFC 6890)"),
+    (
+        "192.0.0.0/24",
+        "IETF protocol assignments (RFC 6890); refused whole, although 192.0.0.9 and 192.0.0.10 (PCP and TURN anycast) are globally reachable",
+    ),
     ("192.0.2.0/24", "documentation TEST-NET-1 (RFC 5737)"),
-    ("192.88.99.0/24", "6to4 relay anycast (RFC 7526)"),
+    (
+        "192.88.99.0/24",
+        "6to4 relay anycast (RFC 7526), deprecated",
+    ),
     ("192.168.0.0/16", "private (RFC 1918)"),
     ("198.18.0.0/15", "benchmarking (RFC 2544)"),
     ("198.51.100.0/24", "documentation TEST-NET-2 (RFC 5737)"),
     ("203.0.113.0/24", "documentation TEST-NET-3 (RFC 5737)"),
-    ("224.0.0.0/4", "multicast (RFC 5771)"),
+    ("224.0.0.0/4", "multicast (RFC 5771); not in the registry"),
     ("240.0.0.0/4", "reserved and broadcast (RFC 1112)"),
+    (
+        "::/96",
+        "IPv4-compatible addresses (RFC 4291), deprecated; not in the registry, which lists only ::/128 and ::1/128 here",
+    ),
     ("::/128", "unspecified (RFC 4291)"),
     ("::1/128", "loopback (RFC 4291)"),
     (
         "::ffff:0:0/96",
         "IPv4-mapped (RFC 4291); judged as IPv4 after canonicalization",
     ),
-    ("64:ff9b::/96", "NAT64 well-known prefix (RFC 6052)"),
+    (
+        "64:ff9b::/96",
+        "NAT64 well-known prefix (RFC 6052); refused whole, although the registry calls it globally reachable",
+    ),
     ("64:ff9b:1::/48", "NAT64 local-use prefix (RFC 8215)"),
     ("100::/64", "discard-only (RFC 6666)"),
+    ("100:0:0:1::/64", "dummy IPv6 prefix (RFC 9780)"),
     (
         "2001::/23",
-        "IETF protocol assignments (RFC 2928): Teredo, benchmarking, documentation 2001:db8::/32, ORCHID",
+        "IETF protocol assignments (RFC 2928): 2001::/32 Teredo, 2001:2::/48 benchmarking, 2001:10::/28 deprecated ORCHID, and the globally reachable anycast and service blocks 2001:1::/32, 2001:3::/32, 2001:4:112::/48, 2001:20::/28 and 2001:30::/28, which are refused with it (it does not contain 2001:db8::/32)",
     ),
+    ("2001:db8::/32", "documentation (RFC 3849)"),
     ("2002::/16", "6to4 (RFC 3056)"),
+    ("3fff::/20", "documentation (RFC 9637)"),
+    ("5f00::/16", "segment routing SIDs (RFC 9602)"),
     (
         "fc00::/7",
         "unique local (RFC 4193); includes AWS metadata fd00:ec2::254",
     ),
     ("fe80::/10", "link-local (RFC 4291)"),
+    (
+        "fec0::/10",
+        "site-local unicast (RFC 3879), deprecated; not in the registry",
+    ),
     ("ff00::/8", "multicast (RFC 4291)"),
 ];
 

@@ -108,7 +108,9 @@ token_env = "RYPSOK_TOKEN_MIMLYS"
 The agent-directed profile (fetches and robots.txt reads) refuses every
 destination that is not a globally routable unicast address: loopback,
 private, link-local, unique-local, multicast, carrier-grade NAT,
-documentation, benchmarking, NAT64 and cloud metadata ranges, and names
+documentation, benchmarking, NAT64 and cloud metadata ranges, every other
+block that the IANA special-purpose address registries list as not globally
+reachable, the deprecated site-local and IPv4-compatible forms, and names
 such as `localhost`, single labels, `*.local`, `*.internal` and `*.arpa`.
 The judgment is made on every address that is connected to, at connect
 time. Rules are applied in the order deny, allow, built-in: a `deny` rule
