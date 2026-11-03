@@ -26,7 +26,10 @@ findings only); fixes: [`020j`](../handoffs/020j-lock-helper/README.md),
 [`020o`](../handoffs/020o-workflow-hygiene/README.md); wave 1:
 [`020h`](../handoffs/020h-egress-corrections/README.md),
 [`020i`](../handoffs/020i-parse-depth/README.md),
-[`020k`](../handoffs/020k-trustworthy-answers/README.md) (more follow).
+[`020k`](../handoffs/020k-trustworthy-answers/README.md); wave 2:
+[`020l`](../handoffs/020l-check-and-configuration/README.md),
+[`020m`](../handoffs/020m-promises-with-tests/README.md),
+[`020n`](../handoffs/020n-text-fidelity/README.md) (more follow).
 
 ## Problem and motivation
 
