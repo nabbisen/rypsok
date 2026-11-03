@@ -219,3 +219,17 @@ The limits table gains two rows, applied with this RFC:
 - Same-host redirect targets are exempt from strict mode in the fetch
   pipeline (RFC 012); the strict-mode key is the comparison key of the
   URL's returned form.
+
+## Amendment to RFC 011 (2026-11-03, RFC 020 D-2)
+
+The built-in refusal table now follows the IANA IPv4 and IPv6 Special-Purpose
+Address Registries (read 2026-11-03, both last modified 2026-10-13): every
+block whose "Globally Reachable" is False is refused, and so are multicast and
+the deprecated `::/96` and `fec0::/10`. Six blocks were added to the table of
+this RFC: `100:0:0:1::/64`, `2001:db8::/32`, `3fff::/20`, `5f00::/16`,
+`::/96` and `fec0::/10`; the comment that said `2001::/23` contains
+`2001:db8::/32` was wrong and is corrected. Blocks that the registry calls
+globally reachable but that lie inside a larger refused block stay refused
+(stricter). The independent copy of the registries for the tests is
+`crates/rypsok-core/src/egress/policy/special_purpose.csv`. Operator `allow`
+rules still override the table.
