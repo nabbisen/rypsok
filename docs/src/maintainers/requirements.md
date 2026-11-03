@@ -611,8 +611,8 @@ from the response header, with sniffing limited to distinguishing HTML from
 text.
 
 ### REQ-PAGE-006 Malformed content — M3 · T
-Malformed HTML shall yield partial content with the notice
-`extraction_partial`, or, when nothing can be extracted, the error
+Malformed HTML, and HTML beyond the bounds below, shall yield partial
+content with the notice `extraction_partial`, or, when nothing can be extracted, the error
 `unsupported_content` with the reason `extraction_failed`; never a process
 failure. Parsing shall stop at LIM-F10 nodes or LIM-F11
 levels of nesting: both bounds are enforced while the document is parsed, so
