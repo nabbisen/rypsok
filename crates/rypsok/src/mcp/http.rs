@@ -587,11 +587,7 @@ impl Auth {
         let presented = headers
             .get(header::AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
-            .and_then(|v| {
-                v.strip_prefix("Bearer ")
-                    .or_else(|| v.strip_prefix("bearer "))
-            })
-            .map(str::trim)
+            .and_then(bearer_token)
             .unwrap_or("");
         let mut found = None;
         for caller in &self.callers {
@@ -622,6 +618,19 @@ impl Auth {
             }
         }
     }
+}
+
+/// The token of an `Authorization` value: the scheme `Bearer`, compared
+/// without regard to case (RFC 9110 §11.1), then one or more spaces, then
+/// the token. Any other separator (a tab, a colon) is not a separator.
+fn bearer_token(value: &str) -> Option<&str> {
+    const SCHEME: &str = "bearer";
+    let (scheme, rest) = value.split_at_checked(SCHEME.len())?;
+    if !scheme.eq_ignore_ascii_case(SCHEME) {
+        return None;
+    }
+    let token = rest.strip_prefix(' ')?;
+    Some(token.trim_start_matches(' ').trim_end())
 }
 
 /// Equality in time that depends on the longer length only, never on the

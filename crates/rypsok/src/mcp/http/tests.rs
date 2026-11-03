@@ -1478,3 +1478,48 @@ fn req_sec_018_accept_backoff_survives_a_clock_that_stands_still() {
         Some(1001)
     );
 }
+
+/// REQ-SEC-018 (handoff 020g, NET-11): the `Bearer` scheme is matched
+/// case-insensitively (RFC 9110 §11.1), followed by one or more spaces. A
+/// tab or another separator, no scheme, another scheme and an empty value
+/// stay refused with 401.
+#[test]
+fn req_sec_018_the_bearer_scheme_is_case_insensitive() {
+    const TOKEN: &str = "token-a-0123456789-0123456789-0123456789";
+    let auth = Auth {
+        callers: vec![Caller {
+            id: CallerId::new("alpha"),
+            token: Secret::new(TOKEN.to_owned()),
+        }],
+    };
+    let check = |value: &str| {
+        let mut headers = http::HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_str(value).expect("a header value"),
+        );
+        auth.check(&headers, "ipv4").is_ok()
+    };
+    for scheme in ["Bearer", "bearer", "BEARER", "bEaReR"] {
+        assert!(check(&format!("{scheme} {TOKEN}")), "{scheme}, one space");
+        assert!(check(&format!("{scheme}  {TOKEN}")), "{scheme}, two spaces");
+    }
+    for refused in [
+        format!("Bearer\t{TOKEN}"),
+        format!("Bearer \t{TOKEN}"),
+        format!("Bearer:{TOKEN}"),
+        format!("Bearer{TOKEN}"),
+        format!("Basic {TOKEN}"),
+        format!("Token {TOKEN}"),
+        TOKEN.to_owned(),
+        "Bearer ".to_owned(),
+        "Bearer".to_owned(),
+        String::new(),
+    ] {
+        assert!(!check(&refused), "{refused:?} must be refused");
+    }
+    // No header at all.
+    assert!(auth.check(&http::HeaderMap::new(), "ipv4").is_err());
+    // A wrong token with a good scheme is still refused.
+    assert!(!check("BEARER token-a-0123456789-0123456789-012345678X"));
+}
