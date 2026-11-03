@@ -880,6 +880,119 @@ fn req_ops_002_sigterm_closes_the_http_listener() {
     );
 }
 
+/// REQ-MCP-002 and REQ-OPS-002 (RFC 020, DAT-7): `serve --transport http`
+/// writes nothing to standard output, which the stability page promises
+/// ("`serve` writes nothing to stdout"). The binary is spawned with stdout
+/// piped, waited for until it logs `listening` on stderr, asked one question
+/// over HTTP (a `server/discover` and a tool call), stopped with `SIGTERM`;
+/// stdout must be empty and the exit code 0.
+#[cfg(unix)]
+#[test]
+fn req_mcp_002_http_serve_writes_nothing_to_stdout() {
+    use std::io::{BufRead, BufReader, Read};
+    use std::process::{Command, Stdio};
+    let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = probe.local_addr().unwrap().port();
+    drop(probe);
+    let config = config_file(&format!(
+        "config_version = 1\n[service.http]\nbind = \"127.0.0.1:{port}\"\n[engines.w]\ntype = \"wikipedia\"\ncategories = [\"general\"]\n"
+    ));
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rypsok"))
+        .args(["serve", "--transport", "http", "--config"])
+        .arg(&config)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    // Both streams are read on threads so that neither pipe can fill.
+    let mut stdout = child.stdout.take().unwrap();
+    let out_thread = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stdout.read_to_end(&mut bytes).unwrap();
+        bytes
+    });
+    let stderr = child.stderr.take().unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            let _ = tx.send(line);
+        }
+    });
+    let mut listening = false;
+    while let Ok(line) = rx.recv_timeout(std::time::Duration::from_secs(10)) {
+        if line.contains("\"event\":\"listening\"") {
+            listening = true;
+            break;
+        }
+    }
+    assert!(listening, "the listener announces itself on stderr");
+    // One request that reaches the MCP service, one tool call.
+    let discover = http_post_mcp(
+        port,
+        "server/discover",
+        None,
+        r#"{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"t","version":"0"},"io.modelcontextprotocol/clientCapabilities":{}}}}"#,
+    );
+    assert_eq!(discover, Some(200), "server/discover is answered");
+    let call = http_post_mcp(
+        port,
+        "tools/call",
+        Some("engine_status"),
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"engine_status","arguments":{},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"t","version":"0"},"io.modelcontextprotocol/clientCapabilities":{}}}}"#,
+    );
+    assert_eq!(call, Some(200), "a tool call is answered");
+    let status = Command::new("kill")
+        .arg("-TERM")
+        .arg(child.id().to_string())
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let started = std::time::Instant::now();
+    let exit = loop {
+        if let Some(exit) = child.try_wait().unwrap() {
+            break exit;
+        }
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(3000),
+            "did not exit within LIM-O1"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    assert!(exit.success(), "{exit:?}");
+    let written = out_thread.join().unwrap();
+    assert!(
+        written.is_empty(),
+        "standard output must stay empty, it holds {} bytes: {:?}",
+        written.len(),
+        String::from_utf8_lossy(&written[..written.len().min(200)])
+    );
+}
+
+/// A minimal HTTP POST of a JSON-RPC body to `/mcp` of the 2026-07-28
+/// revision: the status code, or `None` when nothing answers.
+#[cfg(unix)]
+fn http_post_mcp(port: u16, method: &str, name: Option<&str>, body: &str) -> Option<u16> {
+    use std::io::{Read, Write};
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).ok()?;
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+        .ok()?;
+    let name_header = name.map_or(String::new(), |n| format!("Mcp-Name: {n}\r\n"));
+    write!(
+        stream,
+        "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nAccept: application/json, text/event-stream\r\nMCP-Protocol-Version: 2026-07-28\r\nMcp-Method: {method}\r\n{name_header}Connection: close\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
+    )
+    .ok()?;
+    let mut buffer = String::new();
+    let _ = stream.read_to_string(&mut buffer);
+    buffer
+        .split_whitespace()
+        .nth(1)
+        .and_then(|code| code.parse().ok())
+}
+
 /// A minimal HTTP GET: the status code, or `None` when nothing answers.
 #[cfg(unix)]
 fn ureq_get(url: &str) -> Option<u16> {
