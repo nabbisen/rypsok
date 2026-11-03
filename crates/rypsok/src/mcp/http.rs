@@ -28,7 +28,7 @@ use rmcp::transport::streamable_http_server::session::local::LocalSessionManager
 use rmcp::transport::streamable_http_server::session::never::NeverSessionManager;
 use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
 use rypsok_core::config::{Config, ConfigError, Secret};
-use rypsok_core::limits::defaults::SHUTDOWN_MAX_MS;
+use rypsok_core::limits::defaults::{HTTP_MAX_HEADER_BYTES, SHUTDOWN_MAX_MS};
 use rypsok_core::telemetry::Counters;
 use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
@@ -317,14 +317,19 @@ pub async fn run_with(
     builder
         .http1()
         .timer(TokioTimer::new())
-        .header_read_timeout(settings.idle_timeout);
+        .header_read_timeout(settings.idle_timeout)
+        // LIM-H7: a request line and headers above the bound are answered
+        // 431 by hyper (its default is about 400 KB).
+        .max_buf_size(HTTP_MAX_HEADER_BYTES as usize);
     builder
         .http2()
         .timer(TokioTimer::new())
         .keep_alive_interval(settings.idle_timeout)
         .keep_alive_timeout(H2_PING_TIMEOUT)
         // LIM-H4: one connection cannot flood the listener with streams.
-        .max_concurrent_streams(settings.max_streams);
+        .max_concurrent_streams(settings.max_streams)
+        // LIM-H7: the same bound as HTTP/1, stated rather than inherited.
+        .max_header_list_size(HTTP_MAX_HEADER_BYTES);
     let mut backoff = AcceptBackoff::default();
     loop {
         let (stream, remote) = tokio::select! {

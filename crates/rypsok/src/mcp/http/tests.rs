@@ -1523,3 +1523,161 @@ fn req_sec_018_the_bearer_scheme_is_case_insensitive() {
     // A wrong token with a good scheme is still refused.
     assert!(!check("BEARER token-a-0123456789-0123456789-012345678X"));
 }
+
+/// Sends one raw HTTP/1.1 request to `/mcp` with the extra header lines and
+/// returns the status line of the answer (or what was read before the
+/// server closed the connection).
+async fn raw_status(s: &Server, extra_headers: &str) -> String {
+    use tokio::io::AsyncWriteExt;
+    let body = json!({
+        "jsonrpc": "2.0", "id": 1, "method": "server/discover",
+        "params": { META: meta() }
+    })
+    .to_string();
+    let mut stream = tokio::net::TcpStream::connect(address(s)).await.unwrap();
+    let request = format!(
+        "POST {PATH} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nAccept: application/json, text/event-stream\r\nMCP-Protocol-Version: 2026-07-28\r\nMcp-Method: server/discover\r\nConnection: close\r\n{extra_headers}Content-Length: {}\r\n\r\n{body}",
+        body.len()
+    );
+    // The server may answer 431 and close before everything is written.
+    let _ = stream.write_all(request.as_bytes()).await;
+    match watch(&mut stream, Duration::from_secs(5)).await {
+        Watched::Closed(_, bytes) => String::from_utf8_lossy(&bytes)
+            .lines()
+            .next()
+            .unwrap_or("")
+            .to_owned(),
+        Watched::Open => "still open".to_owned(),
+    }
+}
+
+/// REQ-SEC-018 (handoff 020g, NET-12; LIM-H7): the header block of an HTTP/1
+/// request is bounded at 16 KiB: a single 400,000-byte header, which was
+/// accepted before, and one of 20,000 bytes are answered 431 by hyper; headers
+/// below the bound still succeed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn req_sec_018_an_oversized_header_block_is_431() {
+    let s = Server::start(LOOPBACK).await;
+    for size in [400_000usize, 20_000] {
+        let status = raw_status(&s, &format!("X-Pad: {}\r\n", "a".repeat(size))).await;
+        assert!(status.starts_with("HTTP/1.1 431"), "{size} bytes: {status}");
+    }
+    // Ten kilobytes of headers in all are well below the bound.
+    let status = raw_status(&s, &format!("X-Pad: {}\r\n", "a".repeat(10_000))).await;
+    assert!(status.starts_with("HTTP/1.1 200"), "{status}");
+    s.stop().await;
+}
+
+/// REQ-SEC-018 (LIM-H7): the largest headers a legitimate caller sends
+/// (a 64-character token, a long `Origin` that is allowed, a long user
+/// agent) are still served.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn req_sec_018_the_largest_legitimate_headers_still_succeed() {
+    let token = "t".repeat(64);
+    let token_path = token_file("h7", &token);
+    let origin = format!("https://{}.example.org", "o".repeat(200));
+    let s = Server::start(&LOOPBACK.replace(
+        "[engines.w]",
+        &format!("allowed_origins = [\"{origin}\"]\n[[service.http.auth.callers]]\nid = \"alpha\"\ntoken_file = \"{token_path}\"\n[engines.w]"),
+    ))
+    .await;
+    let response = s
+        .request("server/discover", json!({}))
+        .bearer_auth(&token)
+        .header("origin", &origin)
+        .header("user-agent", "u".repeat(1000))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    s.stop().await;
+}
+
+/// REQ-SEC-018 (LIM-H7), HTTP/2: the server advertises
+/// `SETTINGS_MAX_HEADER_LIST_SIZE = 16384`, and a header list above it is
+/// not served.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn req_sec_018_the_http2_header_list_is_bounded() {
+    use tokio::io::AsyncWriteExt;
+    let s = Server::start(LOOPBACK).await;
+    let mut stream = tokio::net::TcpStream::connect(address(&s)).await.unwrap();
+    stream
+        .write_all(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
+        .await
+        .unwrap();
+    stream.write_all(&h2_frame(0x4, 0, 0, &[])).await.unwrap();
+    let mut advertised = None;
+    loop {
+        let (kind, flags, _, payload) = h2_read_frame(&mut stream, Duration::from_secs(3))
+            .await
+            .expect("the server's SETTINGS");
+        if kind == 0x4 && flags & 0x1 == 0 {
+            for entry in payload.chunks(6) {
+                if u16::from_be_bytes([entry[0], entry[1]]) == 6 {
+                    advertised = Some(u32::from_be_bytes([entry[2], entry[3], entry[4], entry[5]]));
+                }
+            }
+            stream.write_all(&h2_frame(0x4, 0x1, 0, &[])).await.unwrap();
+            break;
+        }
+    }
+    assert_eq!(advertised, Some(16384), "MAX_HEADER_LIST_SIZE");
+
+    // A request whose header list is 40,000 bytes: HEADERS without
+    // END_HEADERS, then CONTINUATION frames of 16,000 bytes.
+    let mut block = h2_open_request_headers();
+    block.extend_from_slice(&[0x00, 5]);
+    block.extend_from_slice(b"x-pad");
+    // A string literal with a multi-byte length (RFC 7541 §5.1, 7-bit prefix).
+    let value = vec![b'a'; 40_000];
+    block.extend_from_slice(&[0x7f, 0xff - 0x7f]);
+    let mut rest = value.len() - 127;
+    while rest >= 128 {
+        block.push((rest % 128) as u8 | 0x80);
+        rest /= 128;
+    }
+    block.push(rest as u8);
+    block.extend_from_slice(&value);
+    let mut chunks = block.chunks(16_000);
+    stream
+        .write_all(&h2_frame(0x1, 0, 1, chunks.next().unwrap()))
+        .await
+        .unwrap();
+    let remaining: Vec<&[u8]> = chunks.collect();
+    for (i, chunk) in remaining.iter().enumerate() {
+        let flags = if i + 1 == remaining.len() { 0x4 } else { 0 };
+        stream
+            .write_all(&h2_frame(0x9, flags, 1, chunk))
+            .await
+            .unwrap();
+    }
+    // What hyper does is recorded by the assertion: a response with status
+    // 431 (HEADERS on stream 1) or a reset/close; never a served request.
+    let mut outcome = String::from("nothing");
+    while let Some((kind, _, id, payload)) =
+        h2_read_frame(&mut stream, Duration::from_secs(3)).await
+    {
+        match kind {
+            0x1 if id == 1 => {
+                outcome = format!("headers {payload:02x?}");
+                break;
+            }
+            0x3 if id == 1 => {
+                outcome = "rst_stream".to_owned();
+                break;
+            }
+            0x7 => {
+                outcome = "goaway".to_owned();
+                break;
+            }
+            _ => {}
+        }
+    }
+    // h2 ends the connection (GOAWAY) when a header list outgrows the
+    // advertised bound; a reset of the stream would do as well.
+    assert!(
+        outcome == "goaway" || outcome == "rst_stream",
+        "an oversized header list must not be served: {outcome}"
+    );
+    s.stop().await;
+}

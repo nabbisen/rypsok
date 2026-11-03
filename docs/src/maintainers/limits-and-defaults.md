@@ -84,6 +84,7 @@ it.
 | LIM-H4 | Streams one HTTP/2 connection may open | 16 | 1–256 | THR-26 (RFC 018) |
 | LIM-H5 | Time one HTTP request may take, whatever its state | 30 s | 3–600 s, at least `fetch.deadline_ms` + 2 s | THR-26 (RFC 018) |
 | LIM-H6 | Live sessions of the handshake-based revisions over HTTP | 256 | 1–65536 | THR-27 (RFC 019) |
+| LIM-H7 | Size of the header block of an HTTP request (HTTP/1: request line and headers; HTTP/2: the header list) | 16384 bytes | fixed | NET-12 (audit 020b); the same bound on both protocols |
 
 ## Circuit breaker
 

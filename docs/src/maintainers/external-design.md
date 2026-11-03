@@ -97,6 +97,7 @@ The statuses, by the party that answers:
 | 406 | `Accept` lacks one of the two media types | The pinned SDK | No; counted (`sdk_not_acceptable`) |
 | 408 | The request outlived LIM-H5 | The gate | `request_timeout` |
 | 413 | The body exceeds LIM-H2 | The gate (declared), the SDK (streamed) | `body_too_large` (declared) |
+| 431 | The request line and headers exceed LIM-H7 (16 KiB) | hyper, before the gate | No; not counted |
 | 503 | A legacy handshake while LIM-H6 sessions are open; `Retry-After: 30` | The gate | `session_limit` |
 
 A connection beyond LIM-H1 is closed unanswered and logged as

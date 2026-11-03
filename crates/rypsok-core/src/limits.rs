@@ -121,6 +121,9 @@ pub mod defaults {
     pub const HTTP_REQUEST_TIMEOUT_S: u32 = 30; // LIM-H5
     /// Live sessions of the handshake-based revisions over HTTP (RFC 019).
     pub const HTTP_MAX_SESSIONS: u32 = 256; // LIM-H6
+    /// Size of the header block of an HTTP request, in bytes: the request
+    /// line and headers of HTTP/1, the header list of HTTP/2 (fixed, RFC 020).
+    pub const HTTP_MAX_HEADER_BYTES: u32 = 16384; // LIM-H7
 
     /// Lifetime of a cache entry, in seconds.
     pub const CACHE_TTL_S: u32 = 300; // LIM-K2

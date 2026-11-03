@@ -58,6 +58,7 @@ ever goes to standard output except protocol messages.
 | 406 | `Accept` does not list both `application/json` and `text/event-stream`; the protocol requires a client to list both (answered by the SDK; counted, not logged per request) | Send `Accept: application/json, text/event-stream` |
 | 408 | A request was still running after `request_timeout_s` (the gate) | A slow client or proxy: raise `request_timeout_s`, or fix the link |
 | 413 | The body is above `max_request_bytes` (the gate, or the SDK for a streamed body) | A tool call is small; check what the client sends |
+| 431 | The request line and headers together are above 16 KiB (LIM-H7; answered by hyper before the gate, so neither logged nor counted; over HTTP/2 the connection is closed) | Send fewer or shorter headers; a token is at most a few hundred bytes |
 | 503 with `Retry-After: 30` | The handshake-based revisions hold `max_sessions` live sessions already (the gate); the 30 s is a hint, sessions expire after 300 s without traffic | Retry later, use the 2026-07-28 revision (it keeps no session), or raise `max_sessions` |
 | JSON-RPC error `-32022` on `initialize` | `legacy_revisions = false` and the client uses the handshake-based revisions | Use the current revision, or set `legacy_revisions = true` |
 
