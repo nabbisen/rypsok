@@ -8,26 +8,36 @@ release workflow builds and attaches, and never creates a release.
 
 1. **Preconditions.** The gates are green on the release commit, the
    reviewer has recorded a Go, and the owner has authorized the release.
-2. **Tag.** Tag the release commit `X.Y.Z` (no `v` prefix) and push the
+2. **Bump the pinned compiler, then run the dry run.** The release workflow
+   builds with a named compiler (the `toolchain:` line of the `build` job in
+   `release.yml`), so that two builds of one commit use one compiler. Set it
+   to the current stable (`rustup update stable`, `rustc --version`), commit
+   that with the release commit, run the dry run (below) from `main`, and
+   release only when it is green. The compiler is a deliberate change of the
+   release, not a surprise of the day. CI keeps `stable` on purpose, to see
+   new lints early; its 1.88 job covers the floor.
+3. **Tag.** Tag the release commit `X.Y.Z` (no `v` prefix) and push the
    tag. The tag must equal the workspace `version` of `Cargo.toml`; the
    attach job fails otherwise.
-3. **Publish.** The owner publishes the release on GitHub from the tag, or
+4. **Publish.** The owner publishes the release on GitHub from the tag, or
    publishes first: creating the release creates the tag, which starts the
    workflow, whose attach job then finds the release. When publishing
    first, choose the release commit as the target of the new tag, not the
    branch head: the tag goes on the commit chosen, and the attach job's
    version check catches a wrong version but not a wrong commit with the
    same version.
-4. **Read the run.** The `release` workflow builds the binaries, writes
+5. **Read the run.** The `release` workflow builds the binaries, writes
    `SHA256SUMS`, and builds the container image. If the release did not exist
    when its attach job ran, the job wrote a notice in the run summary and
    attached nothing. In that case run the workflow again from the tag
    (Actions, release, Run workflow, "Use workflow from: Tag X.Y.Z", or
    `gh workflow run release.yml --ref X.Y.Z`): the attach job uploads to the
    release that now exists.
-5. **Check the release page.** It lists three archives and `SHA256SUMS`:
-   Linux x86_64 (static, musl), macOS arm64 and Windows x86_64.
-6. **Nothing is overwritten.** The attach job refuses to replace an asset
+6. **Check the release page.** It lists three archives and `SHA256SUMS`:
+   Linux x86_64 (static, musl), macOS arm64 and Windows x86_64. The release
+   notes name the compiler: paste the `rustc --version` line that the
+   "Compiler and flags" step of the run printed.
+7. **Nothing is overwritten.** The attach job refuses to replace an asset
    that is already on the release. To replace one, delete it on the release
    page by hand and say so in the release notes, then run the workflow again
    from the tag.
@@ -75,6 +85,12 @@ uploads them as workflow artifacts of that run. It attaches nothing and
 builds no image: both jobs run on a tag ref only. Use it to see that the
 build matrix works before tagging. What it cannot show is the attach itself,
 which first runs for a real tag.
+
+Builds of one commit are meant to be reproducible: the same compiler, the
+locked dependencies and, on Windows, the linker flag `/Brepro` (without it
+the linker writes a timestamp into the executable). Two dry runs of one
+commit give byte-identical `rypsok` binaries (the archives themselves differ
+in their own timestamps, so compare the unpacked binaries, not the archives).
 
 ## What the checksums prove
 
