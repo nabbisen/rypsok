@@ -23,8 +23,10 @@ text drift, fixed now), [`020b`](../handoffs/020b-network-audit/README.md),
 [`020f`](../handoffs/020f-dependencies-and-ci-audit/README.md) (audits:
 findings only); fixes: [`020j`](../handoffs/020j-lock-helper/README.md),
 [`020g`](../handoffs/020g-listener-corrections/README.md),
-[`020o`](../handoffs/020o-workflow-hygiene/README.md) (more follow the owner's
-decisions).
+[`020o`](../handoffs/020o-workflow-hygiene/README.md); wave 1:
+[`020h`](../handoffs/020h-egress-corrections/README.md),
+[`020i`](../handoffs/020i-parse-depth/README.md),
+[`020k`](../handoffs/020k-trustworthy-answers/README.md) (more follow).
 
 ## Problem and motivation
 

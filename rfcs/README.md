@@ -41,7 +41,7 @@ _None yet._
 
 | ID | Title | Milestone | Handoff |
 |----|-------|-----------|---------|
-| 020 | [Project audit (M8)](./accepted/020-project-audit.md) | 0.9.0 | [020a](./handoffs/020a-baseline-text/README.md), [020b](./handoffs/020b-network-audit/README.md), [020c](./handoffs/020c-data-and-contract-audit/README.md), [020d](./handoffs/020d-tests-and-code-audit/README.md), [020e](./handoffs/020e-measurements/README.md), [020f](./handoffs/020f-dependencies-and-ci-audit/README.md) |
+| 020 | [Project audit (M8)](./accepted/020-project-audit.md) | 0.9.0 | [020a](./handoffs/020a-baseline-text/README.md), [020b](./handoffs/020b-network-audit/README.md), [020c](./handoffs/020c-data-and-contract-audit/README.md), [020d](./handoffs/020d-tests-and-code-audit/README.md), [020e](./handoffs/020e-measurements/README.md), [020f](./handoffs/020f-dependencies-and-ci-audit/README.md), fixes [020g](./handoffs/020g-listener-corrections/README.md), [020h](./handoffs/020h-egress-corrections/README.md), [020i](./handoffs/020i-parse-depth/README.md), [020j](./handoffs/020j-lock-helper/README.md), [020k](./handoffs/020k-trustworthy-answers/README.md), [020o](./handoffs/020o-workflow-hygiene/README.md) |
 
 Review records are not in the repository: the owner keeps review requests and reviewed packages under a private directory, which earlier handoffs name as `.git-exclude/reviews/`, today `.git-exclude/review-requests/` and `.git-exclude/reviewed/`.
 
