@@ -451,7 +451,7 @@ pub async fn run(
         let (result, effects) = make(
             &item.best.raw.title,
             &item.best.raw.snippet,
-            item.best.returned_url.clone(),
+            item.url.clone(),
             item.best.raw.date.clone(),
             engines,
             p.limits.title_max_chars,

@@ -73,6 +73,52 @@ fn req_rank_003_returned_url_table() {
             "https://www.example.org/page",
             Ok("https://www.example.org/page"),
         ),
+        // RFC 020 DAT-8: the query is the engine's, byte for byte, unless a
+        // tracking parameter is removed; then the others keep their text.
+        (
+            "https://example.org/p?a=1&b",
+            Ok("https://example.org/p?a=1&b"),
+        ),
+        (
+            "https://example.org/p?a=1;b=2",
+            Ok("https://example.org/p?a=1;b=2"),
+        ),
+        (
+            "https://example.org/p?q=a%20b",
+            Ok("https://example.org/p?q=a%20b"),
+        ),
+        (
+            "https://example.org/p?a=%7e",
+            Ok("https://example.org/p?a=%7e"),
+        ),
+        (
+            "https://example.org/p?x=%zz",
+            Ok("https://example.org/p?x=%zz"),
+        ),
+        (
+            "https://example.org/p?a=1&&b=2",
+            Ok("https://example.org/p?a=1&&b=2"),
+        ),
+        (
+            "https://example.org/p?utm_source=x&a=1&b",
+            Ok("https://example.org/p?a=1&b"),
+        ),
+        (
+            "https://example.org/p?a=1;z&utm_medium=y",
+            Ok("https://example.org/p?a=1;z"),
+        ),
+        (
+            "https://example.org/p?a=1&utm_medium=y;z",
+            Ok("https://example.org/p?a=1"),
+        ),
+        (
+            "https://example.org/p?q=a%20b&fbclid=1&r=%7e",
+            Ok("https://example.org/p?q=a%20b&r=%7e"),
+        ),
+        (
+            "https://example.org/p?utm_source=x&gclid=y#top",
+            Ok("https://example.org/p#top"),
+        ),
         ("ftp://example.org/file", Err(UrlRejection::Invalid)),
         ("javascript:alert(1)", Err(UrlRejection::Invalid)),
         ("https://user:pw@example.org/", Err(UrlRejection::Invalid)),
@@ -81,16 +127,19 @@ fn req_rank_003_returned_url_table() {
         ("/relative/path", Err(UrlRejection::Invalid)),
         ("https://", Err(UrlRejection::Invalid)),
     ];
+    let mut wrong = Vec::new();
     for (input, expected) in rows {
-        assert_eq!(
-            returned_url(input, MAX)
-                .as_ref()
-                .map(String::as_str)
-                .map_err(|e| *e),
-            *expected,
-            "{input}"
-        );
+        let got = returned_url(input, MAX);
+        if got.as_ref().map(String::as_str).map_err(|e| *e) != *expected {
+            wrong.push(format!("{input}: got {got:?}, expected {expected:?}"));
+        }
     }
+    assert!(
+        wrong.is_empty(),
+        "{} wrong:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
     let long = format!("https://example.org/{}", "x".repeat(2100));
     assert_eq!(returned_url(&long, MAX), Err(UrlRejection::TooLong));
     assert!(returned_url(&long, 4096).is_ok());
@@ -107,13 +156,13 @@ fn req_rank_002_comparison_key_table() {
             "https://www.example.org/page",
             "https://EXAMPLE.org/page/",
             "https://example.org:443/page",
-            "https://example.org/page#top",
+            "https://example.org/page#",
             "https://example.org/page?utm_source=x",
         ],
         &[
             "https://example.org/a?x=1&y=2",
             "https://example.org/a?y=2&x=1",
-            "http://www.example.org/a/?y=2&x=1#frag",
+            "http://www.example.org/a/?y=2&x=1",
         ],
         &[
             "https://example.org/%7euser",
@@ -154,8 +203,142 @@ fn req_rank_002_comparison_key_table() {
     }
     assert_eq!(
         comparison_key("https://www.Example.org:443/a/?b=2&a=1#f").as_str(),
-        "https://example.org/a?a=1&b=2"
+        "https://example.org/a?a=1&b=2#f"
     );
+}
+
+/// REQ-RANK-002 (RFC 020 D-8): the twelve pairs of audit 020c DAT-9, equal
+/// and different. `http` is `https` and `www.` is folded (unchanged); the
+/// real port, a non-empty fragment and the order of repeated parameters are
+/// part of the identity (new); the order of parameters of different names is
+/// not.
+#[test]
+fn req_rank_002_the_twelve_pairs_of_the_audit() {
+    let pairs: [(&str, &str, bool); 12] = [
+        ("http://x.example/page", "https://x.example/page", true),
+        ("https://x.example/", "https://www.x.example/", true),
+        (
+            "https://x.example/p?a=1&b=2",
+            "https://x.example/p?b=2&a=1",
+            true,
+        ),
+        (
+            "https://x.example/p?a=1&a=2",
+            "https://x.example/p?a=2&a=1",
+            false,
+        ),
+        (
+            "https://x.example/app#/inbox",
+            "https://x.example/app#/settings",
+            false,
+        ),
+        ("http://x.example:443/p", "https://x.example/p", false),
+        ("https://x.example:80/p", "https://x.example/p", false),
+        ("https://x.example/p/", "https://x.example/p", true),
+        (
+            "https://x.example/p?q=a+b",
+            "https://x.example/p?q=a%20b",
+            true,
+        ),
+        ("https://x.example/a%2Fb", "https://x.example/a/b", false),
+        ("https://x.example/A", "https://x.example/a", false),
+        (
+            "https://x.example/p?q=a%2Bb",
+            "https://x.example/p?q=a+b",
+            false,
+        ),
+    ];
+    let mut wrong = Vec::new();
+    for (a, b, equal) in pairs {
+        let (ka, kb) = (
+            comparison_key(&returned_url(a, MAX).unwrap()),
+            comparison_key(&returned_url(b, MAX).unwrap()),
+        );
+        if (ka == kb) != equal {
+            wrong.push(format!("{a} vs {b}: expected equal={equal}"));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} wrong:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+    // More around the same rules.
+    let more: [(&str, &str, bool); 9] = [
+        ("https://x.example/app#", "https://x.example/app", true),
+        ("https://x.example/app#a", "https://x.example/app#a", true),
+        ("https://x.example/app#a", "https://x.example/app#b", false),
+        ("http://x.example:8080/p", "https://x.example:8080/p", true),
+        ("http://x.example:80/p", "http://x.example/p", true),
+        ("https://x.example:443/p", "https://x.example/p", true),
+        ("http://x.example:80/p", "https://x.example:80/p", false),
+        (
+            "https://x.example/p?a=2&a=1&b=0",
+            "https://x.example/p?b=0&a=2&a=1",
+            true,
+        ),
+        (
+            "https://x.example/p?a=2&b=0&a=1",
+            "https://x.example/p?a=1&b=0&a=2",
+            false,
+        ),
+    ];
+    for (a, b, equal) in more {
+        let (ka, kb) = (
+            comparison_key(&returned_url(a, MAX).unwrap()),
+            comparison_key(&returned_url(b, MAX).unwrap()),
+        );
+        if (ka == kb) != equal {
+            wrong.push(format!("{a} vs {b}: expected equal={equal}"));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} wrong:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+/// REQ-RANK-002: the key's text, which pins what the survivors of the
+/// mutation run (audit 020d) change: the root path keeps its slash, only a
+/// trailing slash of a longer path goes, the default port is hidden and no
+/// other is, the fragment and the repeated-parameter order are in the key.
+#[test]
+fn req_rank_002_the_key_text_pins_the_port_the_root_and_the_fragment() {
+    for (url, key) in [
+        ("https://x.example/", "https://x.example/"),
+        ("https://x.example", "https://x.example/"),
+        ("https://x.example/p/", "https://x.example/p"),
+        ("https://x.example//", "https://x.example/"),
+        ("https://x.example:443/p", "https://x.example/p"),
+        ("https://x.example:80/p", "https://x.example:80/p"),
+        ("http://x.example:443/p", "https://x.example:443/p"),
+        ("http://x.example:80/p", "https://x.example/p"),
+        ("https://x.example:8443/p", "https://x.example:8443/p"),
+        ("https://x.example:81/p", "https://x.example:81/p"),
+        ("https://x.example:444/p", "https://x.example:444/p"),
+        ("https://x.example/p#top", "https://x.example/p#top"),
+        (
+            "https://x.example/p?b=1&a=2&a=1",
+            "https://x.example/p?a=2&a=1&b=1",
+        ),
+    ] {
+        assert_eq!(comparison_key(url).as_str(), key, "{url}");
+    }
+}
+
+/// REQ-CTX-006 and LIM-F9: a URL of exactly the bound is accepted, one
+/// character more is `TooLong` (the mutant `>` to `>=` of audit 020d).
+#[test]
+fn req_ctx_006_the_url_bound_is_inclusive() {
+    let base = "https://example.org/";
+    let exact = format!("{base}{}", "a".repeat(30 - base.len()));
+    assert_eq!(exact.chars().count(), 30);
+    assert_eq!(returned_url(&exact, 30), Ok(exact.clone()));
+    let over = format!("{exact}a");
+    assert_eq!(returned_url(&over, 30), Err(UrlRejection::TooLong));
 }
 
 proptest! {

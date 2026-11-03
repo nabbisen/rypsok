@@ -103,3 +103,39 @@ credentials). Applied with this RFC.
 - A merged result carries `engines` (distinct, selection order) and
   `ranks` (every observation with its rank), REQ-RANK-001's list of
   observations.
+
+## Amendment to RFC 008 (2026-11-03, RFC 020 D-8, DAT-8 and DAT-9)
+
+- **The returned URL is the engine's, byte for byte, except tracking
+  parameters** (REQ-RANK-003, "changed as little as possible"). The code
+  rebuilt the whole query with a form serializer whenever a query existed,
+  so `?a=1&b` became `?a=1&b=`, `?a=1;b=2` became `?a=1%3Bb%3D2`, `?q=a%20b`
+  became `?q=a+b`, `?a=%7e` became `?a=%7E`, `?x=%zz` became `?x=%25zz` and
+  `?a=1&&b=2` lost an `&`. Now the query is rebuilt only when a tracking
+  parameter was removed: it is split on `&`, the segments whose name (the text
+  before `=`, percent-decoded and lower-cased) is on the tracking list are
+  dropped, and the others are joined with `&` in their original text. `;` is
+  not a separator. A URL whose only parameters are tracking parameters loses
+  the `?`.
+- **The comparison key** keeps `http` = `https` and the `www.` fold. It now
+  also (a) keeps an explicit port that is not the default of the URL's own
+  scheme (after the scheme fold, `http://x:443/p` is not `https://x/p` and
+  `https://x:80/p` is not `https://x/p`); (b) keeps a non-empty fragment (an
+  empty one is dropped; the old rule "fragment removed" merged
+  `…/app#/inbox` with `…/app#/settings`); (c) sorts the query parameters by
+  **name only and stably**, so the order of repeated parameters (`a=1&a=2` and
+  `a=2&a=1`) stays part of the identity.
+- **Which URL is shown for a merged result**: the best-ranked observation's,
+  as before, unless a merged observation is `https` and the best-ranked is
+  `http`; then the best-ranked `https` observation's URL (by rank, then
+  preference, then selection index). It is always one engine's URL, byte for
+  byte; title, snippet, date and the fusion are the best observation's, as
+  before.
+- Strict mode (REQ-SEC-021) is not affected by the fragment (correction of the
+  review of 2026-11-03): it remembers returned URLs by the comparison key
+  **without its fragment** and looks a fetch URL up the same way, because the
+  fragment is never sent to the server and names no other fetch. A returned
+  URL and the same URL with any fragment are one fetch target; two returned
+  URLs that differ only by fragment are two results (the deduplication key
+  keeps the fragment) and one strict entry; a different path or query is
+  another URL.

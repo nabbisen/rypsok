@@ -656,6 +656,31 @@ async fn req_sec_021_strict_mode_admits_returned_urls_only() {
     );
 }
 
+/// REQ-SEC-021 (RFC 020, N1 of the 020n review): in strict mode a returned
+/// URL may be fetched with a fragment (the fragment is not sent), and still
+/// not with another query.
+#[tokio::test]
+async fn req_sec_021_strict_mode_allows_a_fragment_on_a_returned_url() {
+    let mut h = harness().await;
+    h.strict_mode = true;
+    Mock::given(method("GET"))
+        .and(path("/p"))
+        .respond_with(page(ARTICLE))
+        .mount(&h.server)
+        .await;
+    let named = |p: &str| h.url(p).replace("127.0.0.1", "mirror.example");
+    let returned = normalize::returned_url(&named("/p"), 2048).unwrap();
+    h.returned.record(&comparison_key(&returned));
+    for suffix in ["#section", "#", "#/inbox"] {
+        let fetched = h.fetch(&named(&format!("/p{suffix}"))).await;
+        assert!(fetched.is_ok(), "{suffix}: {fetched:?}");
+    }
+    let other_query = h.fetch(&named("/p?other=1")).await.unwrap_err();
+    assert_eq!(other_query.detail.reason, Some(DetailReason::StrictMode));
+    let other_path = h.fetch(&named("/p/more#section")).await.unwrap_err();
+    assert_eq!(other_path.detail.reason, Some(DetailReason::StrictMode));
+}
+
 /// REQ-FETCH-007, REQ-FETCH-010 and REQ-PRIV-002: credentials in the URL,
 /// a scheme that is not http(s), a secret in the URL and an internal
 /// destination are refused before any request.

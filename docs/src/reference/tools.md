@@ -43,7 +43,7 @@ Response:
 | `outcome` | rypsok | `ok` (every engine answered), `partial` (results, but an engine failed), `empty` (an engine answered, nothing remained) |
 | `notices[]` | rypsok | `code`, optional `engine`, `reason`, `count`, all from fixed vocabularies |
 | `results[].title` | external | Cleaned, at most 150 characters |
-| `results[].url` | external | The engine's URL with tracking parameters removed |
+| `results[].url` | external | The engine's URL, byte for byte except that tracking parameters are removed. When one result was returned under both `http` and `https`, the `https` form is shown |
 | `results[].snippet` | external | Cleaned, at most 300 characters |
 | `results[].date` | external | Only when an engine supplied one; `YYYY-MM-DD` |
 | `results[].engines` | rypsok | Only when the operator enabled attribution or an engine requires it |

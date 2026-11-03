@@ -37,7 +37,9 @@ pub enum UrlRejection {
 
 /// The returned form: parsed, tracking parameters removed, host in ASCII
 /// (IDNA) form; case, path, remaining query, fragment and explicit
-/// non-default port kept. The `url` crate also lowercases the scheme and
+/// non-default port kept. The query is the engine's, byte for byte, unless a
+/// tracking parameter is removed; then the other parameters keep their own
+/// text (RFC 020, DAT-8). The `url` crate also lowercases the scheme and
 /// host and drops a default port, which does not change the resource.
 pub fn returned_url(raw: &str, max_chars: u32) -> Result<String, UrlRejection> {
     let mut url = Url::parse(raw.trim()).map_err(|_| UrlRejection::Invalid)?;
@@ -55,18 +57,28 @@ pub fn returned_url(raw: &str, max_chars: u32) -> Result<String, UrlRejection> {
     Ok(text)
 }
 
+/// Whether a query segment (the text between two `&`) is a tracking
+/// parameter: its name, the text before `=`, percent-decoded and lower-cased.
+fn is_tracking(segment: &str) -> bool {
+    url::form_urlencoded::parse(segment.as_bytes())
+        .next()
+        .is_some_and(|(name, _)| TRACKING_PARAMETERS.contains(&name.to_lowercase().as_str()))
+}
+
+/// Removes tracking parameters. The query is rebuilt **only** when one was
+/// removed, from the original text of the segments that stay, joined by `&`;
+/// a query without a tracking parameter is left exactly as it is (`?a=1&b`,
+/// `?a=1;b=2`, `?q=a%20b`, `?a=%7e`, `?x=%zz`, `?a=1&&b=2`).
 fn strip_tracking(url: &mut Url) {
     let Some(query) = url.query() else { return };
-    let kept: Vec<(String, String)> = url::form_urlencoded::parse(query.as_bytes())
-        .filter(|(name, _)| !TRACKING_PARAMETERS.contains(&name.to_lowercase().as_str()))
-        .map(|(n, v)| (n.into_owned(), v.into_owned()))
-        .collect();
-    if kept.is_empty() {
+    if !query.split('&').any(is_tracking) {
+        return;
+    }
+    let kept: Vec<&str> = query.split('&').filter(|s| !is_tracking(s)).collect();
+    let rebuilt = kept.join("&");
+    if rebuilt.is_empty() {
         url.set_query(None);
     } else {
-        let rebuilt = url::form_urlencoded::Serializer::new(String::new())
-            .extend_pairs(kept)
-            .finish();
         url.set_query(Some(&rebuilt));
     }
 }
@@ -77,6 +89,18 @@ fn strip_tracking(url: &mut Url) {
 pub struct ComparisonKey(String);
 
 impl ComparisonKey {
+    /// The key without its fragment: the key of the fetch target. The
+    /// fragment is never sent to a server, so a URL and the same URL with any
+    /// fragment are one fetch (strict mode remembers this form, RFC 020 N1).
+    /// The fragment is the last part of the key and the first `#` starts it:
+    /// a `#` in a path or a query is written `%23` in the key.
+    pub fn without_fragment(&self) -> ComparisonKey {
+        match self.0.split_once('#') {
+            Some((head, _)) => ComparisonKey(head.to_owned()),
+            None => self.clone(),
+        }
+    }
+
     /// The key as text, for tests only.
     #[cfg(test)]
     pub(crate) fn as_str(&self) -> &str {
@@ -84,19 +108,21 @@ impl ComparisonKey {
     }
 }
 
-/// Derives the comparison key: `https`, lowercase ASCII host without a
-/// leading `www.`, no default port, normalized percent-encoding, no
-/// trailing slash except the root, query parameters sorted, no fragment.
+/// Derives the comparison key (RFC 008, amended by RFC 020 D-8): `https`
+/// (`http` and `https` are one resource), lowercase ASCII host without a
+/// leading `www.`, the port when it is not the default of the URL's own
+/// scheme (so `http://x:443/p` and `https://x:80/p` are not `https://x/p`),
+/// normalized percent-encoding, no trailing slash except the root, the
+/// query parameters sorted by name only and stably (the order of repeated
+/// parameters is part of the identity), and a non-empty fragment kept.
 pub fn comparison_key(returned: &str) -> ComparisonKey {
     let Ok(url) = Url::parse(returned) else {
         return ComparisonKey(returned.to_owned());
     };
     let host = url.host_str().unwrap_or_default().to_lowercase();
     let host = host.strip_prefix("www.").unwrap_or(&host).to_owned();
-    let port = match url.port() {
-        Some(p) if p != 80 && p != 443 => format!(":{p}"),
-        _ => String::new(),
-    };
+    // `Url::port` is already none for the default of the URL's own scheme.
+    let port = url.port().map_or_else(String::new, |p| format!(":{p}"));
     let mut path = normalize_percent(url.path());
     if path.len() > 1 && path.ends_with('/') {
         path.pop();
@@ -109,7 +135,8 @@ pub fn comparison_key(returned: &str) -> ComparisonKey {
                 .collect()
         })
         .unwrap_or_default();
-    pairs.sort();
+    // By name only, stably: the relative order of repeated parameters stays.
+    pairs.sort_by(|a, b| a.0.cmp(&b.0));
     let query = if pairs.is_empty() {
         String::new()
     } else {
@@ -120,7 +147,11 @@ pub fn comparison_key(returned: &str) -> ComparisonKey {
                 .finish()
         )
     };
-    ComparisonKey(format!("https://{host}{port}{path}{query}"))
+    let fragment = url
+        .fragment()
+        .filter(|f| !f.is_empty())
+        .map_or_else(String::new, |f| format!("#{f}"));
+    ComparisonKey(format!("https://{host}{port}{path}{query}{fragment}"))
 }
 
 /// Decodes percent-encoded unreserved characters and uppercases the hex

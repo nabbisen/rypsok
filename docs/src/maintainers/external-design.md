@@ -165,7 +165,7 @@ deduplicated, ranked results. Results are external data.
 | `outcome` | rypsok | Envelope | REQ-ERR-001 |
 | `notices[]` | rypsok | Envelope; `code`, `engine`, `reason` come from fixed vocabularies | REQ-SEC-016 |
 | `results[].title` | External | Cleaned, bounded by LIM-S10 | REQ-CTX-004 |
-| `results[].url` | External | Engine's URL with tracking parameters removed | REQ-RANK-003 |
+| `results[].url` | External | Engine's URL, byte for byte except that tracking parameters are removed (the query is rebuilt only when one was; the other parameters keep their text). When `http` and `https` observations of one resource merge, the best-ranked `https` URL is shown if the best-ranked observation is `http` | REQ-RANK-003, REQ-RANK-004 |
 | `results[].snippet` | External | Cleaned, bounded by LIM-S9 | REQ-CTX-004 |
 | `results[].date` | External | Present only when an engine supplied it; RFC 3339 date | REQ-CTX-001 |
 | `results[].engines` | rypsok | Present only when enabled or required by attribution | REQ-CTX-001, REQ-CMP-003 |

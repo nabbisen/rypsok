@@ -48,6 +48,12 @@ announced here with both values.
   definition now reads "starting at `start_char`", as the design does, and the
   `extraction_partial` notice is documented as what it is: the page was larger
   than rypsok reads, in nodes or nesting, and was read in part.
+- The URL a search result carries is the engine's URL byte for byte, except
+  that tracking parameters are removed. Before, a query was rewritten
+  whenever there was one: `?a=1&b` became `?a=1&b=`, `?a=1;b=2` became
+  `?a=1%3Bb%3D2`, `?q=a%20b` became `?q=a+b`, `?a=%7e` became `?a=%7E` and
+  `?x=%zz` became `?x=%25zz`. The query is now rebuilt only when a tracking
+  parameter was removed, and the other parameters keep their text.
 
 ### Changed
 
@@ -92,6 +98,15 @@ announced here with both values.
   field `reason`, `disabled` (the operator switched the engine off) or
   `no_credential` (it needs a key and none could be read). It is absent for
   every other state; the output schema gains the field.
+- Search results are merged on a stricter key (RFC 008, D-8): an explicit
+  port that is not the default of the URL's scheme, a non-empty fragment and
+  the order of repeated parameters are now part of the identity, so
+  `http://x:443/p` is no longer `https://x/p`, `/app#/inbox` is no longer
+  `/app#/settings` and `?a=1&a=2` is no longer `?a=2&a=1`. `http` and `https`
+  and the `www.` fold are unchanged. When `http` and `https` observations
+  merge, the result shows the `https` URL even if the `http` one ranked
+  first. Strict mode is not affected: it remembers returned URLs without
+  their fragment, so a returned URL may be fetched with any fragment.
 
 ## [0.8.0] — 2026-10-29 — Corrections from the first independent review
 

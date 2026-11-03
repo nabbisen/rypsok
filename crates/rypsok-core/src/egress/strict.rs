@@ -1,7 +1,8 @@
 //! Strict fetch mode (RFC 011; REQ-SEC-021, D-09): the URLs `web_search`
-//! returned in this process, remembered by comparison key, bounded to
-//! LIM-F14 entries with oldest-first eviction. Nothing persists across a
-//! restart (REQ-RES-009).
+//! returned in this process, remembered by comparison key **without its
+//! fragment** (the fragment is not sent to the server, so it names no other
+//! fetch; RFC 020, N1 of the 020n review), bounded to LIM-F14 entries with
+//! oldest-first eviction. Nothing persists across a restart (REQ-RES-009).
 
 use std::collections::{HashSet, VecDeque};
 use std::sync::Mutex;
@@ -31,9 +32,11 @@ impl ReturnedUrls {
         }
     }
 
-    /// Remembers a returned URL; the oldest key leaves when the set is
-    /// full. A key already present is not re-added.
+    /// Remembers a returned URL (given by its comparison key; the fragment
+    /// is dropped here, so that no caller can forget to); the oldest key
+    /// leaves when the set is full. A key already present is not re-added.
     pub fn record(&self, key: &ComparisonKey) {
+        let key = &key.without_fragment();
         let mut inner = sync::lock(&self.inner);
         if inner.keys.contains(key) {
             return;
@@ -47,9 +50,12 @@ impl ReturnedUrls {
         inner.keys.insert(key.clone());
     }
 
-    /// Whether a URL with this key was returned earlier.
+    /// Whether a URL with this key, whatever its fragment, was returned
+    /// earlier.
     pub fn contains(&self, key: &ComparisonKey) -> bool {
-        sync::lock(&self.inner).keys.contains(key)
+        sync::lock(&self.inner)
+            .keys
+            .contains(&key.without_fragment())
     }
 
     /// How many keys are remembered.

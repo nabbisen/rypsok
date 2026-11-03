@@ -1302,6 +1302,41 @@ async fn req_sec_021_returned_results_are_remembered_for_strict_mode() {
     );
 }
 
+/// REQ-RANK-002 and REQ-SEC-021 (RFC 020 D-8, N1 of the 020n review): two
+/// returned URLs that differ only by their fragment are two results (the
+/// deduplication key keeps the fragment) and one entry in the strict-mode
+/// memory, which sees no fragment.
+#[tokio::test(start_paused = true)]
+async fn req_sec_021_results_that_differ_by_fragment_are_two_results_and_one_strict_entry() {
+    const FRAGMENTS: &[(&str, &str, &str)] = &[
+        ("Inbox", "https://example.org/app#/inbox", "the inbox"),
+        (
+            "Settings",
+            "https://example.org/app#/settings",
+            "the settings",
+        ),
+    ];
+    let h = harness(vec![("a", Script::Answer(FRAGMENTS.to_vec()))]);
+    let response = h.search(req(), CancellationToken::new()).await.unwrap();
+    assert_eq!(response.results.len(), 2, "two resources for the reader");
+    assert_eq!(h.returned.len(), 1, "one fetch target for strict mode");
+    for url in [
+        "https://example.org/app",
+        "https://example.org/app#/inbox",
+        "https://example.org/app#/settings",
+        "https://example.org/app#anything",
+    ] {
+        assert!(
+            h.returned.contains(&normalize::comparison_key(url)),
+            "{url}"
+        );
+    }
+    assert!(
+        !h.returned
+            .contains(&normalize::comparison_key("https://example.org/app?x=1"))
+    );
+}
+
 // --- The result cache (RFC 014) ---------------------------------------
 
 /// REQ-CACHE-001: off by default, every call reaches the engine even when

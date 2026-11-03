@@ -130,3 +130,66 @@ fn req_rank_001_merged_result_holds_observations_with_ranks() {
     );
     assert_eq!(x.best.raw.title, "b 1");
 }
+
+/// REQ-RANK-004 (RFC 020 D-8): when `http` and `https` observations merge
+/// under one key, the user is shown the `https` URL even if the `http` one
+/// ranked first; the fusion and the other fields do not change. The URL is
+/// always one engine's own, byte for byte.
+#[test]
+fn req_rank_004_the_https_url_is_shown_when_the_best_is_http() {
+    let merged = merge(vec![
+        observe(0, "a", 10, 1, "http://x.example/p"),
+        observe(1, "b", 20, 3, "https://x.example/p"),
+    ]);
+    assert_eq!(merged.len(), 1);
+    let m = &merged[0];
+    assert_eq!(
+        m.best.returned_url, "http://x.example/p",
+        "rank 1 stays the best"
+    );
+    assert_eq!(m.best.raw.title, "a 1", "title and snippet are the best's");
+    assert_eq!(m.url, "https://x.example/p", "the https URL is shown");
+    assert_eq!(m.score, RRF_SCALE / 61 + RRF_SCALE / 63, "fusion unchanged");
+    assert_eq!(m.ranks.len(), 2);
+}
+
+/// REQ-RANK-004 (RFC 020 D-8): which URL is shown, case by case.
+#[test]
+fn req_rank_004_the_shown_url_follows_the_rule() {
+    let shown = |obs: Vec<Observation>| merge(obs).remove(0).url;
+    // The best is https: it is shown, whatever else merged.
+    assert_eq!(
+        shown(vec![
+            observe(0, "a", 10, 1, "https://x.example/p"),
+            observe(1, "b", 20, 2, "http://x.example/p"),
+        ]),
+        "https://x.example/p"
+    );
+    // Only http observations: the best-ranked one.
+    assert_eq!(
+        shown(vec![
+            observe(0, "a", 10, 2, "http://x.example/p?a=1"),
+            observe(1, "b", 20, 1, "http://www.x.example/p?a=1"),
+        ]),
+        "http://www.x.example/p?a=1"
+    );
+    // Two https observations under an http best: the best-ranked https one,
+    // with its own bytes (the www form here), by rank, then preference.
+    assert_eq!(
+        shown(vec![
+            observe(0, "a", 10, 1, "http://x.example/p"),
+            observe(1, "b", 30, 2, "https://x.example/p"),
+            observe(2, "c", 20, 2, "https://www.x.example/p"),
+        ]),
+        "https://www.x.example/p"
+    );
+    // Independent of the arrival order of the observations (REQ-ARCH-004).
+    let forward = vec![
+        observe(0, "a", 10, 1, "http://x.example/p"),
+        observe(1, "b", 30, 2, "https://x.example/p"),
+        observe(2, "c", 20, 2, "https://www.x.example/p"),
+    ];
+    let mut backward = forward.clone();
+    backward.reverse();
+    assert_eq!(shown(forward), shown(backward));
+}

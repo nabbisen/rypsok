@@ -12,6 +12,25 @@ use crate::model::EngineId;
 /// Observations of one key: selection index, engine, rank.
 type Seen = Vec<(usize, EngineId, u32)>;
 
+/// The standing of an observation for the choice of the best: rank, then
+/// the engine's preference, then its selection index (lower is better).
+type Standing = (u32, u32, usize);
+
+/// The best-ranked `https` observation of a key: its standing and URL.
+type BestHttps = Option<(Standing, String)>;
+
+fn standing(observation: &Observation) -> Standing {
+    (
+        observation.rank,
+        observation.preference,
+        observation.engine_index,
+    )
+}
+
+fn is_https(observation: &Observation) -> bool {
+    observation.returned_url.starts_with("https://")
+}
+
 /// The `k` of reciprocal rank fusion.
 pub const RRF_K: u64 = 60;
 /// The integer scale of one contribution.
@@ -48,6 +67,10 @@ pub struct Merged {
     pub ranks: Vec<(EngineId, u32)>,
     /// The fused score.
     pub score: u64,
+    /// The URL to show: the best observation's own, unless it is `http`
+    /// and a merged observation is `https` (then the best-ranked `https`
+    /// one). Always one engine's URL, byte for byte.
+    pub url: String,
 }
 
 /// Groups observations by key in selection order and keeps the best
@@ -55,7 +78,7 @@ pub struct Merged {
 /// selection order, never arrival order (REQ-ARCH-004).
 pub fn merge(observations: Vec<Observation>) -> Vec<Merged> {
     let mut order: Vec<ComparisonKey> = Vec::new();
-    let mut groups: HashMap<ComparisonKey, (Merged, Seen)> = HashMap::new();
+    let mut groups: HashMap<ComparisonKey, (Merged, Seen, BestHttps)> = HashMap::new();
     for observation in observations {
         let contribution = RRF_SCALE / (RRF_K + u64::from(observation.rank));
         let seen = (
@@ -63,6 +86,8 @@ pub fn merge(observations: Vec<Observation>) -> Vec<Merged> {
             observation.engine.clone(),
             observation.rank,
         );
+        let https = is_https(&observation)
+            .then(|| (standing(&observation), observation.returned_url.clone()));
         match groups.get_mut(&observation.key) {
             None => {
                 order.push(observation.key.clone());
@@ -71,22 +96,21 @@ pub fn merge(observations: Vec<Observation>) -> Vec<Merged> {
                     engines: Vec::new(),
                     ranks: Vec::new(),
                     score: contribution,
+                    url: observation.returned_url.clone(),
                 };
-                groups.insert(observation.key, (merged, vec![seen]));
+                groups.insert(observation.key, (merged, vec![seen], https));
             }
-            Some((merged, seen_list)) => {
+            Some((merged, seen_list, best_https)) => {
                 merged.score += contribution;
                 seen_list.push(seen);
-                let better = (
-                    observation.rank,
-                    observation.preference,
-                    observation.engine_index,
-                ) < (
-                    merged.best.rank,
-                    merged.best.preference,
-                    merged.best.engine_index,
-                );
-                if better {
+                if let Some(candidate) = https
+                    && best_https
+                        .as_ref()
+                        .is_none_or(|(held, _)| candidate.0 < *held)
+                {
+                    *best_https = Some(candidate);
+                }
+                if standing(&observation) < standing(&merged.best) {
                     merged.best = observation;
                 }
             }
@@ -95,7 +119,16 @@ pub fn merge(observations: Vec<Observation>) -> Vec<Merged> {
     order
         .into_iter()
         .filter_map(|key| groups.remove(&key))
-        .map(|(mut merged, mut seen_list)| {
+        .map(|(mut merged, mut seen_list, best_https)| {
+            // The URL shown: the best observation's own, unless it is
+            // `http` and a merged observation is `https` (RFC 020 D-8).
+            if merged.best.returned_url.starts_with("http://")
+                && let Some((_, url)) = best_https
+            {
+                merged.url = url;
+            } else {
+                merged.url = merged.best.returned_url.clone();
+            }
             seen_list.sort();
             merged.ranks = seen_list
                 .iter()
