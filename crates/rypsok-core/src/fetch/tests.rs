@@ -759,6 +759,10 @@ async fn req_sec_011_slow_server_hits_the_deadline() {
     let started = std::time::Instant::now();
     let error = h.fetch(&h.url("/drip")).await.unwrap_err();
     assert_eq!(error.detail.reason, Some(DetailReason::Deadline));
+    assert_eq!(
+        error.message, "the page was not retrieved before the deadline; retry later",
+        "a fetch says so in fetch terms (RFC 020, NET-6), not that no engine answered"
+    );
     assert!(started.elapsed() < Duration::from_millis(2500));
 }
 
@@ -1043,6 +1047,103 @@ async fn req_err_004_a_scheme_that_is_not_http_has_its_own_message() {
             "{url}"
         );
         assert!(!error.message.contains("retried"), "{url}");
+    }
+}
+
+/// REQ-FETCH-011 and REQ-ERR-004 (RFC 020 D-7, DAT-4): the message of an
+/// error status says whether retrying can help. 408, 425, 429 and 5xx end
+/// "retry later"; any other 4xx says the site refused or does not have the
+/// page and that the same URL will not help. `Retry-After` in delta-seconds
+/// (at most 3,600) becomes `detail.retry_after_ms` where retrying can help;
+/// the date form is ignored. `detail.status` is the status either way.
+#[tokio::test]
+async fn req_fetch_011_the_message_says_whether_retrying_helps() {
+    let h = harness().await;
+    let cases: [(u16, bool); 9] = [
+        (404, false),
+        (403, false),
+        (410, false),
+        (408, true),
+        (425, true),
+        (429, true),
+        (500, true),
+        (502, true),
+        (503, true),
+    ];
+    for (status, retryable) in cases {
+        for (variant, (header, expected_ms)) in [
+            (None, None),
+            (Some("120"), Some(120_000u64)),
+            (Some("3600"), Some(3_600_000)),
+            (Some("3601"), None),
+            (Some("Wed, 21 Oct 2026 07:28:00 GMT"), None),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let route = format!("/s{status}-{variant}");
+            let mut response = ResponseTemplate::new(status).set_body_string("SECRET-BODY-TEXT");
+            if let Some(value) = header {
+                response = response.insert_header("retry-after", value);
+            }
+            Mock::given(method("GET"))
+                .and(path(route.as_str()))
+                .respond_with(response)
+                .mount(&h.server)
+                .await;
+            let error = h.fetch(&h.url(&route)).await.unwrap_err();
+            let label = format!("{status} with Retry-After {header:?}");
+            assert_eq!(error.kind, ErrorKind::Unavailable, "{label}");
+            assert_eq!(
+                error.detail.reason,
+                Some(DetailReason::HttpStatus),
+                "{label}"
+            );
+            assert_eq!(error.detail.status, Some(status), "{label}");
+            if retryable {
+                assert!(
+                    error.message.ends_with("retry later"),
+                    "{label}: {}",
+                    error.message
+                );
+                assert_eq!(error.detail.retry_after_ms, expected_ms, "{label}");
+            } else {
+                assert!(
+                    error
+                        .message
+                        .ends_with("retrying the same URL will not help"),
+                    "{label}: {}",
+                    error.message
+                );
+                assert_eq!(
+                    error.detail.retry_after_ms, None,
+                    "{label}: no retry is suggested"
+                );
+            }
+            assert!(error.message.contains(&status.to_string()), "{label}");
+            assert!(error.message.chars().count() <= 200);
+            assert!(!error.message.contains("SECRET-BODY-TEXT"));
+        }
+    }
+}
+
+/// REQ-FETCH-011 (RFC 020 D-7): which `Retry-After` values count.
+#[test]
+fn req_fetch_011_retry_after_accepts_delta_seconds_only() {
+    for (value, expected) in [
+        ("0", Some(0)),
+        ("1", Some(1_000)),
+        (" 30 ", Some(30_000)),
+        ("3600", Some(3_600_000)),
+        ("3601", None),
+        ("-5", None),
+        ("1.5", None),
+        ("", None),
+        ("soon", None),
+        ("Wed, 21 Oct 2026 07:28:00 GMT", None),
+        ("99999999999999999999999999", None),
+    ] {
+        assert_eq!(retry_after_ms(value), expected, "{value:?}");
     }
 }
 

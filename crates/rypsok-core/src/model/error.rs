@@ -15,7 +15,10 @@ pub enum ErrorKind {
     InvalidRequest,
     /// Policy refuses the call.
     Denied,
-    /// Nothing could be returned now; the caller may retry.
+    /// Nothing could be returned now. Whether retrying helps depends on
+    /// `detail.reason`: a rate limit, a busy process, a deadline, a network
+    /// failure and a 5xx, 408, 425 or 429 answer may pass; `no_engine` and a
+    /// 4xx answer such as 404 or 403 will not pass by themselves.
     Unavailable,
     /// A fetch was redirected to another host.
     Redirected,
@@ -413,6 +416,20 @@ impl ToolError {
         )
     }
 
+    /// `unavailable` / `deadline` for a fetch: the page was not retrieved
+    /// before the deadline. The same kind and reason as [`ToolError::deadline`],
+    /// which speaks of engines and stays for the search.
+    pub fn fetch_deadline() -> Self {
+        Self::new(
+            ErrorKind::Unavailable,
+            "the page was not retrieved before the deadline; retry later".to_owned(),
+            ErrorDetail {
+                reason: Some(DetailReason::Deadline),
+                ..Default::default()
+            },
+        )
+    }
+
     /// `unavailable`: the tool's own rate limit was reached.
     pub fn rate_limited(retry_after_ms: u64) -> Self {
         Self::new(
@@ -481,18 +498,43 @@ impl ToolError {
         )
     }
 
+    /// Whether a later request to the same URL can succeed after this
+    /// status: 408, 425, 429 and every 5xx say "try again"; any other 4xx
+    /// says the site refused the request or has no such page.
+    pub fn status_may_pass(status: u16) -> bool {
+        matches!(status, 408 | 425 | 429) || (500..=599).contains(&status)
+    }
+
     /// `unavailable` / `http_status`: the target answered 4xx or 5xx; the
-    /// body is never returned (REQ-FETCH-011).
+    /// body is never returned (REQ-FETCH-011). The message says whether
+    /// retrying can help (RFC 020 D-7): for 408, 425, 429 and 5xx it ends
+    /// "retry later"; for any other 4xx it says retrying the same URL will
+    /// not help. `detail.retry_after_ms` is for the caller to set with
+    /// [`ToolError::with_retry_after_ms`] where the site gave a delay.
     pub fn http_status(status: u16) -> Self {
+        let message = if Self::status_may_pass(status) {
+            format!("the site answered HTTP {status}; the page was not read; retry later")
+        } else {
+            format!(
+                "the site answered HTTP {status}; it refused the request or has no such page, and retrying the same URL will not help"
+            )
+        };
         Self::new(
             ErrorKind::Unavailable,
-            format!("the site answered HTTP {status}; the page was not read"),
+            message,
             ErrorDetail {
                 reason: Some(DetailReason::HttpStatus),
                 status: Some(status),
                 ..Default::default()
             },
         )
+    }
+
+    /// This error with `detail.retry_after_ms` set.
+    #[must_use]
+    pub fn with_retry_after_ms(mut self, retry_after_ms: u64) -> Self {
+        self.detail.retry_after_ms = Some(retry_after_ms);
+        self
     }
 
     /// `redirected`: the page moved to another host that passes the

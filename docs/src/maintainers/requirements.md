@@ -327,7 +327,10 @@ RFC 012; the baseline amended 2026-10-29, review B5)
 ### REQ-FETCH-011 Response status — M3 · T
 Only a response with a 2xx status shall be extracted. A 4xx or 5xx status
 shall end the call with `unavailable` and the reason `http_status`, giving
-the status code and never the body. 3xx follows REQ-FETCH-006.
+the status code and never the body; the message says whether retrying can
+help (408, 425, 429 and 5xx: retry later; any other 4xx: the same URL will not
+help), and `retry_after_ms` carries a `Retry-After` of at most an hour in
+seconds where retrying can help. 3xx follows REQ-FETCH-006. (RFC 020 D-7)
 
 ### REQ-FETCH-009 No script execution — M3 · I
 `web_fetch` shall not execute scripts and shall not follow `meta refresh`.

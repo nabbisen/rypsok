@@ -557,7 +557,7 @@ host name of a fetch only after it passed the egress policy (REQ-PRIV-004). Refu
 | Policy refuses a fetch | `denied` with reason | REQ-SEC-006, REQ-CMP-005 |
 | Page too large | `too_large` | REQ-PAGE-003 |
 | Extraction fails | `ok` with partial content and the notice `extraction_partial`, or `unsupported_content` with reason `extraction_failed` | REQ-PAGE-006 |
-| Target answers 4xx or 5xx | `unavailable` with reason `http_status`; the body is never returned | REQ-FETCH-011 |
+| Target answers 4xx or 5xx | `unavailable` with reason `http_status`; the body is never returned; 408, 425, 429 and 5xx end "retry later" and carry `retry_after_ms` from a `Retry-After` in seconds (at most 3,600), any other 4xx says that retrying the same URL will not help | REQ-FETCH-011 |
 | Process restart | Health state reset; no data lost because none is kept | REQ-RES-009 |
 
 ---

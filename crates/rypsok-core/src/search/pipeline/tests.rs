@@ -408,6 +408,10 @@ async fn req_err_005_all_failed_and_deadline() {
         error.detail.reason,
         Some(crate::model::DetailReason::Deadline)
     );
+    assert_eq!(
+        error.message, "no engine answered before the deadline; retry later",
+        "a search says that no engine answered"
+    );
     assert!(
         started.elapsed() < Duration::from_millis(600),
         "the fan-out deadline bounds the call (LIM-S4)"

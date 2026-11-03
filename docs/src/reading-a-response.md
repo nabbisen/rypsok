@@ -44,13 +44,26 @@ list; the agent never needs to parse free text.
 |---|---|---|
 | `invalid_request` | A parameter is wrong; `detail.parameter` names it, with `min`/`max` or `allowed` | Fix that parameter and call again |
 | `denied` | The query or URL looks like it carries a secret, or the policy refuses the destination (`detail.reason`: `secret_in_query`, `secret_in_url`, `egress`, `robots_txt`, `strict_mode`, `scheme`, `credential_in_url`). `robots_txt` also answers when a redirect leads to a page the site's robots.txt disallows | Nothing: do not retry. For a secret, remove it (the position is given, never the value) |
-| `unavailable` | No engine serves the category, every engine failed, the deadline passed, a rate limit or a concurrency limit was reached, a site could not be reached (`network`, whatever the cause), or a page answered 4xx or 5xx (`detail.reason`) | Wait `detail.retry_after_ms` when present, then retry; for `no_engine`, use another category |
+| `unavailable` | No engine serves the category, every engine failed, the deadline passed, a rate limit or a concurrency limit was reached, a site could not be reached (`network`, whatever the cause), or a page answered 4xx or 5xx (`detail.reason`) | Depends on `detail.reason`; see the next paragraph |
 | `redirected` | The page moved to another host; `detail.location` is where | Call `web_fetch` with `location` if that page is wanted |
 | `unsupported_content` | The page is not HTML, XHTML, plain text or Markdown, or nothing could be extracted | Choose another page |
 | `too_large` | The page exceeds the byte limit | Choose another page |
 
 `message` is a short English sentence that says what to change. It never
 contains the secret, provider text, an address or a stack trace.
+
+**Whether retrying helps** depends on `detail.reason` of an `unavailable`
+error. Retrying can help for `rate_limited`, `busy`, `deadline`, `network`,
+`all_failed`, and for `http_status` when the status is 408, 425, 429 or 5xx:
+wait `detail.retry_after_ms` when present, then retry; the message ends
+"retry later". Retrying the same request will not help for `no_engine` (use
+another category) and for `http_status` with any other 4xx status (404, 403,
+410 and the like): the site refused the request or does not have the page,
+and the message says that retrying the same URL will not help. For a
+retryable `http_status`, `detail.retry_after_ms` is set when the site sent a
+`Retry-After` in seconds (an integer, at most 3,600); a date there is
+ignored. `detail.status` is the site's status in every case, and the page is
+never returned.
 
 A reason can have more than one message, because the cause differs while the
 rule is the same. `denied` with `scheme` has two: *the URL scheme is not

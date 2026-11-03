@@ -172,6 +172,15 @@ An error is a tool execution error (`isError: true`) whose content is:
 | `unsupported_content` | The media type cannot be extracted, or nothing could be extracted | `reason` (`media_type`, `extraction_failed`), `media_type` (external data, bounded) |
 | `too_large` | The response exceeded the byte limit (5 MiB after decompression by default) | `limit_bytes` |
 
+For `unavailable` with `http_status`, the message tells whether retrying
+can help: for 408, 425, 429 and 5xx it ends "retry later" (and
+`retry_after_ms` carries the site's `Retry-After` when that is a number of
+seconds up to 3,600); for any other 4xx it says the site refused the request
+or has no such page and that retrying the same URL will not help.
+`status` is the site's status. A fetch that ran out of time says "the page
+was not retrieved before the deadline" (a search says that no engine
+answered); both have the reason `deadline`.
+
 Messages are at most 200 characters, say what the caller can change, and
 never contain a secret, provider text, an address or a stack trace. One
 reason can have two messages: `denied` with `scheme` says either that the URL

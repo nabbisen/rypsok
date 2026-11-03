@@ -42,7 +42,7 @@ ever goes to standard output except protocol messages.
 | `denied` with reason `strict_mode` | Strict mode is on and the URL was not returned by a search in this process | Fetch what a search returned, or list the host in `[egress] allow` |
 | `denied` with reason `scheme` | Either the URL is not `http` or `https` at all (`ftp://…`), or it is a plain `http` URL, the operator did not allow plain HTTP, and the retry over `https` failed; the `message` says which | Use an `https` URL. rypsok retries `http` over `https` first; set `[egress] allow_http = true` only if you must |
 | `redirected` | The page moved to another host | Call again with `detail.location`, or set `[fetch] follow_cross_host_redirects = true` |
-| `unavailable` with `http_status` | The site answered 4xx or 5xx; the status is in `detail.status`, the body is never returned | Another page, or later |
+| `unavailable` with `http_status` | The site answered 4xx or 5xx; the status is in `detail.status`, the body is never returned | For 408, 425, 429 and 5xx: later (the message ends "retry later"; wait `retry_after_ms` when present). For another 4xx (404, 403, 410): the site refused the request or has no such page, and the same URL will not help; use another page |
 | `unsupported_content` | Not HTML, XHTML, plain text or Markdown; `detail.media_type` says what it was | Another page |
 | `too_large` | More bytes than `[fetch] max_bytes` | Raise the limit within its range, or another page |
 | `content` is short or misses the part you wanted | The extractor chose another block as the main content, or the page builds its content with scripts, which rypsok does not run | `max_chars` higher does not help; another page or the site's text version |

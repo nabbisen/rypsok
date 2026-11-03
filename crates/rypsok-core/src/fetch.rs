@@ -387,7 +387,7 @@ async fn run_inner(
     let fetched =
         match tokio::time::timeout_at(network_deadline, network(p, target, upgraded)).await {
             Ok(result) => result?,
-            Err(_) => return Err(ToolError::deadline()),
+            Err(_) => return Err(ToolError::fetch_deadline()),
         };
     drop(_host);
     drop(_global);
@@ -412,7 +412,7 @@ async fn run_inner(
             );
             return Err(ToolError::extraction_failed());
         }
-        Err(_) => return Err(ToolError::deadline()),
+        Err(_) => return Err(ToolError::fetch_deadline()),
     };
     drop(_parsing);
     if media == Media::Html && document.content.trim().is_empty() {
@@ -508,7 +508,7 @@ async fn network(
             Err(error) => {
                 let failure = classify_send_error(&error);
                 if failure == SendFailure::Unreachable && error.is_timeout() {
-                    return Err(ToolError::deadline());
+                    return Err(ToolError::fetch_deadline());
                 }
                 if upgraded && hops == 0 {
                     return Err(scheme_retry_failed());
@@ -556,7 +556,19 @@ async fn network(
         }
         if status.is_client_error() || status.is_server_error() {
             // The body is never read, parsed or returned (REQ-FETCH-011).
-            return Err(ToolError::http_status(status.as_u16()));
+            let error = ToolError::http_status(status.as_u16());
+            // A delay is passed on only where retrying can help: a 403 that
+            // carries `Retry-After` is still a refusal.
+            let delay = response
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok())
+                .and_then(retry_after_ms)
+                .filter(|_| ToolError::status_may_pass(status.as_u16()));
+            return Err(match delay {
+                Some(ms) => error.with_retry_after_ms(ms),
+                None => error,
+            });
         }
         if !status.is_success() {
             return Err(ToolError::network());
@@ -599,6 +611,21 @@ async fn network(
             charset,
         });
     }
+}
+
+/// The longest `Retry-After` that is passed on: an hour.
+const RETRY_AFTER_MAX_S: u64 = 3_600;
+
+/// A `Retry-After` header in delta-seconds (an integer, at most an hour) as
+/// milliseconds. The date form and anything else is ignored, so that a
+/// site cannot make the answer say anything but a bounded number.
+fn retry_after_ms(value: &str) -> Option<u64> {
+    let seconds = value.trim();
+    if seconds.is_empty() || !seconds.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let seconds: u64 = seconds.parse().ok()?;
+    (seconds <= RETRY_AFTER_MAX_S).then(|| seconds * 1000)
 }
 
 /// The first https attempt of an `http` URL failed, whether the policy

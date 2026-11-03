@@ -153,6 +153,9 @@ fn req_err_004_messages_are_bounded_templates() {
         ToolError::no_engine(Category::Code),
         ToolError::all_failed(Some(1500)),
         ToolError::deadline(),
+        ToolError::fetch_deadline(),
+        ToolError::http_status(404),
+        ToolError::http_status(503),
         ToolError::rate_limited(1000),
         ToolError::busy(),
     ];
@@ -163,6 +166,21 @@ fn req_err_004_messages_are_bounded_templates() {
     assert_eq!(
         secret.message,
         "query contains what looks like a github token at character 12; remove it and retry"
+    );
+    // The search and the fetch deadline have their own words, one kind and
+    // one reason (RFC 020, NET-6).
+    assert_eq!(
+        ToolError::deadline().message,
+        "no engine answered before the deadline; retry later"
+    );
+    assert_eq!(
+        ToolError::fetch_deadline().message,
+        "the page was not retrieved before the deadline; retry later"
+    );
+    assert_eq!(ToolError::deadline().kind, ToolError::fetch_deadline().kind);
+    assert_eq!(
+        ToolError::deadline().detail.reason,
+        ToolError::fetch_deadline().detail.reason
     );
     assert_eq!(
         ToolError::no_engine(Category::Code).message,
