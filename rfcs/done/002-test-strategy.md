@@ -133,3 +133,24 @@ None that block M0. The mock server crate is chosen in the aggregation RFC.
   bans licenses sources` (REQ-SEC-020; the `bans` check was written in
   `deny.toml` and never run by CI). `req_test_012_ci_workflow_lists_every_gate`
   requires both.
+
+## Amendment to RFC 002 (2026-11-03, RFC 020 / handoff 020o)
+
+- Every workflow declares `permissions`, read-only at the workflow level; a
+  job writes only what a table in the gate test allows (`pages` and
+  `id-token` for the book's `deploy`, `contents` for the release's `attach`).
+- Tools are installed at a stated version (`tool: cargo-deny@0.20.2`,
+  `cargo-fuzz@0.13.2`, mdbook `0.5.4`), never at `latest`; this replaces the
+  floating `taiki-e/install-action@cargo-deny` form above. The release
+  workflow builds with a named compiler; `ci.yml` keeps `stable` on purpose.
+- The `build`, `test`, `clippy` and `doc` commands of the gate table run with
+  `--locked`; the gate rows read `cargo clippy --workspace --all-targets
+  --locked -- -D warnings`, `cargo test --workspace --locked` and
+  `cargo doc --workspace --no-deps --locked`.
+- The scheduled workflow is not a gate but is not silent: its jobs no longer
+  continue on error, so a failed run notifies the owner, and a Brave check
+  that cannot run (no key) says so in an annotation and the step summary. Each
+  fuzz target runs 300 s.
+- The gate tests parse the workflow files (a reader in
+  `crates/rypsok/tests/workflow_yaml/`, no dependency) instead of searching
+  their text.
