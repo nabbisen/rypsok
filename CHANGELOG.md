@@ -20,6 +20,26 @@ announced here with both values.
   panic: the counters, health table, limiters, robots.txt cache, returned
   URL memory and the per-caller limiters recover a poisoned lock instead of
   failing on it. The result cache keeps disabling itself on a poisoned lock.
+- A connection to the HTTP listener that never sends a byte is closed after
+  `idle_timeout_s` and frees its connection slot (LIM-H3 now holds for it
+  too). Before, `max_connections` silent connections kept every legitimate
+  caller out for as long as they stayed open.
+- The listener no longer spins and floods the log when `accept` fails (for
+  instance when the descriptor limit is below `max_connections`): it waits
+  100 ms between attempts and logs the error at most once per 10 s. The
+  deployment page now advises `LimitNOFILE` of at least `max_connections` + 64.
+- The `Bearer` scheme of the `Authorization` header is matched without
+  regard to case (RFC 9110), followed by one or more spaces.
+
+### Changed
+
+- New refusal reason `idle_connection` in the `counters` event (`refusals`,
+  under `http`): a silent connection closed after the idle time. It is
+  counted and not logged.
+- The header block of an HTTP request (request line and headers on HTTP/1,
+  the header list on HTTP/2) is bounded at 16 KiB, a new fixed limit LIM-H7.
+  A larger block is now answered 431 (HTTP/2: the connection is closed); hyper's
+  default for HTTP/1 was about 400 KB.
 
 ## [0.8.0] — 2026-10-29 — Corrections from the first independent review
 
