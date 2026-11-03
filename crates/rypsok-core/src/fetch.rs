@@ -344,7 +344,7 @@ async fn run_inner(
         .map_err(|_| ToolError::wrong_type("url", "an absolute http or https URL"))?;
     let upgraded = url.scheme() == "http" && !p.policy.allows_http();
     if upgraded && url.set_scheme("https").is_err() {
-        return Err(ToolError::denied(DetailReason::Scheme));
+        return Err(ToolError::scheme_upgrade_failed());
     }
 
     // Strict mode (REQ-SEC-021).
@@ -611,7 +611,7 @@ fn scheme_retry_failed() -> ToolError {
         reason = "scheme",
         "the https retry of an http URL failed"
     );
-    ToolError::denied(DetailReason::Scheme)
+    ToolError::scheme_upgrade_failed()
 }
 
 /// What a robots.txt decision means for the call: disallowed is `denied`

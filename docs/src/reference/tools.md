@@ -173,7 +173,10 @@ An error is a tool execution error (`isError: true`) whose content is:
 | `too_large` | The response exceeded the byte limit (5 MiB after decompression by default) | `limit_bytes` |
 
 Messages are at most 200 characters, say what the caller can change, and
-never contain a secret, provider text, an address or a stack trace.
+never contain a secret, provider text, an address or a stack trace. One
+reason can have two messages: `denied` with `scheme` says either that the URL
+scheme is not allowed (not `https`, and `http` only where the operator allows
+it) or that an `http` URL was retried over `https` and that request failed.
 
 A site that cannot be reached is `unavailable` with reason `network`
 whatever the cause: no such name, a refused connection, or a name that

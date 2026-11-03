@@ -432,8 +432,11 @@ impl ToolError {
         let message = match reason {
             DetailReason::Egress => "the destination is not allowed by the egress policy",
             DetailReason::RobotsTxt => "the site's robots.txt disallows this page for rypsok",
+            // The cause that `judge_url` reports: a scheme that is neither
+            // http nor https, or http where plain http is not allowed (a
+            // redirect target). The failed upgrade has its own message.
             DetailReason::Scheme => {
-                "the http URL was retried over https and that request failed; plain http is not allowed here"
+                "the URL scheme is not allowed; only https URLs, and http URLs where the operator allows plain http, can be fetched"
             }
             DetailReason::StrictMode => {
                 "strict mode: only URLs that web_search returned in this process, or that the operator listed, can be fetched"
@@ -446,6 +449,21 @@ impl ToolError {
             message.to_owned(),
             ErrorDetail {
                 reason: Some(reason),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// `denied` / `scheme`, the second cause (REQ-FETCH-010): an `http` URL
+    /// was retried over https, as it is unless the operator allows plain
+    /// http, and that request failed.
+    pub fn scheme_upgrade_failed() -> Self {
+        Self::new(
+            ErrorKind::Denied,
+            "the http URL was retried over https and that request failed; plain http is not allowed here"
+                .to_owned(),
+            ErrorDetail {
+                reason: Some(DetailReason::Scheme),
                 ..Default::default()
             },
         )

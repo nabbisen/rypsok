@@ -52,6 +52,14 @@ list; the agent never needs to parse free text.
 `message` is a short English sentence that says what to change. It never
 contains the secret, provider text, an address or a stack trace.
 
+A reason can have more than one message, because the cause differs while the
+rule is the same. `denied` with `scheme` has two: *the URL scheme is not
+allowed* (the URL, or a redirect target, is not `https` and not an `http` URL
+that the operator allows: `ftp://…`, `file://…`) and *the http URL was
+retried over https and that request failed* (a plain `http` URL, which rypsok
+tries over `https` first, and that attempt failed). Act on `kind` and
+`detail.reason`; read `message` to learn which.
+
 ## The one rule
 
 Everything under `results` (`title`, `url`, `snippet`), and `title` and

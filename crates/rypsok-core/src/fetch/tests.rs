@@ -1003,6 +1003,11 @@ async fn req_fetch_010_http_is_retried_over_https() {
             "the plain server cannot speak https, so the retry fails \
              (robots_txt {robots_txt})"
         );
+        assert_eq!(
+            error.message,
+            "the http URL was retried over https and that request failed; plain http is not allowed here",
+            "the message of the failed upgrade (robots_txt {robots_txt})"
+        );
     }
     let h = harness().await;
     Mock::given(method("GET"))
@@ -1014,6 +1019,31 @@ async fn req_fetch_010_http_is_retried_over_https() {
         h.fetch(&h.url("/p")).await.is_ok(),
         "allow_http fetches the plain URL"
     );
+}
+
+/// REQ-ERR-004 and REQ-FETCH-010 (RFC 020, DAT-3): `denied` / `scheme` has
+/// two causes and two messages with the same kind and reason. A scheme that
+/// is neither `http` nor `https` (the only input that reaches
+/// `Denial::Scheme` from `judge_url` on a first request) must not be told
+/// that "the http URL was retried over https".
+#[tokio::test]
+async fn req_err_004_a_scheme_that_is_not_http_has_its_own_message() {
+    let h = harness().await;
+    for url in [
+        "ftp://127.0.0.1/x",
+        "file:///etc/hostname",
+        "gopher://example.org/",
+    ] {
+        let error = h.fetch(url).await.unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Denied, "{url}");
+        assert_eq!(error.detail.reason, Some(DetailReason::Scheme), "{url}");
+        assert_eq!(
+            error.message,
+            "the URL scheme is not allowed; only https URLs, and http URLs where the operator allows plain http, can be fetched",
+            "{url}"
+        );
+        assert!(!error.message.contains("retried"), "{url}");
+    }
 }
 
 /// REQ-PAGE-001: the stages run in the documented order: the privacy check
