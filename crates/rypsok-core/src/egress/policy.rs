@@ -319,9 +319,21 @@ impl EgressPolicy {
                 .filter_map(|(i, text)| match parse_rule(text) {
                     Ok(rule) => Some(rule),
                     Err(InvalidRule) => {
-                        problems.push(format!(
-                            "egress.{key}[{i}]: not a network in CIDR notation, an address or a host pattern"
-                        ));
+                        // A trailing dot is the one slip that names its own
+                        // cure (RFC 019 D1 refuses it on purpose; RFC 020,
+                        // DAT-14): the message says so when the text
+                        // without the dot would be a rule.
+                        if text.trim().ends_with('.')
+                            && parse_rule(text.trim().trim_end_matches('.')).is_ok()
+                        {
+                            problems.push(format!(
+                                "egress.{key}[{i}]: a host pattern must not end with a dot (write blocked.invalid, not blocked.invalid.)"
+                            ));
+                        } else {
+                            problems.push(format!(
+                                "egress.{key}[{i}]: not a network in CIDR notation, an address or a host pattern"
+                            ));
+                        }
                         None
                     }
                 })

@@ -158,6 +158,18 @@ announced here with both values.
   sessions took 3.7 GiB at about 60 KiB each. A configuration that sets a
   value above the new ceiling is refused with the usual "must be between"
   message.
+- Configuration messages say what to do (RFC 020, DAT-11, DAT-12, DAT-14). A
+  value of the wrong kind is reported as `<key path>: expected <what>, found
+  <what> (line N, column M)` in the words of the file, for example
+  `search.max_results: expected an integer from 1 to 20, found text (line 3,
+  column 15)`, where it was `invalid type: string "five", expected u8 (at
+  byte 42)`; a syntax error, a duplicate and an unknown key have a key path
+  and a line and column too. A text that was found is never repeated. Where
+  a range depends on another key the message names that key and its value
+  (`search.engine_timeout_ms: must be between 100 and 300 (search.deadline_ms
+  500 minus search.reserve_ms 200)`), and a deny or allow rule that ends in a
+  dot says so. The wording changed; the rules did not: a file that was valid
+  is valid.
 
 ## [0.8.0] — 2026-10-29 — Corrections from the first independent review
 

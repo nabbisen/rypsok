@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::limits::{Limits, defaults};
 use crate::model::{Category, EngineId, Language};
 
+mod explain;
 pub mod secret;
 
 pub use secret::{Secret, SecretError, SecretSource};
@@ -670,28 +671,8 @@ impl Config {
     /// Parses TOML text. Unknown keys and tables are refused with their path
     /// (REQ-CFG-002); the schema version is checked (REQ-MAIN-003).
     pub fn parse(text: &str) -> Result<Config, ConfigError> {
-        let config: Config = toml::from_str(text).map_err(|e| {
-            let message = e.message().to_owned();
-            let location = e
-                .span()
-                .map(|s| format!(" (at byte {})", s.start))
-                .unwrap_or_default();
-            let problem =
-                if message.starts_with("unknown field") || message.starts_with("unknown variant") {
-                    format!(
-                        "unknown key {}{location}",
-                        message
-                            .trim_start_matches("unknown field ")
-                            .trim_start_matches("unknown variant ")
-                    )
-                } else if message.starts_with("missing field `config_version`") {
-                    "config_version: required; this release supports 1".to_owned()
-                } else {
-                    format!("{message}{location}")
-                };
-            ConfigError {
-                problems: vec![problem],
-            }
+        let config: Config = toml::from_str(text).map_err(|e| ConfigError {
+            problems: vec![explain::explain(text, &e)],
         })?;
         Ok(config)
     }
@@ -745,54 +726,36 @@ impl Config {
                 ));
             }
         }
-        range(
+        check(
             &mut problems,
             "service.http.max_connections",
             h.max_connections,
-            1,
-            4096,
         );
-        range(
+        check(
             &mut problems,
             "service.http.max_request_bytes",
             h.max_request_bytes,
-            4096,
-            1_048_576,
         );
-        range(
+        check(
             &mut problems,
             "service.http.idle_timeout_s",
             h.idle_timeout_s,
-            5,
-            600,
         );
-        range(
-            &mut problems,
-            "service.http.max_streams",
-            h.max_streams,
-            1,
-            256,
-        );
-        range(
+        check(&mut problems, "service.http.max_streams", h.max_streams);
+        check(
             &mut problems,
             "service.http.request_timeout_s",
             h.request_timeout_s,
-            3,
-            600,
         );
-        range(
-            &mut problems,
-            "service.http.max_sessions",
-            h.max_sessions,
-            1,
-            2048,
-        );
+        check(&mut problems, "service.http.max_sessions", h.max_sessions);
         // A request bound shorter than a fetch would end tool calls, not
         // slow clients (RFC 018, LIM-H5).
-        if u64::from(h.request_timeout_s) * 1000 < u64::from(self.fetch.deadline_ms) + 2000 {
+        let fetch_needs_ms = u64::from(self.fetch.deadline_ms) + 2000;
+        if u64::from(h.request_timeout_s) * 1000 < fetch_needs_ms {
             problems.push(format!(
-                "service.http.request_timeout_s: must be at least fetch.deadline_ms + 2000 ms ({} ms)",
-                u64::from(self.fetch.deadline_ms) + 2000
+                "service.http.request_timeout_s: must be at least {} s (fetch.deadline_ms {} plus 2000 ms = {fetch_needs_ms} ms)",
+                fetch_needs_ms.div_ceil(1000),
+                self.fetch.deadline_ms
             ));
         }
         let mut ids = std::collections::BTreeSet::new();
@@ -832,118 +795,91 @@ impl Config {
         if !(s.region.len() == 2 && s.region.chars().all(|c| c.is_ascii_uppercase())) {
             problems.push("search.region: must be two uppercase letters".to_owned());
         }
-        range(
-            &mut problems,
-            "search.query_max_chars",
-            s.query_max_chars,
-            1,
-            600,
-        );
-        range(
+        check(&mut problems, "search.query_max_chars", s.query_max_chars);
+        check(
             &mut problems,
             "search.max_results_ceiling",
             u32::from(s.max_results_ceiling),
-            1,
-            20,
         );
-        range(
+        // A default above the ceiling names the ceiling (RFC 020, DAT-12).
+        let ceiling = u32::from(s.max_results_ceiling);
+        if check(
             &mut problems,
             "search.max_results",
             u32::from(s.max_results),
-            1,
-            u32::from(s.max_results_ceiling.clamp(1, 20)),
-        );
-        range(
+        ) && (1..=20).contains(&ceiling)
+            && u32::from(s.max_results) > ceiling
+        {
+            problems.push(format!(
+                "search.max_results: must be between 1 and {ceiling} (search.max_results_ceiling is {ceiling})"
+            ));
+        }
+        check(
             &mut problems,
             "search.results_per_engine",
             u32::from(s.results_per_engine),
-            5,
-            20,
         );
-        range(
-            &mut problems,
-            "search.deadline_ms",
-            s.deadline_ms,
-            500,
-            10000,
-        );
-        range(&mut problems, "search.reserve_ms", s.reserve_ms, 50, 1000);
-        range(
+        check(&mut problems, "search.deadline_ms", s.deadline_ms);
+        check(&mut problems, "search.reserve_ms", s.reserve_ms);
+        // One engine request must end before the deadline less the reserve
+        // (LIM-S5, LIM-S6); the message names the keys that make the limit
+        // (RFC 020, DAT-12).
+        let engine_room = s.deadline_ms.saturating_sub(s.reserve_ms);
+        if check(
             &mut problems,
             "search.engine_timeout_ms",
             s.engine_timeout_ms,
-            100,
-            s.deadline_ms.max(100),
-        );
-        if s.engine_timeout_ms + s.reserve_ms > s.deadline_ms {
-            problems.push(
-                "search.engine_timeout_ms + search.reserve_ms exceeds search.deadline_ms"
-                    .to_owned(),
-            );
+        ) && s.engine_timeout_ms > engine_room
+        {
+            if engine_room >= 100 {
+                problems.push(format!(
+                    "search.engine_timeout_ms: must be between 100 and {engine_room} (search.deadline_ms {} minus search.reserve_ms {})",
+                    s.deadline_ms, s.reserve_ms
+                ));
+            } else {
+                problems.push(format!(
+                    "search.engine_timeout_ms: no value fits: search.deadline_ms {} minus search.reserve_ms {} leaves {engine_room} ms, less than the minimum 100; raise search.deadline_ms or lower search.reserve_ms",
+                    s.deadline_ms, s.reserve_ms
+                ));
+            }
         }
-        range(
+        check(
             &mut problems,
             "search.engines_per_request",
             u32::from(s.engines_per_request),
-            1,
-            16,
         );
-        range(
+        check(
             &mut problems,
             "search.snippet_max_chars",
             s.snippet_max_chars,
-            50,
-            1000,
         );
-        range(
-            &mut problems,
-            "search.title_max_chars",
-            s.title_max_chars,
-            50,
-            300,
-        );
+        check(&mut problems, "search.title_max_chars", s.title_max_chars);
         let f = &self.fetch;
-        range(
+        check(
             &mut problems,
             "fetch.max_chars_ceiling",
             f.max_chars_ceiling,
-            500,
-            100_000,
         );
-        range(
-            &mut problems,
-            "fetch.max_chars",
-            f.max_chars,
-            500,
-            f.max_chars_ceiling.clamp(500, 100_000),
-        );
-        range(
-            &mut problems,
-            "fetch.max_bytes",
-            f.max_bytes,
-            65_536,
-            10_485_760,
-        );
-        range(
-            &mut problems,
-            "fetch.deadline_ms",
-            f.deadline_ms,
-            1000,
-            30000,
-        );
-        range(
+        if check(&mut problems, "fetch.max_chars", f.max_chars)
+            && (500..=100_000).contains(&f.max_chars_ceiling)
+            && f.max_chars > f.max_chars_ceiling
+        {
+            problems.push(format!(
+                "fetch.max_chars: must be between 500 and {0} (fetch.max_chars_ceiling is {0})",
+                f.max_chars_ceiling
+            ));
+        }
+        check(&mut problems, "fetch.max_bytes", f.max_bytes);
+        check(&mut problems, "fetch.deadline_ms", f.deadline_ms);
+        check(
             &mut problems,
             "fetch.connect_timeout_ms",
             f.connect_timeout_ms,
-            500,
-            10000,
         );
-        range(
+        check(
             &mut problems,
             "fetch.max_redirects",
             u32::from(f.max_redirects),
-            0,
-            10,
         );
         for port in &f.ports {
             if *port == 0 {
@@ -954,83 +890,53 @@ impl Config {
             }
         }
         let l = &self.limits;
-        range(
+        check(
             &mut problems,
             "limits.outbound_in_flight",
             l.outbound_in_flight,
-            1,
-            256,
         );
-        range(
+        check(
             &mut problems,
             "limits.per_engine_in_flight",
             u32::from(l.per_engine_in_flight),
-            1,
-            8,
         );
-        range(
+        check(
             &mut problems,
             "limits.fetches_in_flight",
             l.fetches_in_flight,
-            1,
-            64,
         );
-        range(
+        check(
             &mut problems,
             "limits.parsing_in_flight",
             l.parsing_in_flight,
-            1,
-            16,
         );
-        range(
+        check(
             &mut problems,
             "limits.web_search_per_minute",
             l.web_search_per_minute,
-            1,
-            6000,
         );
-        range(
+        check(
             &mut problems,
             "limits.web_fetch_per_minute",
             l.web_fetch_per_minute,
-            1,
-            6000,
         );
-        range(
+        check(
             &mut problems,
             "limits.engine_status_per_minute",
             l.engine_status_per_minute,
-            1,
-            6000,
         );
-        range(
-            &mut problems,
-            "limits.strict_mode_urls",
-            l.strict_mode_urls,
-            100,
-            1_000_000,
-        );
-        range(
+        check(&mut problems, "limits.strict_mode_urls", l.strict_mode_urls);
+        check(
             &mut problems,
             "limits.robots_cache_entries",
             l.robots_cache_entries,
-            10,
-            100_000,
         );
-        range(&mut problems, "cache.ttl_s", self.cache.ttl_s, 10, 3600);
-        range(
-            &mut problems,
-            "cache.max_entries",
-            self.cache.max_entries,
-            1,
-            100_000,
-        );
-        range(
+        check(&mut problems, "cache.ttl_s", self.cache.ttl_s);
+        check(&mut problems, "cache.max_entries", self.cache.max_entries);
+        check(
             &mut problems,
             "cache.max_entry_bytes",
             self.cache.max_entry_bytes,
-            1024,
-            1_048_576,
         );
         if let Err(rule_problems) = crate::egress::EgressPolicy::from_texts(
             &self.egress.allow,
@@ -1041,30 +947,22 @@ impl Config {
             problems.extend(rule_problems);
         }
         let r = &self.resilience;
-        range(
+        check(
             &mut problems,
             "resilience.failures_to_open",
             u32::from(r.failures_to_open),
-            1,
-            10,
         );
-        range(
+        let first_ok = check(
             &mut problems,
             "resilience.first_cooldown_s",
             r.first_cooldown_s,
-            10,
-            600,
         );
-        range(
-            &mut problems,
-            "resilience.max_cooldown_s",
-            r.max_cooldown_s,
-            10,
-            3600,
-        );
-        if r.first_cooldown_s > r.max_cooldown_s {
-            problems
-                .push("resilience.first_cooldown_s exceeds resilience.max_cooldown_s".to_owned());
+        let max_ok = check(&mut problems, "resilience.max_cooldown_s", r.max_cooldown_s);
+        if first_ok && max_ok && r.first_cooldown_s > r.max_cooldown_s {
+            problems.push(format!(
+                "resilience.first_cooldown_s: must be between 10 and {0} (resilience.max_cooldown_s is {0})",
+                r.max_cooldown_s
+            ));
         }
         for (id, table) in &self.engines {
             if EngineId::new(id.as_str()).is_err() {
@@ -1175,11 +1073,71 @@ impl Config {
     }
 }
 
-fn range<T: Into<u64> + Copy>(problems: &mut Vec<String>, key: &str, value: T, min: T, max: T) {
-    let (v, lo, hi) = (value.into(), min.into(), max.into());
-    if v < lo || v > hi {
-        problems.push(format!("{key}: must be between {lo} and {hi}"));
+/// The integer keys and their ranges, once (RFC 004; RFC 020, DAT-11):
+/// [`Config::validate`] checks every value against this table, and the
+/// explanation of a value of the wrong type reads the range from it. A key
+/// whose valid range also depends on another key has its static range here;
+/// the dependent part is checked in `validate`, with a message that names the
+/// other key (DAT-12). Lists are written `key[]`.
+const INTEGER_RANGES: &[(&str, u64, u64)] = &[
+    ("service.http.max_connections", 1, 4096),
+    ("service.http.max_request_bytes", 4096, 1_048_576),
+    ("service.http.idle_timeout_s", 5, 600),
+    ("service.http.max_streams", 1, 256),
+    ("service.http.request_timeout_s", 3, 600),
+    ("service.http.max_sessions", 1, 2048),
+    ("search.query_max_chars", 1, 600),
+    ("search.max_results_ceiling", 1, 20),
+    ("search.max_results", 1, 20),
+    ("search.results_per_engine", 5, 20),
+    ("search.deadline_ms", 500, 10000),
+    ("search.reserve_ms", 50, 1000),
+    ("search.engine_timeout_ms", 100, 10000),
+    ("search.engines_per_request", 1, 16),
+    ("search.snippet_max_chars", 50, 1000),
+    ("search.title_max_chars", 50, 300),
+    ("fetch.max_chars_ceiling", 500, 100_000),
+    ("fetch.max_chars", 500, 100_000),
+    ("fetch.max_bytes", 65_536, 10_485_760),
+    ("fetch.deadline_ms", 1000, 30000),
+    ("fetch.connect_timeout_ms", 500, 10000),
+    ("fetch.max_redirects", 0, 10),
+    ("fetch.ports[]", 1, 65535),
+    ("limits.outbound_in_flight", 1, 256),
+    ("limits.per_engine_in_flight", 1, 8),
+    ("limits.fetches_in_flight", 1, 64),
+    ("limits.parsing_in_flight", 1, 16),
+    ("limits.web_search_per_minute", 1, 6000),
+    ("limits.web_fetch_per_minute", 1, 6000),
+    ("limits.engine_status_per_minute", 1, 6000),
+    ("limits.strict_mode_urls", 100, 1_000_000),
+    ("limits.robots_cache_entries", 10, 100_000),
+    ("cache.ttl_s", 10, 3600),
+    ("cache.max_entries", 1, 100_000),
+    ("cache.max_entry_bytes", 1024, 1_048_576),
+    ("resilience.failures_to_open", 1, 10),
+    ("resilience.first_cooldown_s", 10, 600),
+    ("resilience.max_cooldown_s", 10, 3600),
+];
+
+/// The range of an integer key from [`INTEGER_RANGES`].
+pub(crate) fn integer_range(key: &str) -> Option<(u64, u64)> {
+    INTEGER_RANGES
+        .iter()
+        .find(|(name, _, _)| *name == key)
+        .map(|&(_, low, high)| (low, high))
+}
+
+/// Checks a value against the static range of its key and reports it when
+/// outside. Returns whether the value is inside.
+fn check<T: Into<u64> + Copy>(problems: &mut Vec<String>, key: &str, value: T) -> bool {
+    let (low, high) = integer_range(key).unwrap_or_else(|| panic!("{key} has no range"));
+    let value = value.into();
+    if value < low || value > high {
+        problems.push(format!("{key}: must be between {low} and {high}"));
+        return false;
     }
+    true
 }
 
 #[cfg(test)]

@@ -42,7 +42,7 @@ chooses it on the command line, where the launching host can see it.
 | `idle_timeout_s` | `60` | 5–600 | Idle connection timeout (LIM-H3): HTTP/1 closes after it, a connection that has sent nothing, or has not yet shown its protocol, included; HTTP/2 pings after it and closes when the ping goes unanswered |
 | `max_streams` | `16` | 1–256 | Streams one HTTP/2 connection may open at once (LIM-H4) |
 | `max_sessions` | `256` | 1–2048 | At most this many live sessions of the handshake-based revisions (LIM-H6); a handshake beyond it is answered 503 with `Retry-After: 30`, a hint, and opens no session. The 2026-07-28 revision keeps no session and is not counted. Sessions expire after 300 s without traffic. Each costs about 60 KiB, so 2048 sessions are about 120 MiB |
-| `request_timeout_s` | `30` | 3–600, at least `fetch.deadline_ms` + 2 s | A request still running after this, body and handler included, is answered 408 (LIM-H5); a slow client cannot hold a connection |
+| `request_timeout_s` | `30` | 3–600, at least `fetch.deadline_ms` + 2 s (depends on `fetch.deadline_ms`) | A request still running after this, body and handler included, is answered 408 (LIM-H5); a slow client cannot hold a connection |
 
 rypsok does not terminate TLS: off loopback, put a reverse proxy or a
 tunnel in front and list its host in `allowed_hosts`. Browsers never call
@@ -75,11 +75,11 @@ token_env = "RYPSOK_TOKEN_MIMLYS"
 | `languages` | `["en"]` | language tags | Offered to callers; the first is the default |
 | `region` | `"US"` | two uppercase letters | Passed to engines that support it |
 | `safe_search` | `"moderate"` | `off`, `moderate`, `strict` | Passed to engines that support it |
-| `max_results` | `5` | 1 to `max_results_ceiling` | Default of the `max_results` parameter (LIM-S2) |
+| `max_results` | `5` | 1 to `max_results_ceiling` (depends on `max_results_ceiling`) | Default of the `max_results` parameter (LIM-S2) |
 | `max_results_ceiling` | `20` | 1–20 | Upper bound of `max_results` (LIM-S2) |
 | `query_max_chars` | `400` | 1–600 | Length of `query` (LIM-S1) |
 | `deadline_ms` | `2500` | 500–10000 | Overall deadline of a search (LIM-S4) |
-| `engine_timeout_ms` | `2000` | 100 to `deadline_ms` | Timeout of one engine request (LIM-S5); `engine_timeout_ms + reserve_ms` must not exceed `deadline_ms` |
+| `engine_timeout_ms` | `2000` | 100 to `deadline_ms` − `reserve_ms` (depends on `deadline_ms` and `reserve_ms`) | Timeout of one engine request (LIM-S5); the message names both keys and their values |
 | `reserve_ms` | `200` | 50–1000 | Reserve for post-processing (LIM-S6) |
 | `engines_per_request` | `8` | 1–16 | Engines queried per request (LIM-S8) |
 | `results_per_engine` | `10` | 5–20 | Results requested from each engine (LIM-S3) |
@@ -92,7 +92,7 @@ token_env = "RYPSOK_TOKEN_MIMLYS"
 
 | Key | Default | Range | Meaning |
 |---|---|---|---|
-| `max_chars` | `3000` | 500 to `max_chars_ceiling` | Default of `max_chars` (LIM-F1) |
+| `max_chars` | `3000` | 500 to `max_chars_ceiling` (depends on `max_chars_ceiling`) | Default of `max_chars` (LIM-F1) |
 | `max_chars_ceiling` | `20000` | 500–100000 | Ceiling of `max_chars` (LIM-F2) |
 | `max_bytes` | `5242880` | 65536–10485760 | Response bytes after decompression (LIM-F3). Memory grows with it: a page of this size costs about 4.5 times as much while it is parsed (`rypsok check` prints the worst case for your settings) |
 | `deadline_ms` | `10000` | 1000–30000 | Overall deadline of a fetch (LIM-F4) |
@@ -150,8 +150,8 @@ without a leading dot: a rule with one is a configuration error.
 | Key | Default | Range | Meaning |
 |---|---|---|---|
 | `failures_to_open` | `3` | 1–10 | Consecutive failures that open an engine's circuit (LIM-B1) |
-| `first_cooldown_s` | `60` | 10–600 | First cooldown (LIM-B2) |
-| `max_cooldown_s` | `900` | 10–3600 | Longest cooldown (LIM-B3); not below `first_cooldown_s` |
+| `first_cooldown_s` | `60` | 10–600, at most `max_cooldown_s` (depends on `max_cooldown_s`) | First cooldown (LIM-B2) |
+| `max_cooldown_s` | `900` | 10–3600 | Longest cooldown (LIM-B3); not below `first_cooldown_s` (the message is reported on `first_cooldown_s`) |
 
 ## `[privacy]`
 

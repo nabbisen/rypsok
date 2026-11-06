@@ -11,6 +11,11 @@ ever goes to standard output except protocol messages.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `check` exits 1 and names a key | The value is outside its range or of the wrong form; the message says which | Change the named key; the [configuration page](./reference/configuration.md) lists every range |
+| `search.max_results: expected an integer from 1 to 20, found text (line 3, column 15)` | A value of the wrong kind: text for a number, a decimal for an integer, a negative or too large number. The message gives the key, what it holds, what was found (a text is never repeated) and the place | Write the value as the page says (`true` and `false` without quotes, numbers without quotes) |
+| `TOML syntax error: ... (line 1, column 6)` | The file is not valid TOML at that place | Fix the place named; the same line and column are in the file as you see it |
+| `engines.w: defined more than once (line 5, column 10)` | A table or a key appears twice | Remove or merge one |
+| `search.engine_timeout_ms: must be between 100 and 300 (search.deadline_ms 500 minus search.reserve_ms 200)` | The range of this key depends on other keys; the message names them with their values | Change this key, or the one it names |
+| `egress.deny[0]: a host pattern must not end with a dot` | A rule written as `blocked.invalid.` | Write it without the dot: `blocked.invalid` |
 | `engines.<id>.api_key: give the secret by api_key_env or api_key_file` | The key was written into the file | Move it to an environment variable or a file and name it |
 | `engines.<id>.type: no such driver` | A driver name that does not exist | One of `wikipedia`, `brave`, `duckduckgo` |
 | `... scrapes a human-facing interface; it runs only with [scraping] enabled = true ...` | A scraping engine without the switch | Read [Tutorial 5](./tutorials/05-scraping.md), then decide |

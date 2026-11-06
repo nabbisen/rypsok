@@ -32,11 +32,14 @@ fn req_cfg_003_empty_file_yields_defaults() {
 fn req_cfg_002_unknown_keys_are_refused() {
     let err = Config::parse("config_version = 1\n[search]\nmax_result = 3\n").unwrap_err();
     assert!(
-        err.problems[0].starts_with("unknown key `max_result`"),
+        err.problems[0].starts_with("search.max_result: unknown key; expected one of"),
         "{err}"
     );
     let err = Config::parse("config_version = 1\n[serach]\nmax_results = 3\n").unwrap_err();
-    assert!(err.problems[0].starts_with("unknown key `serach`"), "{err}");
+    assert!(
+        err.problems[0].starts_with("serach: unknown key; expected one of"),
+        "{err}"
+    );
     let config = Config::parse("config_version = 1\n[engines.brave]\ntype = \"brave\"\ncategories = [\"general\"]\napi_key_env = \"K\"\ncolour = 1\n").unwrap();
     let err = config.validate().unwrap_err();
     assert!(
@@ -77,17 +80,22 @@ fn req_cfg_005_ranges_and_rules_name_the_key() {
         problems.contains("search.query_max_chars: must be between 1 and 600"),
         "{problems}"
     );
+    // The room for an engine request names the keys that make it (RFC 020,
+    // DAT-12); 2400 ms does not fit 2500 ms less a reserve of 200 ms.
     assert!(
-        problems
-            .contains("search.engine_timeout_ms + search.reserve_ms exceeds search.deadline_ms"),
+        problems.contains(
+            "search.engine_timeout_ms: must be between 100 and 2300 (search.deadline_ms 2500 minus search.reserve_ms 200)"
+        ),
         "{problems}"
     );
+    // 700 s is out of range by itself; the cooldown order is not reported
+    // on top of a value that is wrong already.
     assert!(
         problems.contains("resilience.first_cooldown_s: must be between 10 and 600"),
         "{problems}"
     );
     assert!(
-        problems.contains("resilience.first_cooldown_s exceeds resilience.max_cooldown_s"),
+        !problems.contains("resilience.max_cooldown_s is"),
         "{problems}"
     );
 }
