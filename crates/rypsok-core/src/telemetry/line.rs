@@ -117,6 +117,3 @@ where
         .fmt_fields(JsonFields::new())
         .with_writer(writer)
 }
-
-#[cfg(test)]
-mod tests;

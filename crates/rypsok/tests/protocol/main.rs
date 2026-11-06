@@ -1072,19 +1072,158 @@ fn req_obs_005_stdio_call_events_are_local_and_carry_a_request_id() {
     assert_eq!(ids.len(), count, "every call has its own id");
 }
 
+/// REQ-OBS-005 and REQ-SEC-019 (RFC 020, TST-2, TST-15; correction R1): over
+/// HTTP with two callers, the `call` event of each call carries the caller's
+/// id (the operator's label, never a token) and a request id, and
+/// `engine_status` logs a `call` event like the other tools: outcome and
+/// latency included. The process is spawned and its standard error read, so
+/// no other test shares its tracing state.
+#[cfg(unix)]
+#[test]
+fn req_obs_005_http_call_events_carry_the_caller_and_a_request_id() {
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+    const TOKEN_B: &str = "token-b-0123456789-0123456789-0123456789";
+    const TOKEN_C: &str = "token-c-0123456789-0123456789-0123456789";
+    let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = probe.local_addr().unwrap().port();
+    drop(probe);
+    // A token file is a file with the token in it, readable by its owner only.
+    let token_file = |token: &str| {
+        use std::os::unix::fs::PermissionsExt;
+        let path = config_file(token);
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        path.to_str().unwrap().to_owned()
+    };
+    let file_b = token_file(TOKEN_B);
+    let file_c = token_file(TOKEN_C);
+    let config = config_file(&format!(
+        "config_version = 1\n[service.http]\nbind = \"127.0.0.1:{port}\"\n[[service.http.auth.callers]]\nid = \"beta\"\ntoken_file = \"{file_b}\"\n[[service.http.auth.callers]]\nid = \"gamma\"\ntoken_file = \"{file_c}\"\n[engines.w]\ntype = \"wikipedia\"\ncategories = [\"general\"]\n"
+    ));
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rypsok"))
+        .args(["serve", "--transport", "http", "--config"])
+        .arg(&config)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let stderr = child.stderr.take().unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            let _ = tx.send(line);
+        }
+    });
+    let mut lines: Vec<String> = Vec::new();
+    let mut listening = false;
+    while let Ok(line) = rx.recv_timeout(std::time::Duration::from_secs(10)) {
+        let ready = line.contains("\"event\":\"listening\"");
+        lines.push(line);
+        if ready {
+            listening = true;
+            break;
+        }
+    }
+    assert!(
+        listening,
+        "the listener announces itself on stderr: {lines:?}"
+    );
+    let meta = r#""_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"t","version":"0"},"io.modelcontextprotocol/clientCapabilities":{}}"#;
+    let fetch = format!(
+        r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"web_fetch","arguments":{{"url":"ftp://127.0.0.1/x"}},{meta}}}}}"#
+    );
+    let status = format!(
+        r#"{{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{{"name":"engine_status","arguments":{{}},{meta}}}}}"#
+    );
+    for (name, body, token) in [
+        ("web_fetch", &fetch, TOKEN_B),
+        ("web_fetch", &fetch, TOKEN_C),
+        ("engine_status", &status, TOKEN_B),
+    ] {
+        assert_eq!(
+            http_post_mcp_as(port, "tools/call", Some(name), body, Some(token)),
+            Some(200),
+            "{name} is answered"
+        );
+    }
+    let killed = Command::new("kill")
+        .arg("-TERM")
+        .arg(child.id().to_string())
+        .status()
+        .unwrap();
+    assert!(killed.success());
+    let started = std::time::Instant::now();
+    let exit = loop {
+        if let Some(exit) = child.try_wait().unwrap() {
+            break exit;
+        }
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(3000),
+            "did not exit within LIM-O1"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    assert!(exit.success(), "{exit:?}");
+    // The reader ends at the end of the stream: everything is then in `rx`.
+    lines.extend(rx.iter());
+    let calls: Vec<Value> = lines
+        .iter()
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .filter(|v| v["event"] == "call")
+        .collect();
+    let of = |tool: &str| -> Vec<&Value> { calls.iter().filter(|c| c["tool"] == tool).collect() };
+    let fetches = of("web_fetch");
+    let mut callers: Vec<&str> = fetches
+        .iter()
+        .map(|e| e["caller"].as_str().expect("a caller"))
+        .collect();
+    callers.sort_unstable();
+    assert_eq!(callers, ["beta", "gamma"], "{calls:#?}");
+    let statuses = of("engine_status");
+    assert_eq!(statuses.len(), 1, "{calls:#?}");
+    assert_eq!(statuses[0]["caller"], "beta");
+    assert_eq!(statuses[0]["outcome"], "ok");
+    assert!(statuses[0]["latency_ms"].is_u64(), "{:?}", statuses[0]);
+    let mut ids: Vec<&str> = fetches
+        .iter()
+        .chain(&statuses)
+        .map(|e| e["request_id"].as_str().expect("a request id"))
+        .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), 3, "three calls, three ids");
+    // The label, never the token.
+    let text = lines.join("\n");
+    assert!(!text.contains("token-b-0123"), "{text}");
+}
+
 /// A minimal HTTP POST of a JSON-RPC body to `/mcp` of the 2026-07-28
 /// revision: the status code, or `None` when nothing answers.
 #[cfg(unix)]
 fn http_post_mcp(port: u16, method: &str, name: Option<&str>, body: &str) -> Option<u16> {
+    http_post_mcp_as(port, method, name, body, None)
+}
+
+/// The same with a bearer token, when the caller has one.
+#[cfg(unix)]
+fn http_post_mcp_as(
+    port: u16,
+    method: &str,
+    name: Option<&str>,
+    body: &str,
+    bearer: Option<&str>,
+) -> Option<u16> {
     use std::io::{Read, Write};
     let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).ok()?;
     stream
         .set_read_timeout(Some(std::time::Duration::from_secs(5)))
         .ok()?;
     let name_header = name.map_or(String::new(), |n| format!("Mcp-Name: {n}\r\n"));
+    let auth_header = bearer.map_or(String::new(), |t| format!("Authorization: Bearer {t}\r\n"));
     write!(
         stream,
-        "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nAccept: application/json, text/event-stream\r\nMCP-Protocol-Version: 2026-07-28\r\nMcp-Method: {method}\r\n{name_header}Connection: close\r\nContent-Length: {}\r\n\r\n{body}",
+        "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nAccept: application/json, text/event-stream\r\nMCP-Protocol-Version: 2026-07-28\r\nMcp-Method: {method}\r\n{name_header}{auth_header}Connection: close\r\nContent-Length: {}\r\n\r\n{body}",
         body.len()
     )
     .ok()?;

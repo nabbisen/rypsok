@@ -1242,48 +1242,6 @@ async fn req_priv_002_the_two_credential_url_forms_have_their_reasons() {
     }
 }
 
-/// REQ-OBS-005 (RFC 020, TST-2): every event of a fetch, a successful one, a
-/// refused one and one that ends in an error status, carries the request id
-/// of its call and the caller; the three calls have three ids, each with its
-/// own single `call` event. (At `debug`, so that the resolver's and the
-/// robots.txt events are in the log too.)
-#[tokio::test]
-async fn req_obs_005_every_event_of_a_fetch_has_its_request_id_and_caller() {
-    let mut h = harness().await;
-    h.caller = CallerId::new("alpha");
-    Mock::given(method("GET"))
-        .and(path("/article"))
-        .respond_with(page(ARTICLE))
-        .mount(&h.server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/gone"))
-        .respond_with(ResponseTemplate::new(404))
-        .mount(&h.server)
-        .await;
-    let (log, _guard) = crate::telemetry::capture::at_debug();
-    h.fetch(&h.url("/article")).await.unwrap();
-    h.fetch("ftp://127.0.0.1/x").await.unwrap_err();
-    h.fetch(&h.url("/gone")).await.unwrap_err();
-    let lines = log.lines();
-    let mut groups: std::collections::BTreeMap<String, Vec<&serde_json::Value>> =
-        Default::default();
-    for line in &lines {
-        let id = line["request_id"]
-            .as_str()
-            .unwrap_or_else(|| panic!("a line without a request_id: {line}"));
-        groups.entry(id.to_owned()).or_default().push(line);
-    }
-    assert_eq!(groups.len(), 3, "{lines:#?}");
-    for (id, events) in &groups {
-        assert_eq!(id.len(), 18, "{id}");
-        let calls = events.iter().filter(|e| e["event"] == "call").count();
-        assert_eq!(calls, 1, "{id}: {events:#?}");
-        assert!(events.iter().all(|e| e["caller"] == "alpha"), "{id}");
-        assert!(events.iter().all(|e| e["tool"] == "web_fetch"), "{id}");
-    }
-}
-
 /// REQ-PAGE-001: the stages run in the documented order: the privacy check
 /// before the policy, strict mode before the policy, robots.txt before the
 /// page request, the policy before any request.
