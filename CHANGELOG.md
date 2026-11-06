@@ -149,6 +149,15 @@ announced here with both values.
   in the tree needed to read them back; the tests that did compare the
   serialized form instead, or read the documentation examples into a
   private mirror of the type.
+- Two configuration ceilings are lowered (a contract change, RFC 020 D-20 and
+  D-21; the defaults do not change): `fetch.max_bytes` is now 65536 to
+  10485760 (was up to 20971520) and `service.http.max_sessions` is now 1 to
+  2048 (was up to 65536). Measured on the delivered binary: four fetches of a
+  20 MiB page took 265 to 282 MiB, above the 256 MiB of the documented
+  systemd unit (the kernel killed the process in 3 of 3 runs), and 65536
+  sessions took 3.7 GiB at about 60 KiB each. A configuration that sets a
+  value above the new ceiling is refused with the usual "must be between"
+  message.
 
 ## [0.8.0] — 2026-10-29 — Corrections from the first independent review
 

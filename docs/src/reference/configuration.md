@@ -41,7 +41,7 @@ chooses it on the command line, where the launching host can see it.
 | `max_request_bytes` | `65536` | 4096–1048576 | Size of a request body (LIM-H2); the same 413 whether declared or streamed |
 | `idle_timeout_s` | `60` | 5–600 | Idle connection timeout (LIM-H3): HTTP/1 closes after it, a connection that has sent nothing, or has not yet shown its protocol, included; HTTP/2 pings after it and closes when the ping goes unanswered |
 | `max_streams` | `16` | 1–256 | Streams one HTTP/2 connection may open at once (LIM-H4) |
-| `max_sessions` | `256` | 1–65536 | At most this many live sessions of the handshake-based revisions (LIM-H6); a handshake beyond it is answered 503 with `Retry-After: 30`, a hint, and opens no session. The 2026-07-28 revision keeps no session and is not counted. Sessions expire after 300 s without traffic |
+| `max_sessions` | `256` | 1–2048 | At most this many live sessions of the handshake-based revisions (LIM-H6); a handshake beyond it is answered 503 with `Retry-After: 30`, a hint, and opens no session. The 2026-07-28 revision keeps no session and is not counted. Sessions expire after 300 s without traffic. Each costs about 60 KiB, so 2048 sessions are about 120 MiB |
 | `request_timeout_s` | `30` | 3–600, at least `fetch.deadline_ms` + 2 s | A request still running after this, body and handler included, is answered 408 (LIM-H5); a slow client cannot hold a connection |
 
 rypsok does not terminate TLS: off loopback, put a reverse proxy or a
@@ -94,7 +94,7 @@ token_env = "RYPSOK_TOKEN_MIMLYS"
 |---|---|---|---|
 | `max_chars` | `3000` | 500 to `max_chars_ceiling` | Default of `max_chars` (LIM-F1) |
 | `max_chars_ceiling` | `20000` | 500–100000 | Ceiling of `max_chars` (LIM-F2) |
-| `max_bytes` | `5242880` | 65536–20971520 | Response bytes after decompression (LIM-F3) |
+| `max_bytes` | `5242880` | 65536–10485760 | Response bytes after decompression (LIM-F3). Memory grows with it: a page of this size costs about 4.5 times as much while it is parsed (`rypsok check` prints the worst case for your settings) |
 | `deadline_ms` | `10000` | 1000–30000 | Overall deadline of a fetch (LIM-F4) |
 | `connect_timeout_ms` | `3000` | 500–10000 | Connect timeout (LIM-F6) |
 | `max_redirects` | `5` | 0–10 | Redirects followed (LIM-F7); every hop counts, a cross-host one too when `follow_cross_host_redirects` is on |

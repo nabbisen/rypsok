@@ -381,7 +381,7 @@ fn req_sec_022_request_timeout_needs_room_for_a_fetch() {
 #[test]
 fn req_sec_024_max_sessions_has_its_range() {
     assert_eq!(Config::default().service.http.max_sessions, 256);
-    for ok in ["1", "256", "65536"] {
+    for ok in ["1", "256", "2048"] {
         let config = Config::parse(&format!(
             "config_version = 1\n[service.http]\nmax_sessions = {ok}\n"
         ))
@@ -392,7 +392,8 @@ fn req_sec_024_max_sessions_has_its_range() {
             ok.parse::<u32>().unwrap()
         );
     }
-    for bad in ["0", "65537"] {
+    // The ceiling is 2048 (RFC 020 D-21): about 60 KiB per session, 120 MiB.
+    for bad in ["0", "2049", "65536"] {
         let config = Config::parse(&format!(
             "config_version = 1\n[service.http]\nmax_sessions = {bad}\n"
         ))
@@ -402,7 +403,34 @@ fn req_sec_024_max_sessions_has_its_range() {
             error
                 .problems
                 .iter()
-                .any(|p| p.starts_with("service.http.max_sessions")),
+                .any(|p| p.starts_with("service.http.max_sessions: must be between 1 and 2048")),
+            "{bad}: {:?}",
+            error.problems
+        );
+    }
+}
+
+/// REQ-CFG-005 (RFC 020 D-20): `fetch.max_bytes` (LIM-F3) is 64 KiB to
+/// 10 MiB, because four fetches of a 20 MiB page need 265 to 282 MiB and
+/// the documented unit holds 256 MiB; the default does not change.
+#[test]
+fn req_cfg_005_max_bytes_has_its_range() {
+    assert_eq!(Config::default().fetch.max_bytes, 5_242_880);
+    for ok in ["65536", "5242880", "10485760"] {
+        let config =
+            Config::parse(&format!("config_version = 1\n[fetch]\nmax_bytes = {ok}\n")).unwrap();
+        assert!(config.validate().is_ok(), "{ok}: {:?}", config.validate());
+        assert_eq!(config.limits().fetch_max_bytes, ok.parse::<u64>().unwrap());
+    }
+    for bad in ["65535", "10485761", "20971520"] {
+        let config =
+            Config::parse(&format!("config_version = 1\n[fetch]\nmax_bytes = {bad}\n")).unwrap();
+        let error = config.validate().unwrap_err();
+        assert!(
+            error
+                .problems
+                .iter()
+                .any(|p| p.starts_with("fetch.max_bytes: must be between 65536 and 10485760")),
             "{bad}: {:?}",
             error.problems
         );

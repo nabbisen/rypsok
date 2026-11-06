@@ -785,7 +785,7 @@ impl Config {
             "service.http.max_sessions",
             h.max_sessions,
             1,
-            65536,
+            2048,
         );
         // A request bound shorter than a fetch would end tool calls, not
         // slow clients (RFC 018, LIM-H5).
@@ -922,7 +922,7 @@ impl Config {
             "fetch.max_bytes",
             f.max_bytes,
             65_536,
-            20_971_520,
+            10_485_760,
         );
         range(
             &mut problems,

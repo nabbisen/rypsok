@@ -46,7 +46,7 @@ it.
 |---|---|---:|---|---|
 | LIM-F1 | `max_chars` | 3000 | 500 to LIM-F2 | Draft external design §4.2 and §15; mimlys study; X-06 |
 | LIM-F2 | Ceiling of `max_chars` | 20000 | 500–100000 | M-02 |
-| LIM-F3 | Response bytes after decompression | 5 MiB | 64 KiB–20 MiB | Study |
+| LIM-F3 | Response bytes after decompression | 5 MiB | 64 KiB–10 MiB | Study; the ceiling is 10 MiB since RFC 020 D-20: four 20 MiB pages need 265 to 282 MiB (audit 020e), more than the 256 MiB of the documented unit |
 | LIM-F4 | Overall deadline of a fetch | 10000 ms | 1000–30000 | — |
 | LIM-F5 | Maximum duration of a `web_fetch` call | LIM-F4 + 1000 ms | derived | X-04, R-04 |
 | LIM-F6 | Connect timeout | 3000 ms | 500–10000 | — |
@@ -83,7 +83,7 @@ it.
 | LIM-H3 | Idle HTTP connection timeout, including a connection that has sent nothing or only the first bytes of the HTTP/2 preface (HTTP/1: close after; HTTP/2: keep-alive ping after, close when unanswered) | 60 s | 5–600 s | Resource hygiene (RFC 013) |
 | LIM-H4 | Streams one HTTP/2 connection may open | 16 | 1–256 | THR-26 (RFC 018) |
 | LIM-H5 | Time one HTTP request may take, whatever its state | 30 s | 3–600 s, at least `fetch.deadline_ms` + 2 s | THR-26 (RFC 018) |
-| LIM-H6 | Live sessions of the handshake-based revisions over HTTP | 256 | 1–65536 | THR-27 (RFC 019) |
+| LIM-H6 | Live sessions of the handshake-based revisions over HTTP; each costs about 60 KiB | 256 | 1–2048 | THR-27 (RFC 019); the ceiling is 2048 since RFC 020 D-21: 65536 sessions need 3.7 GiB (audit 020e), 2048 about 120 MiB |
 | LIM-H7 | Size of the header block of an HTTP request (HTTP/1: request line and headers; HTTP/2: the header list) | 16384 bytes | fixed | NET-12 (audit 020b); the same bound on both protocols |
 
 ## Circuit breaker
