@@ -39,31 +39,96 @@ fn files(dir: &str, extension: &str) -> Vec<PathBuf> {
     out
 }
 
-/// REQ-DOC-002: every example configuration parses, validates, and
-/// passes `rypsok check` with exit code 0.
+/// The warnings the examples README says each configuration provokes: the
+/// lines `- `configs/<file>`: `<key>`[, `<key>`]` of its section.
+fn declared_warnings() -> std::collections::BTreeMap<String, Vec<String>> {
+    let readme = std::fs::read_to_string(examples().join("README.md")).unwrap();
+    let section = readme
+        .split("## Warnings that `rypsok check` gives for them")
+        .nth(1)
+        .expect("the README has a warnings section")
+        .split("\n## ")
+        .next()
+        .unwrap();
+    let mut out = std::collections::BTreeMap::new();
+    for line in section.lines().filter(|l| l.starts_with("- `configs/")) {
+        let name = line.split('`').nth(1).unwrap().to_owned();
+        let after = line.split_once("`: ").map(|(_, rest)| rest).unwrap_or("");
+        let keys: Vec<String> = after
+            .split('`')
+            .skip(1)
+            .step_by(2)
+            .map(str::to_owned)
+            .collect();
+        out.insert(name, keys);
+    }
+    out
+}
+
+/// REQ-DOC-002 and REQ-OPS-001 (RFC 020, DAT-1, D-6): every example
+/// configuration parses, validates, and passes `rypsok check` with exit code
+/// 0, and gives no warning except the ones the README declares for it.
+/// `check` reads the callers' tokens as `serve` does, so the network
+/// example gets the tokens it names: a variable and a file of a test.
 #[test]
 fn req_doc_002_example_configurations_validate() {
     let configs = files("configs", "toml");
     assert!(configs.len() >= 8, "{configs:?}");
+    let declared = declared_warnings();
+    let dir = std::env::temp_dir().join(format!("rypsok-examples-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let token_file = dir.join("ops.token");
+    std::fs::write(&token_file, "0123456789abcdefghijABCDEFGHIJ0123456789").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&token_file, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
     for path in configs {
+        let name = format!("configs/{}", path.file_name().unwrap().to_string_lossy());
         let text = std::fs::read_to_string(&path).unwrap();
         let config = Config::parse(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         config
             .validate()
             .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        // The example names a secrets file of a deployment; the test has its own.
+        let local = dir.join(path.file_name().unwrap());
+        std::fs::write(
+            &local,
+            text.replace(
+                "/run/secrets/rypsok-ops",
+                &token_file.to_str().unwrap().replace('\\', "/"),
+            ),
+        )
+        .unwrap();
         let status = Command::new(env!("CARGO_BIN_EXE_rypsok"))
             .args(["check", "--config"])
-            .arg(&path)
+            .arg(&local)
             .env_remove("RYPSOK_CONFIG")
+            .env(
+                "RYPSOK_TOKEN_MIMLYS",
+                "0123456789abcdefghijABCDEFGHIJ0123456789",
+            )
             .output()
             .unwrap();
+        let stderr = String::from_utf8_lossy(&status.stderr);
         assert!(
             status.status.success(),
-            "{}: check failed: {}",
-            path.display(),
-            String::from_utf8_lossy(&status.stderr)
+            "{}: check failed: {stderr}",
+            path.display()
         );
+        let mut warned: Vec<String> = stderr
+            .lines()
+            .filter_map(|l| l.strip_prefix("rypsok: warning: "))
+            .map(|l| l.split(':').next().unwrap().to_owned())
+            .collect();
+        warned.sort();
+        let mut expected = declared.get(&name).cloned().unwrap_or_default();
+        expected.sort();
+        assert_eq!(warned, expected, "{name}: warnings\n{stderr}");
     }
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(declared.len(), 2, "{declared:?}");
 }
 
 /// REQ-DOC-002: every host entry is JSON with one `mcpServers` object

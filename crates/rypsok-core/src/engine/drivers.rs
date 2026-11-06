@@ -42,6 +42,20 @@ pub fn needs_credential(kind: &str) -> bool {
     kind == "brave"
 }
 
+/// Whether the admission record of a driver type lets its results be
+/// stored (the result cache, RFC 014).
+pub fn is_cacheable(kind: &str) -> bool {
+    match kind {
+        #[cfg(feature = "engine-wikipedia")]
+        "wikipedia" => wikipedia::PROPERTIES.cacheable,
+        #[cfg(feature = "engine-brave")]
+        "brave" => brave::PROPERTIES.cacheable,
+        #[cfg(feature = "engine-duckduckgo")]
+        "duckduckgo" => duckduckgo::PROPERTIES.cacheable,
+        _ => false,
+    }
+}
+
 /// Whether a driver type reads a human-facing interface (RFC 015): such
 /// a table is refused unless `[scraping] enabled = true` (REQ-ENG-013).
 pub fn is_scraping(kind: &str) -> bool {

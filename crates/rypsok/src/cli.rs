@@ -17,6 +17,8 @@ use rypsok_core::{CancellationToken, Rypsok, telemetry};
 
 use crate::mcp::{Adapter, http, stdio};
 
+mod check;
+
 /// Exit code of a successful run.
 pub const EXIT_SUCCESS: u8 = 0;
 /// Exit code of a configuration error.
@@ -112,8 +114,9 @@ fn describe(source: &ConfigSource) -> String {
     }
 }
 
-/// `rypsok check`: validate the configuration and report the effective
-/// settings on standard error (REQ-CFG-005).
+/// `rypsok check`: validate the configuration, resolve what `serve` would
+/// resolve, and report the effective settings and the warnings on standard
+/// error (REQ-CFG-005; RFC 020, DAT-1, DAT-2, D-6).
 fn check(flag: Option<&std::path::Path>) -> ExitCode {
     let (config, source) = match Config::locate(flag) {
         Ok(found) => found,
@@ -122,74 +125,13 @@ fn check(flag: Option<&std::path::Path>) -> ExitCode {
     if let Err(error) = config.validate() {
         return report(&error);
     }
-    let limits = config.limits();
-    diagnostic(&format!(
-        "rypsok: configuration from {} is valid",
-        describe(&source)
-    ));
-    diagnostic(&format!(
-        "rypsok: search: query_max_chars={} max_results={} (1..={}) deadline_ms={} engine_timeout_ms={} reserve_ms={} engines_per_request={} languages={} region={}",
-        limits.query_max_chars,
-        limits.max_results,
-        limits.max_results_ceiling,
-        limits.search_deadline_ms,
-        limits.engine_timeout_ms,
-        limits.search_reserve_ms,
-        limits.engines_per_request,
-        config
-            .search
-            .languages
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(","),
-        config.search.region,
-    ));
-    diagnostic(&format!(
-        "rypsok: tool rate limits per minute: web_search={} web_fetch={} engine_status={}; engine_status enabled={}; structured_content={}",
-        limits.web_search_per_minute,
-        limits.web_fetch_per_minute,
-        limits.engine_status_per_minute,
-        config.status.enabled,
-        config.service.structured_content,
-    ));
-    for (id, table) in &config.engines {
-        let credential = match table.secret_source() {
-            None => "no credential needed".to_owned(),
-            Some(source) => match source.resolve() {
-                Ok((_, warning)) => warning.map_or("credential found".to_owned(), |w| {
-                    format!("credential found; {w}")
-                }),
-                Err(error) => format!("inactive: {error}"),
-            },
-        };
-        diagnostic(&format!(
-            "rypsok: engine {id}: type={} enabled={} categories={} preference={} {credential}",
-            table.kind,
-            table.enabled,
-            table
-                .categories
-                .iter()
-                .map(|c| c.as_str())
-                .collect::<Vec<_>>()
-                .join(","),
-            table.preference,
-        ));
+    let report = match check::build(&config, &source) {
+        Ok(report) => report,
+        Err(error) => return self::report(&error),
+    };
+    for line in report.lines.iter().chain(&report.warnings) {
+        diagnostic(line);
     }
-    let categories = config
-        .served_categories()
-        .iter()
-        .map(|c| c.as_str())
-        .collect::<Vec<_>>()
-        .join(",");
-    diagnostic(&format!(
-        "rypsok: categories served: {}",
-        if categories.is_empty() {
-            "none"
-        } else {
-            &categories
-        }
-    ));
     ExitCode::from(EXIT_SUCCESS)
 }
 

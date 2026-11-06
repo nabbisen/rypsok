@@ -1050,6 +1050,18 @@ impl Config {
         }
     }
 
+    /// The worst-case memory for these settings (RFC 020 D-20, D-21): the
+    /// formula of [`Limits::worst_case_memory`] with the cache bound when
+    /// the cache is on.
+    pub fn worst_case_memory(&self) -> crate::limits::MemoryEstimate {
+        let cache_bytes = if self.cache.enabled {
+            u64::from(self.cache.max_entries) * u64::from(self.cache.max_entry_bytes)
+        } else {
+            0
+        };
+        self.limits().worst_case_memory(cache_bytes)
+    }
+
     /// The default language: the first configured one.
     pub fn default_language(&self) -> Language {
         self.search

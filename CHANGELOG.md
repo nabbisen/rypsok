@@ -59,6 +59,11 @@ announced here with both values.
   `host.example:8080@mirror`, `ssh://git:@host/…`, three long dotted words
   starting `eyJ`, `sk_test_` and a plain word, and `password=` followed by an
   ordinary word all pass.
+- `rypsok check` accepted configurations that `serve --transport http`
+  refuses: a caller whose token variable is unset, whose token file cannot be
+  read or whose token is shorter than 32 bytes. `check` now reads the
+  callers' tokens as `serve` does, fails with the same message and exits 1
+  (RFC 020, DAT-1).
 
 ### Changed
 
@@ -170,6 +175,19 @@ announced here with both values.
   500 minus search.reserve_ms 200)`), and a deny or allow rule that ends in a
   dot says so. The wording changed; the rules did not: a file that was valid
   is valid.
+- `rypsok check` prints more (RFC 020, DAT-2, D-6, D-20, D-21): a line for
+  every section it said nothing of (`service.http`, `fetch`, `egress`,
+  `privacy`, `logging`, `cache`, `scraping`, `resilience`, `limits`), the
+  worst-case memory of the settings (13 MiB + fetches × `max_bytes` + parses ×
+  (4.5 × `max_bytes` + 13 MiB) + `max_sessions` × 60 KiB, an estimate
+  measured on the musl release build), and warnings, each one line `rypsok:
+  warning: <key>: <what happens>; <the safer setting>`, for an allow rule wider
+  than /16 or /32, `secret_detection = "off"`, a bind off loopback (plain
+  HTTP), `log_queries`, `robots_txt = false`, `allow_http`,
+  `follow_cross_host_redirects`, a scraping engine, a cache with no storable
+  engine and a worst case above 256 MiB. The exit code does not change. There
+  is no warning for `legacy_revisions`. The format of the lines is not part of
+  the contract.
 
 ## [0.8.0] — 2026-10-29 — Corrections from the first independent review
 

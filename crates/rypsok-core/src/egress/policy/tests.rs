@@ -613,3 +613,35 @@ proptest! {
         }
     }
 }
+
+/// REQ-SEC-006 (RFC 020 D-6): which `allow` rules `check` calls wide: a
+/// network with a prefix shorter than /16 (IPv4) or /32 (IPv6); not a host
+/// name, a single address or a narrower network.
+#[test]
+fn req_sec_006_wide_allow_rules_are_those_wider_than_16_and_32() {
+    for wide in [
+        "0.0.0.0/0",
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/15",
+        "::/0",
+        "fc00::/7",
+        "2001:db8::/31",
+    ] {
+        assert!(is_wide_network_rule(wide), "{wide}");
+    }
+    for narrow in [
+        "192.168.0.0/16",
+        "192.168.1.0/24",
+        "10.1.2.3",
+        "10.1.2.3/32",
+        "2001:db8::/32",
+        "2001:db8::1",
+        "docs.rs",
+        "*.example.org",
+        "not a rule",
+        "",
+    ] {
+        assert!(!is_wide_network_rule(narrow), "{narrow}");
+    }
+}

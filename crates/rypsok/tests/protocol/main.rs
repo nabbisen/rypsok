@@ -969,6 +969,57 @@ fn req_mcp_002_http_serve_writes_nothing_to_stdout() {
     );
 }
 
+/// REQ-OPS-001 (RFC 020, DAT-1): `check` and `serve --transport http` stop on
+/// the same configuration with the same message, exit code 1 and nothing on
+/// standard output: a caller whose token variable is unset, and one whose
+/// token is shorter than the minimum.
+#[test]
+fn req_ops_001_check_and_serve_refuse_the_same_callers_alike() {
+    use std::process::Command;
+    let short = std::env::temp_dir().join(format!("rypsok-short-token-{}", std::process::id()));
+    std::fs::write(&short, "12345").unwrap();
+    let short_text = short.to_str().unwrap().replace('\\', "/");
+    for (name, source) in [
+        (
+            "an unset variable",
+            "token_env = \"RYPSOK_TEST_NO_SUCH_VARIABLE\"".to_owned(),
+        ),
+        ("a short token", format!("token_file = \"{short_text}\"")),
+    ] {
+        let config = config_file(&format!(
+            "config_version = 1\n[service.http]\nbind = \"127.0.0.1:0\"\n[[service.http.auth.callers]]\nid = \"alpha\"\n{source}\n"
+        ));
+        let run = |args: &[&str]| {
+            Command::new(env!("CARGO_BIN_EXE_rypsok"))
+                .args(args)
+                .arg("--config")
+                .arg(&config)
+                .stdin(std::process::Stdio::null())
+                .output()
+                .unwrap()
+        };
+        let check = run(&["check"]);
+        let serve = run(&["serve", "--transport", "http"]);
+        assert_eq!(check.status.code(), Some(1), "{name}: check");
+        assert_eq!(serve.status.code(), Some(1), "{name}: serve");
+        assert!(check.stdout.is_empty() && serve.stdout.is_empty(), "{name}");
+        let problem = |out: &std::process::Output| -> String {
+            String::from_utf8_lossy(&out.stderr)
+                .lines()
+                .find(|l| l.contains("service.http.auth.callers[0]"))
+                .unwrap_or("")
+                .to_owned()
+        };
+        let line = problem(&check);
+        assert!(
+            line.starts_with("rypsok: configuration: service.http.auth.callers[0]: "),
+            "{name}: {line}"
+        );
+        assert_eq!(line, problem(&serve), "{name}");
+    }
+    let _ = std::fs::remove_file(&short);
+}
+
 /// A minimal HTTP POST of a JSON-RPC body to `/mcp` of the 2026-07-28
 /// revision: the status code, or `None` when nothing answers.
 #[cfg(unix)]

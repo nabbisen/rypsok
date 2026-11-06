@@ -134,3 +134,23 @@ it.
 | ID | Parameter | Default | Range | Basis |
 |---|---|---:|---|---|
 | LIM-G1 | Scraping drivers | off | on, off | D-06, DR-006 (RFC 015) |
+
+## Measured costs (the memory estimate of `rypsok check`)
+
+These are not limits an operator sets. They are the costs that the audit
+measured (handoff 020e, the delivered musl release build of 0.8.0), rounded
+up, and `rypsok check` combines them with the effective settings into the
+worst-case memory it prints and compares with `MemoryMax` of the documented
+unit (RFC 020 D-20, D-21):
+
+`13 MiB + fetches_in_flight × max_bytes + parsing_in_flight × (4.5 × max_bytes + 13 MiB) + max_sessions × 60 KiB`,
+plus `cache.max_entries × cache.max_entry_bytes` (LIM-K3 × LIM-K4) when the
+cache is on. It is an estimate, not a guarantee.
+
+| ID | Parameter | Default | Range | Basis |
+|---|---|---:|---|---|
+| LIM-M1 | The process at rest | 13 MiB | fixed | Audit 020e: idle 10 to 12 MiB, median 10.9, and a margin |
+| LIM-M2 | The part of one parse that does not grow with the page | 13 MiB | fixed | Audit 020e: 34.1 MiB at a 5 MiB page and 99.2 MiB at 20 MiB are on a line that crosses at 12.4 MiB |
+| LIM-M3 | The part of one parse that grows with the page, in tenths of a byte per byte of page | 45 | fixed | The same line rises 4.34 per byte; rounded up to 4.5 |
+| LIM-M4 | One live session of the handshake-based revisions | 60 KiB | fixed | Audit 020e: 58.5 KiB measured (56.7 to 60.6) |
+| LIM-M5 | `MemoryMax` of the documented systemd unit, the figure the estimate is compared with | 256 MiB | fixed | `deployment.md` |

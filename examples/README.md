@@ -23,6 +23,21 @@ mock provider.
 | `calls/first-search.jsonl` | Tutorial 1 | The two JSON-RPC lines piped into `rypsok serve` |
 | `calls/*.json` | Tutorials 1, 3; Reading a response | One request and the answer rypsok gave, as `{"request", "response"}` |
 
+## Warnings that `rypsok check` gives for them
+
+`rypsok check` warns about risky settings (RFC 020, D-6). The shipped
+configurations are written to give none, except these two, which provoke
+exactly the warning named (a test reads this list):
+
+- `configs/network-mode.toml`: `service.http.bind` (the listener speaks
+  plain HTTP; the example puts a TLS-terminating proxy in front of it)
+- `configs/scraping.toml`: `engines.ddg` (a scraping engine, by design the
+  point of the example)
+
+`configs/network-mode.toml` also names two callers: `check` reads their
+tokens as `serve` does, so it exits 1 until `RYPSOK_TOKEN_MIMLYS` is set (32
+bytes or more) and `/run/secrets/rypsok-ops` exists.
+
 ## Where the answers come from
 
 Each `calls/*.json` answer was produced on 2026-10-27 by piping the

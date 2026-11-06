@@ -87,6 +87,32 @@ engines and the sites the operator admits: replace `<the engines'
 addresses>` with the addresses (or networks) of the engines you configured
 and of any site you allow, and keep the line in step with `[egress]`.
 
+### Does the configuration fit `MemoryMax`?
+
+`rypsok check` prints the worst-case memory of your settings and warns when
+it is above the 256 MiB of this unit. The estimate is
+
+```text
+13 MiB
++ limits.fetches_in_flight × fetch.max_bytes
++ limits.parsing_in_flight × (4.5 × fetch.max_bytes + 13 MiB)
++ service.http.max_sessions × 60 KiB
++ cache.max_entries × cache.max_entry_bytes   (only when the cache is on)
+```
+
+The constants are measured: the idle process takes 10 to 12 MiB; one parse
+of a page costs 34 MiB at 5 MiB and 99 MiB at 20 MiB (a line through both
+gives 4.34 per byte of page and 12.4 MiB at none); a session takes 58.5 KiB.
+They were measured on the musl release build of 0.8.0 (audit 020e, rounded
+up) and are rows LIM-M1 to LIM-M5 of the
+[limits table](../maintainers/limits-and-defaults.md). The result is an
+estimate, not a guarantee: with the defaults it says 119 MiB, where four
+5 MiB pages at once measured 90 to 98 MiB without sessions. The ceilings
+`fetch.max_bytes` (10 MiB) and `service.http.max_sessions` (2048) each fit
+the unit with the other at its default (184 and 224 MiB); both at once
+(289 MiB) do not, and `check` warns. In a container, `--memory` takes the
+place of `MemoryMax` in the same comparison.
+
 ## Binaries
 
 Each release lists archives for Linux x86_64 (static), macOS arm64 and

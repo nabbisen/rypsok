@@ -131,6 +131,26 @@ pub mod defaults {
     pub const CACHE_ENTRIES: u32 = 1000; // LIM-K3
     /// Size of one cache entry, in bytes (RFC 014).
     pub const CACHE_ENTRY_BYTES: u32 = 32768; // LIM-K4
+
+    // The measured costs of the memory estimate (RFC 020 D-20, D-21). They
+    // come from audit 020e, taken on the delivered musl release build of
+    // 0.8.0, and are rounded up: the estimate is on the safe side.
+
+    /// The process at rest: 10 to 12 MiB idle (median 10.9) and a margin.
+    pub const MEASURED_BASE_BYTES: u64 = 13_631_488; // LIM-M1
+    /// The part of one parse that does not grow with the page: the line of
+    /// 34.1 MiB (5 MiB page) and 99.2 MiB (20 MiB page) crosses the
+    /// vertical axis at 12.4 MiB.
+    pub const MEASURED_PARSE_FIXED_BYTES: u64 = 13_631_488; // LIM-M2
+    /// The part of one parse that grows with the page, in tenths of a byte
+    /// per byte: the same line rises 4.34 per byte, rounded up to 4.5.
+    pub const MEASURED_PARSE_TENTHS_PER_BYTE: u64 = 45; // LIM-M3
+    /// One live session of the handshake-based revisions: 58.5 KiB
+    /// measured (56.7 to 60.6), rounded up.
+    pub const MEASURED_SESSION_BYTES: u64 = 61_440; // LIM-M4
+    /// `MemoryMax` of the documented systemd unit, the figure the estimate
+    /// is compared with.
+    pub const MEMORY_UNIT_BYTES: u64 = 268_435_456; // LIM-M5
 }
 
 /// The effective limits of a process: the table's defaults, overridden by
@@ -224,7 +244,63 @@ pub struct Limits {
     pub max_cooldown_s: u32,
 }
 
+/// The worst-case memory of a process, from its effective limits and the
+/// measured costs of audit 020e (RFC 020 D-20, D-21): an estimate, measured
+/// on the musl release build, not a guarantee. Bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct MemoryEstimate {
+    /// The process at rest (LIM-M1).
+    pub base: u64,
+    /// The bodies being read: fetches in flight times `fetch.max_bytes`.
+    pub bodies: u64,
+    /// The parses: parsing tasks in flight times the cost of one.
+    pub parses: u64,
+    /// The sessions of the handshake-based revisions.
+    pub sessions: u64,
+    /// The result cache bound, when it is on.
+    pub cache: u64,
+}
+
+impl MemoryEstimate {
+    /// The sum, in bytes.
+    pub fn total_bytes(&self) -> u64 {
+        self.base + self.bodies + self.parses + self.sessions + self.cache
+    }
+
+    /// A number of bytes in whole MiB, rounded up.
+    pub fn mib(bytes: u64) -> u64 {
+        bytes.div_ceil(1024 * 1024)
+    }
+
+    /// The sum in whole MiB, rounded up.
+    pub fn total_mib(&self) -> u64 {
+        Self::mib(self.total_bytes())
+    }
+
+    /// Whether the sum is above `MemoryMax` of the documented unit.
+    pub fn exceeds_unit(&self) -> bool {
+        self.total_bytes() > defaults::MEMORY_UNIT_BYTES
+    }
+}
+
 impl Limits {
+    /// The worst-case memory: `13 MiB + fetches x max_bytes + parses x
+    /// (4.5 x max_bytes + 13 MiB) + sessions x 60 KiB`, and `cache_bytes`
+    /// (LIM-K3 times LIM-K4 when the cache is on, else 0).
+    pub fn worst_case_memory(&self, cache_bytes: u64) -> MemoryEstimate {
+        let page = self.fetch_max_bytes;
+        let one_parse = page * defaults::MEASURED_PARSE_TENTHS_PER_BYTE / 10
+            + defaults::MEASURED_PARSE_FIXED_BYTES;
+        MemoryEstimate {
+            base: defaults::MEASURED_BASE_BYTES,
+            bodies: u64::from(self.fetches_in_flight) * page,
+            parses: u64::from(self.parsing_in_flight) * one_parse,
+            sessions: u64::from(self.http_max_sessions) * defaults::MEASURED_SESSION_BYTES,
+            cache: cache_bytes,
+        }
+    }
+
     /// The limits table as documented.
     pub const DEFAULT: Limits = Limits {
         query_max_chars: defaults::QUERY_MAX_CHARS,

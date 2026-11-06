@@ -65,6 +65,18 @@ pub enum Rule {
     Host(HostPattern),
 }
 
+/// Whether an `allow` rule is a network wider than `/16` (IPv4) or `/32`
+/// (IPv6), `0.0.0.0/0` and `::/0` included: `rypsok check` warns about it
+/// (RFC 020 D-6). A host name, a single address or a text that is no rule
+/// is not.
+pub fn is_wide_network_rule(text: &str) -> bool {
+    match parse_rule(text) {
+        Ok(Rule::Network(IpNet::V4(net))) => net.prefix_len() < 16,
+        Ok(Rule::Network(IpNet::V6(net))) => net.prefix_len() < 32,
+        _ => false,
+    }
+}
+
 /// A host pattern: `name` matches that name; `*.name` matches any
 /// subdomain of `name`, not `name` itself.
 #[derive(Debug, Clone, PartialEq, Eq)]

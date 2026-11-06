@@ -8,7 +8,7 @@ effect at the next start.
 
 `rypsok check` validates a file and prints the effective settings on
 standard error. Every problem names its key. Unknown keys and tables are
-refused.
+refused. See [What `rypsok check` says](#what-rypsok-check-says) below.
 
 Every default is a value of the [limits table](../maintainers/limits-and-defaults.md);
 the `LIM-` identifier in the right column names the row.
@@ -266,3 +266,65 @@ categories = ["news"]
 endpoint = "news"
 api_key_env = "BRAVE_API_KEY"
 ```
+
+## What `rypsok check` says
+
+`rypsok check --config <file>` exits 0 for a file `serve` would accept and
+1 for one it would refuse. It checks everything `serve` checks, and one thing
+more than the ranges: **when the file names callers
+(`[[service.http.auth.callers]]`), it reads their tokens as `serve
+--transport http` does**. A token variable that is unset, a token file that
+cannot be read and a token shorter than 32 bytes are errors in `check` with
+the message `serve` gives. A file without callers and with a loopback bind
+reads no token.
+
+It then prints, on standard error, one line for each part of the
+configuration, with the values that are in effect (a default is shown as a
+default): `search`, the tool rate limits, each engine and its credential's
+state, the categories served, `service.http` (the bind, the number of
+callers, `legacy_revisions` and LIM-H1 to LIM-H6), `fetch`, `egress` (the
+number of allow and deny rules, `allow_http`, strict mode, whether a proxy is
+set), `privacy`, `logging`, `cache`, `scraping`, `resilience`, `limits` and
+the `memory` estimate. It never prints a token, an API key, the text of an
+egress rule or the address of a proxy.
+
+```text
+rypsok: configuration from --config rypsok.toml is valid
+rypsok: service.http: bind=127.0.0.1:8737 callers=0 legacy_revisions=true max_connections=64 max_request_bytes=65536 idle_timeout_s=60 max_streams=16 request_timeout_s=30 max_sessions=256
+rypsok: fetch: ports=80,443 max_bytes=5242880 max_chars=3000 (ceiling 20000) deadline_ms=10000 max_redirects=5 robots_txt=true follow_cross_host_redirects=false
+rypsok: egress: allow_rules=0 deny_rules=0 allow_http=false strict_mode=false proxy=none
+rypsok: privacy: secret_detection=refuse
+rypsok: logging: level=info log_queries=false
+rypsok: cache: enabled=false max_entries=1000 ttl_s=300 max_entry_bytes=32768
+rypsok: scraping: enabled=false
+rypsok: resilience: failures_to_open=3 first_cooldown_s=60 max_cooldown_s=900
+rypsok: limits: outbound_in_flight=32 per_engine_in_flight=2 fetches_in_flight=4 parsing_in_flight=2 strict_mode_urls=10000 robots_cache_entries=1000
+rypsok: memory: worst case about 119 MiB (base 13 + bodies 20 + parses 71 + sessions 15 + cache 0 MiB; an estimate measured on the musl release build)
+```
+
+(The `search`, rate-limit, engine and category lines come first.) The format
+of the lines may change in a minor version; the exit code does not.
+
+### Warnings
+
+A warning is one line `rypsok: warning: <key>: <what happens>; <the safer
+setting>`. It does not change the exit code: the setting is allowed, and
+`check` tells you what it costs. The shipped example configurations give
+none, except the two their README names.
+
+| Key | When | The safer setting |
+|---|---|---|
+| `egress.allow[N]` | A rule admits a network wider than /16 (IPv4) or /32 (IPv6), `0.0.0.0/0` and `::/0` included | Host names, or a narrower network |
+| `privacy.secret_detection` | It is `"off"` | `"refuse"`, the default |
+| `service.http.bind` | The bind is not loopback: the listener speaks plain HTTP, so tokens and traffic cross the network unencrypted | Bind loopback behind a TLS-terminating proxy |
+| `logging.log_queries` | It is `true`: query text is written to the debug log | `false` |
+| `fetch.robots_txt` | It is `false` | `true` |
+| `egress.allow_http` | It is `true` | `false` |
+| `fetch.follow_cross_host_redirects` | It is `true` | `false` |
+| `engines.<id>` | An enabled engine scrapes a human-facing page (type `duckduckgo`) | An engine with an API |
+| `cache.enabled` | The cache is on and no enabled engine allows its results to be stored (Wikipedia does, Brave and DuckDuckGo do not) | Turn the cache off, or enable an engine that allows storage |
+| `memory` | The worst case is above 256 MiB, the `MemoryMax` of the [documented unit](./deployment.md) | Lower `fetch.max_bytes`, `limits.fetches_in_flight`, `limits.parsing_in_flight` or `service.http.max_sessions` |
+| `service.http.auth.callers[N]` | A token file is readable by everyone | `chmod 600` |
+
+There is no warning for `legacy_revisions`: serving the handshake-based
+revisions in parallel is the default and bounded by `max_sessions`.
