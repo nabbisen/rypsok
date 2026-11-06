@@ -179,7 +179,8 @@ announced here with both values.
   every section it said nothing of (`service.http`, `fetch`, `egress`,
   `privacy`, `logging`, `cache`, `scraping`, `resilience`, `limits`), the
   worst-case memory of the settings (13 MiB + fetches × `max_bytes` + parses ×
-  (4.5 × `max_bytes` + 13 MiB) + `max_sessions` × 60 KiB, an estimate
+  (4.5 × `max_bytes` + 13 MiB) + `max_sessions` × 60 KiB while `legacy_revisions`
+  is on, an estimate
   measured on the musl release build), and warnings, each one line `rypsok:
   warning: <key>: <what happens>; <the safer setting>`, for an allow rule wider
   than /16 or /32, `secret_detection = "off"`, a bind off loopback (plain
@@ -188,6 +189,13 @@ announced here with both values.
   engine and a worst case above 256 MiB. The exit code does not change. There
   is no warning for `legacy_revisions`. The format of the lines is not part of
   the contract.
+- A message never repeats a value from the file (RFC 020): an unknown word
+  for a setting is reported as `found an unknown word` after the list of the
+  allowed words, and the name in `api_key_env` or `token_env` is shown in
+  "environment variable X is unset or empty" only when it looks like a
+  variable name (upper-case letters, digits and underscores). A secret pasted
+  into those keys by mistake used to come back in the message, in `check` and
+  in the log of `serve`.
 
 ## [0.8.0] — 2026-10-29 — Corrections from the first independent review
 

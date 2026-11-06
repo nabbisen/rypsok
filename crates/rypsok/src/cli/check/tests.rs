@@ -395,3 +395,90 @@ fn req_perf_003_check_prints_the_memory_estimate() {
             .is_empty()
     );
 }
+
+/// A string shaped like a key, built at run time.
+fn pasted_key() -> String {
+    ["BSAx9f", "K2mQ7v", "Lp3ZtR", "8wYc"].concat()
+}
+
+/// REQ-SEC-020 (RFC 020, L1 of the 020l review): a secret pasted into
+/// `api_key_env` or `token_env` does not come back in what `check` prints or
+/// in the error it fails with (`serve` writes the same message to the log);
+/// a proper variable name is still named.
+#[test]
+fn req_sec_020_check_does_not_repeat_a_secret_pasted_as_a_variable_name() {
+    let pasted = pasted_key();
+    let engine = format!(
+        "config_version = 1\n[engines.b]\ntype = \"brave\"\ncategories = [\"general\"]\napi_key_env = \"{pasted}\"\n"
+    );
+    let report = report_of(&engine).unwrap();
+    let output = all_lines(&report);
+    assert!(!output.contains(&pasted), "{output}");
+    assert!(
+        output.contains("engine b: type=brave enabled=true categories=general preference=100 inactive: the value is not the name of an environment variable (it is not shown)"),
+        "{output}"
+    );
+    // A caller: the error `serve` stops with.
+    let caller = format!(
+        "config_version = 1\n[[service.http.auth.callers]]\nid = \"alpha\"\ntoken_env = \"{pasted}\"\n"
+    );
+    let error = report_of(&caller).err().expect("refused");
+    let text = error.to_string();
+    assert!(!text.contains(&pasted), "{text}");
+    assert_eq!(
+        error.problems,
+        vec![
+            "service.http.auth.callers[0]: the value is not the name of an environment variable (it is not shown); this key names a variable that holds the secret, such as BRAVE_API_KEY, it does not hold the secret"
+        ]
+    );
+    // A proper name is still named.
+    let proper = report_of(
+        "config_version = 1\n[[service.http.auth.callers]]\nid = \"alpha\"\ntoken_env = \"RYPSOK_TEST_CHECK_UNSET_TOKEN\"\n",
+    )
+    .err()
+    .expect("refused");
+    assert_eq!(
+        proper.problems,
+        vec![
+            "service.http.auth.callers[0]: environment variable RYPSOK_TEST_CHECK_UNSET_TOKEN is unset or empty"
+        ]
+    );
+}
+
+/// REQ-PERF-003 (RFC 020, L2 of the 020l review): sessions exist only for
+/// the handshake-based revisions, so their share of the estimate is counted
+/// only while `legacy_revisions` is on. Off, the line says `sessions 0`, the
+/// total drops by the share, and a configuration that fits only without
+/// them is not warned about memory it cannot use.
+#[test]
+fn req_perf_003_sessions_count_only_with_legacy_revisions() {
+    let line = |text: &str| -> String {
+        report_of(text)
+            .unwrap()
+            .lines
+            .into_iter()
+            .find(|l| l.starts_with("rypsok: memory:"))
+            .unwrap()
+    };
+    assert!(
+        line("config_version = 1\n").contains(
+            "about 119 MiB (base 13 + bodies 20 + parses 71 + sessions 15 + cache 0 MiB;"
+        )
+    );
+    let off = line("config_version = 1\n[service.http]\nlegacy_revisions = false\n");
+    assert!(
+        off.contains("about 104 MiB (base 13 + bodies 20 + parses 71 + sessions 0 + cache 0 MiB;"),
+        "{off}"
+    );
+    // The two ceilings together are 289 MiB with sessions and 169 without.
+    let both =
+        "config_version = 1\n[fetch]\nmax_bytes = 10485760\n[service.http]\nmax_sessions = 2048\n";
+    assert_eq!(warnings_of(both).len(), 1);
+    let without = format!("{both}legacy_revisions = false\n");
+    assert_eq!(warnings_of(&without), Vec::<String>::new());
+    assert!(
+        line(&without).contains("about 169 MiB"),
+        "{}",
+        line(&without)
+    );
+}

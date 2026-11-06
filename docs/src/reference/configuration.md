@@ -285,8 +285,12 @@ state, the categories served, `service.http` (the bind, the number of
 callers, `legacy_revisions` and LIM-H1 to LIM-H6), `fetch`, `egress` (the
 number of allow and deny rules, `allow_http`, strict mode, whether a proxy is
 set), `privacy`, `logging`, `cache`, `scraping`, `resilience`, `limits` and
-the `memory` estimate. It never prints a token, an API key, the text of an
-egress rule or the address of a proxy.
+the `memory` estimate (its session share only while `legacy_revisions` is
+on, since sessions exist only then). It never prints a token, an API key, the
+text of an egress rule or the address of a proxy, and no message repeats a
+value from the file: an unknown word for a setting is "an unknown word", and
+a name in `api_key_env` or `token_env` is shown only when it looks like a
+variable name.
 
 ```text
 rypsok: configuration from --config rypsok.toml is valid

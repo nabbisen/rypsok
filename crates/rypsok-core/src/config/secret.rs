@@ -40,12 +40,35 @@ pub enum SecretSource {
 /// value.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SecretError {
-    /// The environment variable is unset or empty.
-    #[error("environment variable {0} is unset or empty")]
+    /// The environment variable is unset or empty. The name is shown only
+    /// when it looks like a variable name: the commonest mistake is to paste
+    /// the secret into the key that should name its variable, and the
+    /// message goes to the log (RFC 020, L1 of the 020l review).
+    #[error("{}", env_unset_text(.0))]
     EnvUnset(String),
     /// The file cannot be read or is empty.
     #[error("secret file {0} cannot be read or is empty")]
     FileUnreadable(PathBuf),
+}
+
+/// Whether a text can be shown as the name of an environment variable:
+/// upper-case letters, digits and underscores, not starting with a digit,
+/// at most 64 characters.
+fn looks_like_a_variable_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && !name.starts_with(|c: char| c.is_ascii_digit())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+}
+
+fn env_unset_text(name: &str) -> String {
+    if looks_like_a_variable_name(name) {
+        format!("environment variable {name} is unset or empty")
+    } else {
+        "the value is not the name of an environment variable (it is not shown); this key names a variable that holds the secret, such as BRAVE_API_KEY, it does not hold the secret".to_owned()
+    }
 }
 
 impl SecretSource {

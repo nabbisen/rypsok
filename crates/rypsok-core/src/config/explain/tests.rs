@@ -247,14 +247,14 @@ fn req_cfg_005_the_invalid_configurations_of_the_audit() {
             "an unknown word for a setting",
             "config_version = 1\n[privacy]\nsecret_detection = \"maybe\"\n",
             Refused(&[
-                "privacy.secret_detection: expected one of off, warn, mask, refuse, found \"maybe\" (line 3, column 20)",
+                "privacy.secret_detection: expected one of off, warn, mask, refuse, found an unknown word (line 3, column 20)",
             ]),
         ),
         (
             "an unknown category",
             "config_version = 1\n[engines.w]\ntype = \"wikipedia\"\ncategories = [\"foo\"]\n",
             Refused(&[
-                "engines.w.categories[0]: expected one of general, news, science, code, found \"foo\" (line 4, column 15)",
+                "engines.w.categories[0]: expected one of general, news, science, code, found an unknown word (line 4, column 15)",
             ]),
         ),
         (
@@ -436,4 +436,87 @@ proptest! {
             }
         }
     }
+}
+
+/// A string shaped like a key that someone pasted where a name belongs,
+/// built at run time (a literal would look like a credential to a scanner).
+fn pasted_key() -> String {
+    ["BSAx9f", "K2mQ7v", "Lp3ZtR", "8wYc"].concat()
+}
+
+/// REQ-SEC-020 and REQ-CFG-005 (RFC 020, L1 of the 020l review): a value
+/// from the file is never repeated in a message. An unknown word for an
+/// enumeration is "an unknown word"; the list of allowed words is what the
+/// reader needs.
+#[test]
+fn req_sec_020_an_unknown_word_is_not_repeated() {
+    let word = ["hunter2", "-secret", "-value"].concat();
+    for (name, text, wanted) in [
+        (
+            "secret_detection",
+            format!("config_version = 1\n[privacy]\nsecret_detection = \"{word}\"\n"),
+            "privacy.secret_detection: expected one of off, warn, mask, refuse, found an unknown word (line 3, column 20)",
+        ),
+        (
+            "a category",
+            format!(
+                "config_version = 1\n[engines.w]\ntype = \"wikipedia\"\ncategories = [\"{word}\"]\n"
+            ),
+            "engines.w.categories[0]: expected one of general, news, science, code, found an unknown word (line 4, column 15)",
+        ),
+        (
+            "the log level",
+            format!("config_version = 1\n[logging]\nlevel = \"{word}\"\n"),
+            "logging.level: expected one of error, warn, info, debug, found an unknown word (line 3, column 9)",
+        ),
+    ] {
+        let found = problems(&text).unwrap_or_else(|| panic!("{name}: accepted"));
+        assert_eq!(found, vec![wanted.to_owned()], "{name}");
+        assert!(!found.join("\n").contains("hunter2"), "{name}");
+    }
+}
+
+/// REQ-SEC-020 (RFC 020, L1 of the 020l review): `api_key_env` and
+/// `token_env` name a variable that holds the secret. The most common
+/// mistake is to paste the secret into them, and the message must not bring
+/// it back: a name that does not look like a variable name (upper case
+/// letters, digits and underscores, at most 64) is not shown. A proper name
+/// is still named; a valid lower-case name is accepted and is not echoed
+/// when its variable is unset.
+#[test]
+fn req_sec_020_a_pasted_secret_in_a_variable_name_is_not_repeated() {
+    use crate::config::{SecretError, SecretSource};
+    let pasted = pasted_key();
+    let not_a_name = "the value is not the name of an environment variable (it is not shown); this key names a variable that holds the secret, such as BRAVE_API_KEY, it does not hold the secret";
+    for (name, value) in [
+        ("a pasted key", pasted.clone()),
+        ("lower case", "my_brave_key".to_owned()),
+        ("a dash", "BRAVE-KEY".to_owned()),
+        ("longer than 64", "A".repeat(65)),
+        ("empty", String::new()),
+    ] {
+        let error = SecretSource::Env(value.clone()).resolve();
+        // An empty or unset variable of such a name does not exist in the test environment.
+        let message = error.unwrap_err().to_string();
+        assert_eq!(message, not_a_name, "{name}");
+        if !value.is_empty() {
+            assert!(!message.contains(&value), "{name}");
+        }
+    }
+    for value in ["RYPSOK_TEST_UNSET_7F3A", "_X", "A", &"A".repeat(64)] {
+        let message = SecretError::EnvUnset(value.to_owned()).to_string();
+        assert_eq!(
+            message,
+            format!("environment variable {value} is unset or empty")
+        );
+    }
+    // In a configuration: valid, and silent about the value when unset.
+    let text = format!(
+        "config_version = 1\n[engines.b]\ntype = \"brave\"\ncategories = [\"general\"]\napi_key_env = \"{pasted}\"\n"
+    );
+    let config = Config::parse(&text).unwrap();
+    assert!(config.validate().is_ok(), "{:?}", config.validate());
+    let table = &config.engines["b"];
+    let error = table.secret_source().unwrap().resolve().unwrap_err();
+    assert!(!error.to_string().contains(&pasted), "{error}");
 }

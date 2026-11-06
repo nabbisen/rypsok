@@ -22,6 +22,7 @@ ever goes to standard output except protocol messages.
 | `service.http.bind: a non-loopback bind needs [service.http.auth] callers` | A bind off loopback without tokens | Add callers, or bind on loopback |
 | `service.http.bind: a bind on an unspecified address (0.0.0.0, ::) needs service.http.allowed_hosts` | No `Host` name a client would send | List the names the proxy forwards |
 | An engine line ends with `inactive: environment variable ... is unset or empty` | The key is not in the environment of the process that runs rypsok | Export it where rypsok starts (a service has its own environment) |
+| `...: the value is not the name of an environment variable (it is not shown)` | `api_key_env` or `token_env` holds something that is not a variable name (upper-case letters, digits and underscores): most often the secret itself, pasted into the key that should name the variable | Put the secret in the environment (`export BRAVE_API_KEY=...`) and write only its name in the file; rotate the secret if the file was shared, since it was written there |
 | Exit code 2 | A usage error on the command line | `rypsok --help` |
 
 ## During searches

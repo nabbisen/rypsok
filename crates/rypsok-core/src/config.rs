@@ -1052,14 +1052,21 @@ impl Config {
 
     /// The worst-case memory for these settings (RFC 020 D-20, D-21): the
     /// formula of [`Limits::worst_case_memory`] with the cache bound when
-    /// the cache is on.
+    /// the cache is on and the sessions only while `legacy_revisions` is on.
     pub fn worst_case_memory(&self) -> crate::limits::MemoryEstimate {
         let cache_bytes = if self.cache.enabled {
             u64::from(self.cache.max_entries) * u64::from(self.cache.max_entry_bytes)
         } else {
             0
         };
-        self.limits().worst_case_memory(cache_bytes)
+        let mut estimate = self.limits().worst_case_memory(cache_bytes);
+        // Sessions exist only for the handshake-based revisions: a
+        // configuration is not warned about memory it cannot use (RFC 020,
+        // L2 of the 020l review).
+        if !self.service.http.legacy_revisions {
+            estimate.sessions = 0;
+        }
+        estimate
     }
 
     /// The default language: the first configured one.

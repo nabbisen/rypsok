@@ -348,16 +348,14 @@ pub(super) fn explain(text: &str, error: &toml::de::Error) -> String {
         return named(format!("unknown key; expected one of {list}"));
     }
     if message.starts_with("unknown variant") {
-        let words = backticked(message);
-        let given: String = words
-            .first()
-            .copied()
-            .unwrap_or("")
-            .chars()
-            .take(40)
-            .collect();
-        let list = words.iter().skip(1).copied().collect::<Vec<_>>().join(", ");
-        return named(format!("expected one of {list}, found \"{given}\""));
+        // The word is not repeated: it may be a secret put in the wrong
+        // key, and the message reaches the log (L1 of the 020l review).
+        let list = backticked(message)
+            .into_iter()
+            .skip(1)
+            .collect::<Vec<_>>()
+            .join(", ");
+        return named(format!("expected one of {list}, found an unknown word"));
     }
     if let Some(field) = message.strip_prefix("missing field `") {
         let field = field.trim_end_matches('`');

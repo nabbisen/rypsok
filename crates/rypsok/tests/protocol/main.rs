@@ -979,12 +979,16 @@ fn req_ops_001_check_and_serve_refuse_the_same_callers_alike() {
     let short = std::env::temp_dir().join(format!("rypsok-short-token-{}", std::process::id()));
     std::fs::write(&short, "12345").unwrap();
     let short_text = short.to_str().unwrap().replace('\\', "/");
+    let pasted = ["BSAx9f", "K2mQ7v", "Lp3ZtR", "8wYc"].concat();
     for (name, source) in [
         (
             "an unset variable",
             "token_env = \"RYPSOK_TEST_NO_SUCH_VARIABLE\"".to_owned(),
         ),
         ("a short token", format!("token_file = \"{short_text}\"")),
+        // A secret pasted where a variable name belongs (L1 of the 020l
+        // review): built at run time, and never in the output of either.
+        ("a pasted secret", format!("token_env = \"{pasted}\"")),
     ] {
         let config = config_file(&format!(
             "config_version = 1\n[service.http]\nbind = \"127.0.0.1:0\"\n[[service.http.auth.callers]]\nid = \"alpha\"\n{source}\n"
@@ -1016,6 +1020,13 @@ fn req_ops_001_check_and_serve_refuse_the_same_callers_alike() {
             "{name}: {line}"
         );
         assert_eq!(line, problem(&serve), "{name}");
+        for (which, out) in [("check", &check), ("serve", &serve)] {
+            let all = String::from_utf8_lossy(&out.stderr).into_owned();
+            assert!(
+                !all.contains(&pasted),
+                "{name}: {which} repeats the secret: {all}"
+            );
+        }
     }
     let _ = std::fs::remove_file(&short);
 }

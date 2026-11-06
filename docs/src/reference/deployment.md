@@ -96,7 +96,7 @@ it is above the 256 MiB of this unit. The estimate is
 13 MiB
 + limits.fetches_in_flight × fetch.max_bytes
 + limits.parsing_in_flight × (4.5 × fetch.max_bytes + 13 MiB)
-+ service.http.max_sessions × 60 KiB
++ service.http.max_sessions × 60 KiB   (only while legacy_revisions is on)
 + cache.max_entries × cache.max_entry_bytes   (only when the cache is on)
 ```
 

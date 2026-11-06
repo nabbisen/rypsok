@@ -143,7 +143,7 @@ up, and `rypsok check` combines them with the effective settings into the
 worst-case memory it prints and compares with `MemoryMax` of the documented
 unit (RFC 020 D-20, D-21):
 
-`13 MiB + fetches_in_flight × max_bytes + parsing_in_flight × (4.5 × max_bytes + 13 MiB) + max_sessions × 60 KiB`,
+`13 MiB + fetches_in_flight × max_bytes + parsing_in_flight × (4.5 × max_bytes + 13 MiB) + max_sessions × 60 KiB` (the sessions only while `legacy_revisions` is on),
 plus `cache.max_entries × cache.max_entry_bytes` (LIM-K3 × LIM-K4) when the
 cache is on. It is an estimate, not a guarantee.
 
