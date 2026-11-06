@@ -29,7 +29,11 @@ findings only); fixes: [`020j`](../handoffs/020j-lock-helper/README.md),
 [`020k`](../handoffs/020k-trustworthy-answers/README.md); wave 2:
 [`020l`](../handoffs/020l-check-and-configuration/README.md),
 [`020m`](../handoffs/020m-promises-with-tests/README.md),
-[`020n`](../handoffs/020n-text-fidelity/README.md) (more follow).
+[`020n`](../handoffs/020n-text-fidelity/README.md); wave 3:
+[`020q`](../handoffs/020q-verification-debt/README.md),
+[`020r`](../handoffs/020r-request-id/README.md),
+[`020s`](../handoffs/020s-clean-up/README.md),
+[`020u`](../handoffs/020u-fuzz-targets/README.md) (more follow).
 
 ## Problem and motivation
 
