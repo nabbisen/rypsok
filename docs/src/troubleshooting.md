@@ -70,6 +70,14 @@ ever goes to standard output except protocol messages.
 
 ## Logs
 
+**Follow one call.** Every event of a tool call has the same `request_id`
+and the `caller`. Find the `call` event of the call you care about (it has
+the `tool`, the `outcome` and the `latency_ms`), then select its id:
+`jq -c 'select(.request_id == "01a2b3c4d5e-000007")'` on the log gives that
+call's engine events, its refusals and its end, in order, and nothing of
+another call that ran at the same time. `jq -c 'select(.caller == "ops")'`
+gives one caller's calls. The `engine_status` tool logs a `call` event too.
+
 Each line has an `event`. The ones you will look for: `call` (one per
 tool call with its outcome and latency), `engine_failed` (engine and
 class), `refused` (what was refused and why), `http_refused`,

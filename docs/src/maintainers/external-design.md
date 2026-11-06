@@ -540,7 +540,8 @@ allow rule, and any unknown key (REQ-CFG-005).
 ### 13.3 Logs
 
 Structured lines on stderr (REQ-OBS-005): timestamp, level, request
-identifier, event, engine, host name, latency, counts, outcome, policy
+identifier and caller (top-level fields of every event of a call, carried by
+a span around the call; RFC 020, TST-2), event, engine, host name, latency, counts, outcome, policy
 decision. Never query text, URL paths or content at the default level; the
 host name of a fetch only after it passed the egress policy (REQ-PRIV-004). Refused calls are counted per tool and reason (REQ-OBS-007).
 

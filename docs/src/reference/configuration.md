@@ -182,6 +182,21 @@ applies to all patterns; there is no per-pattern setting.
 | `level` | `"info"` | `error`, `warn`, `info`, `debug` | Log level (LIM-P2) |
 | `log_queries` | `false` | boolean | Debug mode: query text in `debug` events; `serve` warns at start (LIM-P3) |
 
+Every line is one JSON object on standard error with `timestamp`, `level`,
+`event` and the fields of the event. **Every event of a tool call carries
+two more fields, `request_id` and `caller`**, without the event naming them:
+the id is a per-call identifier (the start time in milliseconds and a
+sequence number, in hexadecimal), unique within the process and different
+for every call; the caller is the id of `[[service.http.auth.callers]]` that
+made the call, or `local` over stdio and on a listener without callers (the
+operator's label, never a token). They are on the events of the engines, the
+refusals, `fetched` and the closing `call` event alike, and at every log
+level. The id is not returned to the caller and is in no response. Events of
+the MCP SDK and of the HTTP stack (`rmcp`, `hyper`) are written outside the
+call and have neither field, and so does an event of the listener's gate (a
+refused request) or a tool call that the adapter refuses before the service
+sees it (a rate limit): those have no id yet.
+
 ## `[status]`
 
 | Key | Default | Range | Meaning |

@@ -14,6 +14,23 @@ announced here with both values.
 
 ## [Unreleased]
 
+### Added
+
+- Every event of a tool call now carries `request_id` and `caller` as
+  top-level fields of its log line (RFC 009 and RFC 013 promised them; no
+  line had them): a per-call identifier (the start time in milliseconds and
+  a sequence number, in hexadecimal; unique within the process, different for
+  each call, not returned to the caller and in no response) and the caller's
+  id (`local` over stdio and on a listener without callers). They are on the
+  engines' events, the refusals, `fetched` and the closing `call` event, at
+  every log level, and calls that overlap do not mix their ids. `engine_status`
+  logs a `call` event like the other tools, with its outcome and latency. The
+  events of the MCP SDK and of the HTTP stack, and of the listener's gate, are
+  outside a call and have neither field. `Rypsok::fetch_as` and
+  `Rypsok::status_as` take the caller, as `search_as` does; `fetch` and
+  `status` are as before and say `local`. The log format is not part of the
+  contract.
+
 ### Fixed
 
 - A panic inside a critical section no longer makes every later call
