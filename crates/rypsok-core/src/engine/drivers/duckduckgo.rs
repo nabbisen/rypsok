@@ -232,8 +232,10 @@ impl Driver for DuckDuckGo {
         };
         let max_nodes = self.html_max_nodes;
         let max_results = usize::from(req.max_results);
+        let call = tracing::Span::current();
         let page = tokio::task::spawn_blocking(move || {
             let _permit = permit;
+            let _call = call.enter();
             let decoded = charset::decode(&body, declared.as_deref());
             // LIM-F11 is a fixed limit: the constant is the value everywhere.
             let tree = dom::parse(

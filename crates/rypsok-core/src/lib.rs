@@ -318,6 +318,17 @@ impl Rypsok {
         req: FetchRequest,
         cancel: CancellationToken,
     ) -> Result<FetchResponse, CallError> {
+        self.fetch_as(&CallerId::local(), req, cancel).await
+    }
+
+    /// [`Self::fetch`] on behalf of `caller`, whose id labels the call's log
+    /// lines (RFC 020, TST-2). Over stdio the caller is `local`.
+    pub async fn fetch_as(
+        &self,
+        caller: &CallerId,
+        req: FetchRequest,
+        cancel: CancellationToken,
+    ) -> Result<FetchResponse, CallError> {
         let pipeline = fetch::Pipeline {
             limits: &self.limits,
             policy: &self.egress,
@@ -328,6 +339,7 @@ impl Rypsok {
             follow_cross_host_redirects: self.config.fetch.follow_cross_host_redirects,
             secret_detection: self.config.privacy.secret_detection,
             counters: &self.counters,
+            caller,
         };
         fetch::run(&pipeline, req, cancel).await
     }
@@ -345,10 +357,30 @@ impl Rypsok {
     /// leaves the host; at most LIM-S13 long. A snapshot of the health
     /// table under a read lock: no I/O, no await (REQ-STATUS-001).
     pub fn status(&self) -> StatusResponse {
-        StatusResponse {
-            outcome: Outcome::Ok,
-            notices: Vec::new(),
-            engines: self.health.snapshot(),
-        }
+        self.status_as(&CallerId::local())
+    }
+
+    /// [`Self::status`] on behalf of `caller`, whose id labels the call's
+    /// log line. Like the other tools it logs one `call` event with the
+    /// outcome and the latency (RFC 009; RFC 020, TST-2, TST-15).
+    pub fn status_as(&self, caller: &CallerId) -> StatusResponse {
+        let start = std::time::Instant::now();
+        let span = telemetry::call_span("engine_status", caller);
+        span.in_scope(|| {
+            let response = StatusResponse {
+                outcome: Outcome::Ok,
+                notices: Vec::new(),
+                engines: self.health.snapshot(),
+            };
+            tracing::info!(
+                event = "call",
+                tool = "engine_status",
+                outcome = "ok",
+                latency_ms = start.elapsed().as_millis() as u64,
+                count = response.engines.len(),
+                "call ended"
+            );
+            response
+        })
     }
 }

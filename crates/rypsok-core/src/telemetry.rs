@@ -4,15 +4,16 @@
 
 pub mod counters;
 pub mod health;
+mod line;
 
 use tracing_subscriber::filter::{LevelFilter, Targets};
-use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::prelude::*;
 
 use crate::config::LogLevel;
 
 pub use counters::Counters;
 pub use health::HealthTable;
+pub use line::{LineFormat, layer};
 
 /// The crates whose events follow the configured level. Every other
 /// target is capped at [`FOREIGN_CAP`] whatever the level, because a
@@ -28,14 +29,8 @@ pub const FOREIGN_CAP: LevelFilter = LevelFilter::WARN;
 /// standard error at the configured level (REQ-OBS-005). Calling it twice
 /// is harmless; the second call changes nothing.
 pub fn init(level: LogLevel) {
-    let layer = tracing_subscriber::fmt::layer()
-        .json()
-        .flatten_event(true)
-        .with_timer(UtcTime::rfc_3339())
-        .with_target(false)
-        .with_writer(std::io::stderr);
     let _ = tracing_subscriber::registry()
-        .with(layer.with_filter(filter(level)))
+        .with(layer(std::io::stderr).with_filter(filter(level)))
         .try_init();
 }
 
@@ -66,6 +61,76 @@ pub fn request_id() -> String {
         "{millis:011x}-{:06x}",
         SEQUENCE.fetch_add(1, Ordering::Relaxed)
     )
+}
+
+/// The span of one tool call (RFC 020, TST-2): a request identifier and the
+/// caller, which every event inside the call then carries as top-level fields
+/// of its line. The id is the process's own, unique within it; it is not
+/// returned to the caller. The span is at `error` level so that it exists at
+/// every configured log level: a `warn` line of a refusal has the id too.
+pub fn call_span(tool: &'static str, caller: &crate::model::CallerId) -> tracing::Span {
+    tracing::error_span!("call", request_id = %request_id(), caller = %caller, tool = tool)
+}
+
+/// What the tests of this crate use to read the log: a subscriber built with
+/// the layer the process installs, writing to a buffer.
+#[cfg(test)]
+pub(crate) mod capture {
+    use std::io::Write;
+    use std::sync::{Arc, Mutex};
+
+    use serde_json::Value;
+    use tracing_subscriber::fmt::MakeWriter;
+    use tracing_subscriber::prelude::*;
+
+    /// The captured text of one test.
+    #[derive(Clone, Default)]
+    pub struct Buffer(Arc<Mutex<Vec<u8>>>);
+
+    pub struct BufferWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for BufferWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            crate::sync::lock(&self.0).extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> MakeWriter<'a> for Buffer {
+        type Writer = BufferWriter;
+
+        fn make_writer(&'a self) -> BufferWriter {
+            BufferWriter(Arc::clone(&self.0))
+        }
+    }
+
+    impl Buffer {
+        /// The lines written so far, each parsed (a line that is not a JSON
+        /// object fails the test).
+        pub fn lines(&self) -> Vec<Value> {
+            let text = String::from_utf8(crate::sync::lock(&self.0).clone()).unwrap();
+            text.lines()
+                .map(|line| {
+                    serde_json::from_str::<Value>(line)
+                        .unwrap_or_else(|e| panic!("not a JSON line ({e}): {line}"))
+                })
+                .collect()
+        }
+    }
+
+    /// A subscriber for the current thread at `debug` level, with the
+    /// process's line layer; the guard ends it.
+    pub fn at_debug() -> (Buffer, tracing::subscriber::DefaultGuard) {
+        let buffer = Buffer::default();
+        let subscriber = tracing_subscriber::registry().with(
+            super::layer(buffer.clone()).with_filter(super::filter(crate::config::LogLevel::Debug)),
+        );
+        (buffer, tracing::subscriber::set_default(subscriber))
+    }
 }
 
 #[cfg(test)]

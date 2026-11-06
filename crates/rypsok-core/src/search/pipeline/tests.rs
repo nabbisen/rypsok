@@ -78,6 +78,10 @@ impl Driver for Scripted {
         cancel: CancellationToken,
     ) -> Result<EngineResponse, EngineError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
+        // An event from inside the engine's task, as a driver writes one
+        // (`provider_error` is such an event): it is in the call's span only
+        // if the task carries the span with it (RFC 020, TST-2).
+        tracing::debug!(event = "driver_ran", "the driver was asked");
         let answer = |items: &[(&str, &str, &str)]| EngineResponse {
             results: items
                 .iter()
@@ -251,6 +255,34 @@ impl Harness {
         };
         let validated = super::super::validate(&req, &self.policy).unwrap();
         run(&pipeline, validated, cancel).await
+    }
+
+    /// One call as `caller`, whatever `self.caller` is: two of these can run
+    /// at once on one harness.
+    async fn search_for(
+        &self,
+        caller: &CallerId,
+        req: SearchRequest,
+    ) -> Result<SearchResponse, CallError> {
+        let pipeline = Pipeline {
+            registry: &self.registry,
+            limits: &self.limits,
+            policy: &self.policy,
+            region: "US",
+            safe_search: SafeSearch::Moderate,
+            secret_detection: SecretDetection::Refuse,
+            drop_flagged: false,
+            engine_attribution: false,
+            log_queries: false,
+            outbound: Arc::new(Semaphore::new(32)),
+            counters: &self.counters,
+            health: &self.health,
+            returned: &self.returned,
+            caller,
+            cache: self.cache.as_deref(),
+        };
+        let validated = super::super::validate(&req, &self.policy).unwrap();
+        run(&pipeline, validated, CancellationToken::new()).await
     }
 
     /// Calls as another caller (REQ-CACHE-004).
@@ -1622,4 +1654,139 @@ async fn req_sec_003_decoded_text_keeps_its_angle_brackets_through_the_cache() {
     }
     assert_eq!(results[0], results[1]);
     assert_eq!(h.engine_calls(0), 1, "the second call came from the cache");
+}
+
+/// The lines of the log grouped by their `request_id`, in order.
+fn by_request(
+    lines: &[serde_json::Value],
+) -> std::collections::BTreeMap<String, Vec<&serde_json::Value>> {
+    let mut groups: std::collections::BTreeMap<String, Vec<&serde_json::Value>> =
+        Default::default();
+    for line in lines {
+        let id = line["request_id"]
+            .as_str()
+            .unwrap_or_else(|| panic!("a line without a request_id: {line}"))
+            .to_owned();
+        groups.entry(id).or_default().push(line);
+    }
+    groups
+}
+
+/// REQ-OBS-005 (RFC 020, TST-2): every event of a search carries the
+/// request id of the call and the caller, the engines' events included, and
+/// two calls have different ids. The id is in no response.
+#[tokio::test(start_paused = true)]
+async fn req_obs_005_every_event_of_a_search_has_its_request_id_and_caller() {
+    let (log, _guard) = crate::telemetry::capture::at_debug();
+    let h = harness(vec![
+        ("a", Script::Answer(A.to_vec())),
+        ("b", Script::Answer(B.to_vec())),
+    ]);
+    let first = h.search_for(&CallerId::new("alpha"), req()).await.unwrap();
+    let second = h.search_for(&CallerId::new("beta"), req()).await.unwrap();
+    let lines = log.lines();
+    let groups = by_request(&lines);
+    assert_eq!(groups.len(), 2, "two calls, two ids: {groups:#?}");
+    let mut callers = Vec::new();
+    for (id, events) in &groups {
+        assert_eq!(id.len(), 18, "{id}");
+        let calls: Vec<_> = events.iter().filter(|e| e["event"] == "call").collect();
+        assert_eq!(calls.len(), 1, "{id}: one call event: {events:#?}");
+        assert_eq!(calls[0]["tool"], "web_search");
+        let answered = events
+            .iter()
+            .filter(|e| e["event"] == "engine_answered")
+            .count();
+        assert_eq!(
+            answered, 2,
+            "{id}: both engines' events are in the call: {events:#?}"
+        );
+        let drivers = events.iter().filter(|e| e["event"] == "driver_ran").count();
+        assert_eq!(
+            drivers, 2,
+            "{id}: the events of the engines' tasks are in the call: {events:#?}"
+        );
+        assert!(
+            events.iter().all(|e| e["caller"] == calls[0]["caller"]),
+            "{id}"
+        );
+        callers.push(calls[0]["caller"].as_str().unwrap().to_owned());
+    }
+    callers.sort();
+    assert_eq!(callers, ["alpha", "beta"]);
+    // The id is not part of any response.
+    for response in [&first, &second] {
+        assert!(
+            !serde_json::to_string(response)
+                .unwrap()
+                .contains("request_id")
+        );
+    }
+}
+
+/// REQ-OBS-005 (RFC 020, TST-2): calls that overlap in time do not mix their
+/// ids: one slow engine keeps two calls in flight at once, and each id has
+/// exactly its own call event and its own engine events.
+#[tokio::test(start_paused = true)]
+async fn req_obs_005_concurrent_searches_do_not_mix_their_ids() {
+    let (log, _guard) = crate::telemetry::capture::at_debug();
+    let h = harness(vec![
+        ("fast", Script::Answer(A.to_vec())),
+        ("slow", Script::Slow(Duration::from_millis(200), B.to_vec())),
+    ]);
+    let alpha = CallerId::new("alpha");
+    let beta = CallerId::new("beta");
+    let (one, two) = tokio::join!(h.search_for(&alpha, req()), async {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        h.search_for(&beta, req()).await
+    });
+    one.unwrap();
+    two.unwrap();
+    let lines = log.lines();
+    let groups = by_request(&lines);
+    assert_eq!(groups.len(), 2, "{groups:#?}");
+    let mut callers = Vec::new();
+    for (id, events) in &groups {
+        let calls: Vec<_> = events.iter().filter(|e| e["event"] == "call").collect();
+        assert_eq!(calls.len(), 1, "{id}: {events:#?}");
+        let answered = events
+            .iter()
+            .filter(|e| e["event"] == "engine_answered")
+            .count();
+        assert_eq!(answered, 2, "{id}: {events:#?}");
+        let drivers = events.iter().filter(|e| e["event"] == "driver_ran").count();
+        assert_eq!(drivers, 2, "{id}: {events:#?}");
+        assert!(
+            events.iter().all(|e| e["caller"] == calls[0]["caller"]),
+            "{id}"
+        );
+        callers.push(calls[0]["caller"].as_str().unwrap().to_owned());
+    }
+    callers.sort();
+    assert_eq!(
+        callers,
+        ["alpha", "beta"],
+        "the two ids belong to the two callers"
+    );
+}
+
+/// REQ-OBS-005 (RFC 020, TST-2): a refused search has the id too.
+#[tokio::test(start_paused = true)]
+async fn req_obs_005_a_refused_search_carries_the_request_id() {
+    let (log, _guard) = crate::telemetry::capture::at_debug();
+    let h = harness(vec![("a", Script::Answer(A.to_vec()))]);
+    let secret = ["ghp_", &"A1b2C3d4E5f6G7h8I9j0".repeat(2)].concat();
+    let error = h
+        .search_for(
+            &CallerId::local(),
+            SearchRequest::new(format!("find {secret}")),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(error, CallError::Tool(_)));
+    let lines = log.lines();
+    assert!(!lines.is_empty());
+    let groups = by_request(&lines);
+    assert_eq!(groups.len(), 1, "{lines:#?}");
+    assert!(lines.iter().all(|l| l["caller"] == "local"));
 }

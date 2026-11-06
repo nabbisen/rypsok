@@ -13,6 +13,7 @@ use tokio::time::Instant;
 
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
+use tracing::Instrument;
 
 use super::normalize::{self, UrlRejection};
 use super::rank::{self, Observation};
@@ -86,6 +87,17 @@ enum Ended {
 /// nothing is returned: the call ends as [`CallError::Cancelled`]
 /// (REQ-MCP-007).
 pub async fn run(
+    p: &Pipeline<'_>,
+    search: ValidatedSearch,
+    cancel: CancellationToken,
+) -> Result<SearchResponse, CallError> {
+    // Every event of the call, those of the engines' tasks included, carries
+    // the request id and the caller (RFC 020, TST-2).
+    let span = crate::telemetry::call_span("web_search", p.caller);
+    run_call(p, search, cancel).instrument(span).await
+}
+
+async fn run_call(
     p: &Pipeline<'_>,
     mut search: ValidatedSearch,
     cancel: CancellationToken,
@@ -225,21 +237,29 @@ pub async fn run(
         let request = request.clone();
         let outbound = Arc::clone(&p.outbound);
         let child = cancel.child_token();
-        let handle = tasks.spawn(async move {
-            let Ok(_global) =
-                tokio::time::timeout_at(fan_out_deadline, outbound.acquire_owned()).await
-            else {
-                return (index, Ended::Skipped(Reason::RateLimited));
-            };
-            let Ok(_permit) = engine.limiter.acquire(fan_out_deadline.into_std()).await else {
-                return (index, Ended::Skipped(Reason::RateLimited));
-            };
-            let Some(driver) = engine.driver.as_deref() else {
-                return (index, Ended::Skipped(Reason::Cooldown));
-            };
-            let started = Instant::now();
-            let ended =
-                match tokio::time::timeout(engine_timeout, driver.search(&request, child)).await {
+        // The task runs on another thread of the runtime: it carries the
+        // span of the call with it.
+        let call = tracing::Span::current();
+        let handle = tasks.spawn(
+            async move {
+                let Ok(_global) =
+                    tokio::time::timeout_at(fan_out_deadline, outbound.acquire_owned()).await
+                else {
+                    return (index, Ended::Skipped(Reason::RateLimited));
+                };
+                let Ok(_permit) = engine.limiter.acquire(fan_out_deadline.into_std()).await else {
+                    return (index, Ended::Skipped(Reason::RateLimited));
+                };
+                let Some(driver) = engine.driver.as_deref() else {
+                    return (index, Ended::Skipped(Reason::Cooldown));
+                };
+                let started = Instant::now();
+                let ended = match tokio::time::timeout(
+                    engine_timeout,
+                    driver.search(&request, child),
+                )
+                .await
+                {
                     Ok(Ok(response)) => Ended::Answered(response, started.elapsed()),
                     Ok(Err(error)) => Ended::Failed {
                         class: error.class,
@@ -252,8 +272,10 @@ pub async fn run(
                         latency: None,
                     },
                 };
-            (index, ended)
-        });
+                (index, ended)
+            }
+            .instrument(call),
+        );
         task_engines.insert(handle.id(), index);
     }
 

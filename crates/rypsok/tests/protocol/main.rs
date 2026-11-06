@@ -1031,6 +1031,47 @@ fn req_ops_001_check_and_serve_refuse_the_same_callers_alike() {
     let _ = std::fs::remove_file(&short);
 }
 
+/// REQ-OBS-005 (RFC 020, TST-2, TST-15): over stdio the `call` event of a
+/// tool carries `caller: local` and a request id, `engine_status` has a
+/// `call` event, and two calls have different ids. The id is in no response.
+#[cfg(unix)]
+#[test]
+fn req_obs_005_stdio_call_events_are_local_and_carry_a_request_id() {
+    let mut s = Session::start(None);
+    s.discover();
+    let fetch = s.request(
+        "tools/call",
+        json!({ "name": "web_fetch", "arguments": { "url": "ftp://127.0.0.1/x" } }),
+    );
+    let status = s.request(
+        "tools/call",
+        json!({ "name": "engine_status", "arguments": {} }),
+    );
+    for response in [&fetch, &status] {
+        assert!(!response.to_string().contains("request_id"), "{response}");
+    }
+    let (_, _, stderr) = s.close_and_wait(std::time::Duration::from_millis(3000));
+    let calls: Vec<Value> = stderr
+        .lines()
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .filter(|v| v["event"] == "call")
+        .collect();
+    let tools: Vec<&str> = calls.iter().map(|c| c["tool"].as_str().unwrap()).collect();
+    assert!(
+        tools.contains(&"web_fetch") && tools.contains(&"engine_status"),
+        "{calls:#?}"
+    );
+    let mut ids: Vec<&str> = Vec::new();
+    for call in &calls {
+        assert_eq!(call["caller"], "local", "{call}");
+        ids.push(call["request_id"].as_str().expect("a request id"));
+    }
+    let count = ids.len();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), count, "every call has its own id");
+}
+
 /// A minimal HTTP POST of a JSON-RPC body to `/mcp` of the 2026-07-28
 /// revision: the status code, or `None` when nothing answers.
 #[cfg(unix)]

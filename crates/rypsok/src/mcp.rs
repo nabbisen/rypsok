@@ -184,7 +184,11 @@ impl ServerHandler for Adapter {
                 } else {
                     match tools::parse_fetch_arguments(request.arguments.as_ref()) {
                         Err(error) => self.render_error(error),
-                        Ok(req) => match self.service.fetch(req, context.ct.clone()).await {
+                        Ok(req) => match self
+                            .service
+                            .fetch_as(&caller, req, context.ct.clone())
+                            .await
+                        {
                             Ok(response) => self.render_ok(&response),
                             Err(CallError::Tool(error)) => self.render_error(error),
                             Err(CallError::Cancelled) => {
@@ -204,7 +208,7 @@ impl ServerHandler for Adapter {
                 } else if request.arguments.as_ref().is_some_and(|a| !a.is_empty()) {
                     self.render_error(ToolError::unknown_parameter(&[]))
                 } else {
-                    self.render_ok(&self.service.status())
+                    self.render_ok(&self.service.status_as(&caller))
                 }
             }
             // An unknown tool is the one case that is a protocol error

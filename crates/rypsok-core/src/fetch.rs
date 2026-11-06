@@ -18,6 +18,7 @@ use std::time::Duration;
 
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::Instant;
+use tracing::Instrument;
 use url::Url;
 
 use crate::CancellationToken;
@@ -29,7 +30,8 @@ use crate::egress::strict::ReturnedUrls;
 use crate::egress::{self, AgentClientSettings, BodyError, ClientError, EgressPolicy};
 use crate::limits::Limits;
 use crate::model::{
-    CallError, DetailReason, FetchRequest, FetchResponse, Notice, NoticeCode, Outcome, ToolError,
+    CallError, CallerId, DetailReason, FetchRequest, FetchResponse, Notice, NoticeCode, Outcome,
+    ToolError,
 };
 use crate::privacy::{self, Sensitive, Verdict};
 use crate::search::normalize::{self, comparison_key};
@@ -239,11 +241,25 @@ pub struct Pipeline<'a> {
     pub secret_detection: SecretDetection,
     /// The counters.
     pub counters: &'a Counters,
+    /// The caller on whose behalf the call runs: it labels the call's log
+    /// lines (`local` over stdio).
+    pub caller: &'a CallerId,
 }
 
 /// Runs one `web_fetch` call under LIM-F5. A cancelled call ends as
 /// [`CallError::Cancelled`] and whatever was in flight is dropped.
 pub async fn run(
+    p: &Pipeline<'_>,
+    req: FetchRequest,
+    cancel: CancellationToken,
+) -> Result<FetchResponse, CallError> {
+    // Every event of the call carries the request id and the caller (RFC
+    // 020, TST-2).
+    let span = crate::telemetry::call_span("web_fetch", p.caller);
+    run_call(p, req, cancel).instrument(span).await
+}
+
+async fn run_call(
     p: &Pipeline<'_>,
     req: FetchRequest,
     cancel: CancellationToken,
@@ -396,7 +412,9 @@ async fn run_inner(
     let media = fetched.media;
     let charset = fetched.charset.clone();
     let body = fetched.body;
+    let call = tracing::Span::current();
     let task = tokio::task::spawn_blocking(move || {
+        let _call = call.enter();
         render_document(&body, media, charset.as_deref(), &limits_for_task)
     });
     let document = match tokio::time::timeout_at(call_deadline, task).await {
