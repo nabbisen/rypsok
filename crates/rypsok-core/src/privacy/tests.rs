@@ -589,3 +589,154 @@ fn req_priv_002_the_overlap_predicate_at_its_edges() {
         assert_eq!(overlaps(&found, start, end), overlaps_it, "{start}..{end}");
     }
 }
+
+// --- Mutants the audit run left alive (RFC 020, TST-7) ----------------------
+// Every sample is built here at run time from pieces; none is a real
+// credential.
+
+/// Base64 of `bytes`, standard or URL-safe alphabet, without padding.
+fn b64(bytes: &[u8], url_safe: bool) -> String {
+    let alphabet: Vec<char> = ('A'..='Z')
+        .chain('a'..='z')
+        .chain('0'..='9')
+        .chain(if url_safe { ['-', '_'] } else { ['+', '/'] })
+        .collect();
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let n = chunk
+            .iter()
+            .enumerate()
+            .fold(0u32, |n, (i, b)| n | u32::from(*b) << (16 - 8 * i));
+        for i in 0..=chunk.len() {
+            out.push(alphabet[((n >> (18 - 6 * i)) & 63) as usize]);
+        }
+    }
+    out
+}
+
+fn kinds(text: &str) -> Vec<SecretKind> {
+    scan(text).into_iter().map(|f| f.kind).collect()
+}
+
+/// REQ-PRIV-002: the "mixed" rules ask for a digit, an upper-case and a
+/// lower-case letter, each; a key body missing one of the three is a word or
+/// an identifier, not a key (mutants of `has_lower` and of the `&&` between
+/// the three were missed).
+#[test]
+fn req_priv_002_a_mixed_key_needs_a_digit_an_upper_and_a_lower_case_letter() {
+    let key = |body: &str| format!("sk-{body}");
+    let mixed = "A1b2C3d4E5".repeat(5);
+    assert_eq!(kinds(&key(&mixed)), [SecretKind::OpenaiKey]);
+    // No lower-case letter.
+    assert!(kinds(&key(&"A1B2C3D4E5".repeat(5))).is_empty());
+    // Lower-case letters only.
+    assert!(kinds(&key(&"abcdefghij".repeat(5))).is_empty());
+    // No digit.
+    assert!(kinds(&key(&"AbCdEfGhIj".repeat(5))).is_empty());
+    // No upper-case letter.
+    assert!(kinds(&key(&"a1b2c3d4e5".repeat(5))).is_empty());
+}
+
+/// REQ-PRIV-002: a JWT is a header that is a JSON object naming `alg` or
+/// `enc` and a payload that is a JSON object; a segment that merely starts
+/// with `{` or merely ends with `}` is not an object (mutants of
+/// `is_json_object` and of the `&&` of the check were missed).
+#[test]
+fn req_priv_002_a_jwt_is_two_json_objects_and_the_header_names_its_algorithm() {
+    let token = |header: &str, payload: &str| {
+        format!(
+            "{}.{}.{}",
+            b64(header.as_bytes(), true),
+            b64(payload.as_bytes(), true),
+            "signature0123456789"
+        )
+    };
+    let header = r#"{"alg":"HS256","typ":"JWT"}"#;
+    let payload = r#"{"sub":"1234567890","name":"x"}"#;
+    assert_eq!(kinds(&token(header, payload)), [SecretKind::Jwt]);
+    assert_eq!(
+        kinds(&token(r#"{"enc":"A128GCM","x":1}"#, payload)),
+        [SecretKind::Jwt]
+    );
+    // A header that is an object but names neither `alg` nor `enc`.
+    assert!(kinds(&token(r#"{"typ":"JWT","x":1234567890}"#, payload)).is_empty());
+    // A header that names `alg` but is not a complete object.
+    assert!(kinds(&token(r#"{"alg":"HS256","typ":"JWT""#, payload)).is_empty());
+    // A payload that is an array, one that opens and does not close, and one
+    // that closes and does not open.
+    assert!(kinds(&token(header, "[1,2,3,4,5,6,7,8,9]")).is_empty());
+    assert!(kinds(&token(header, r#"{"sub":"1234567890","x":["#)).is_empty());
+    assert!(kinds(&token(header, r#""sub":"1234567890"}"#)).is_empty());
+}
+
+/// REQ-PRIV-002: the Basic payload is `user:password` with both parts, in
+/// either base64 alphabet; the characters of both alphabets that are not
+/// letters or digits decode (mutants of `decode_base64`'s alphabet arms and
+/// of the emptiness checks were missed).
+#[test]
+fn req_priv_002_a_basic_header_carries_user_and_password_in_either_alphabet() {
+    let header = |payload: &str, url_safe: bool| {
+        format!("Authorization: Basic {}", b64(payload.as_bytes(), url_safe))
+    };
+    // Payloads whose encodings contain the 62nd and 63rd characters of each
+    // alphabet: the samples must use all four marks, or they prove nothing.
+    let payloads = ["user:~~~p>?", "user:~~~~~~", "user:>>>???", "user:p>?p>?"];
+    let encodings: String = payloads
+        .iter()
+        .flat_map(|p| [b64(p.as_bytes(), false), b64(p.as_bytes(), true)])
+        .collect();
+    for mark in ['+', '/', '-', '_'] {
+        assert!(encodings.contains(mark), "no sample encodes to {mark}");
+    }
+    for payload in payloads {
+        for url_safe in [false, true] {
+            assert_eq!(
+                kinds(&header(payload, url_safe)),
+                [SecretKind::BasicAuthHeader],
+                "{payload} {url_safe}"
+            );
+        }
+    }
+    // Both parts are required.
+    assert!(kinds(&header("user:", false)).is_empty());
+    assert!(kinds(&header(":password", false)).is_empty());
+    assert!(kinds(&header("nocolonhere", false)).is_empty());
+}
+
+/// REQ-PRIV-002: `user:12345@host` is credentials; only a dotted name with a
+/// short number (`host.example:8080@other`) is a host and a port (a mutant of
+/// the `&&` in `port_like` was missed).
+#[test]
+fn req_priv_002_a_short_number_after_a_plain_user_is_still_a_password() {
+    assert_eq!(
+        kinds("https://user:12345@example.org/"),
+        [SecretKind::BasicAuthUrl]
+    );
+    assert_eq!(
+        kinds("https://alice:8080@example.org/"),
+        [SecretKind::BasicAuthUrl]
+    );
+    assert!(kinds("https://host.example:8080@other.example/").is_empty());
+}
+
+/// REQ-PRIV-002: a GitHub token wrapped at a space is found when the joined
+/// text is 36 characters with a digit, an upper-case and a lower-case letter,
+/// and only then (mutants of the `&&` chain of `Check::Split` were missed).
+#[test]
+fn req_priv_002_a_wrapped_github_token_needs_its_length_and_all_three_classes() {
+    let wrapped = |first: &str, second: &str| format!("ghp_{first} {second}");
+    let long_mixed = ("A1b2C3d4E5f6G7h8I9", "j0A1b2C3d4E5f6G7h8");
+    assert_eq!(
+        kinds(&wrapped(long_mixed.0, long_mixed.1)),
+        [SecretKind::GithubToken]
+    );
+    // Long enough, no digit.
+    assert!(kinds(&wrapped(&"AbCdEfGhIj".repeat(2), &"KlMnOpQrSt".repeat(2))).is_empty());
+    // Long enough, no lower-case letter.
+    assert!(kinds(&wrapped(&"A1B2C3D4E5".repeat(2), &"F6G7H8I9J0".repeat(2))).is_empty());
+    // Long enough, no upper-case letter.
+    assert!(kinds(&wrapped(&"a1b2c3d4e5".repeat(2), &"f6g7h8i9j0".repeat(2))).is_empty());
+    // All three classes, too short.
+    assert!(kinds(&wrapped("Abc1", "def2")).is_empty());
+    assert!(kinds(&wrapped("Abcdef", "ghi")).is_empty());
+}

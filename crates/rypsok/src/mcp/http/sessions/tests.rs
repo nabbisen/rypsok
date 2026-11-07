@@ -215,3 +215,113 @@ async fn req_sec_024_restore_never_creates_a_session() {
             .unwrap()
     );
 }
+
+// --- Mutants the audit run left alive (RFC 020, TST-7) ----------------------
+
+/// An event store that stores and replays nothing: it only has to exist.
+struct NoEvents;
+
+#[async_trait::async_trait]
+impl EventStore for NoEvents {
+    async fn store_event(
+        &self,
+        _stream_id: &str,
+        _event: &ServerSseMessage,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        Ok("0".to_owned())
+    }
+
+    async fn replay_events_after(
+        &self,
+        _last_event_id: &str,
+    ) -> Result<
+        std::pin::Pin<Box<dyn Stream<Item = ServerSseMessage> + Send + Sync + 'static>>,
+        Box<dyn std::error::Error + Send + Sync + 'static>,
+    > {
+        struct Empty;
+        impl Stream for Empty {
+            type Item = ServerSseMessage;
+
+            fn poll_next(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+                Poll::Ready(None)
+            }
+        }
+        Ok(Box::pin(Empty))
+    }
+}
+
+/// REQ-SEC-024: the wrapper answers `has_session` as the wrapped manager does:
+/// true for a session it created, false after it is closed and for an id it
+/// never saw (a mutant that always said no was missed).
+#[tokio::test]
+async fn req_sec_024_has_session_follows_the_wrapped_manager() {
+    let sessions = bounded(2);
+    let (id, _transport) = sessions.create_session().await.unwrap();
+    assert!(sessions.has_session(&id).await.unwrap());
+    sessions.close_session(&id).await.unwrap();
+    assert!(!sessions.has_session(&id).await.unwrap());
+    assert!(!sessions.has_session(&"never-seen".into()).await.unwrap());
+}
+
+/// REQ-SEC-024: a message for a session that does not exist is the wrapped
+/// manager's error, passed on unchanged, not a silent success (a mutant that
+/// always said yes was missed).
+#[tokio::test]
+async fn req_sec_024_a_message_for_an_unknown_session_is_an_error() {
+    let sessions = bounded(1);
+    let message: ClientJsonRpcMessage = serde_json::from_value(serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "notifications/initialized"
+    }))
+    .unwrap();
+    let error = sessions
+        .accept_message(&"never-seen".into(), message)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, BoundedError::Delegate(_)), "{error}");
+    assert!(error.to_string().contains("never-seen"), "{error}");
+}
+
+/// REQ-SEC-024: the wrapper hands on the wrapped manager's event store (the
+/// SDK asks it; a mutant that said none was missed).
+#[tokio::test]
+async fn req_sec_024_the_event_store_is_the_wrapped_managers() {
+    assert!(bounded(1).event_store().is_none());
+    let with_store = BoundedSessions::new(
+        LocalSessionManager::default().with_event_store(Arc::new(NoEvents)),
+        1,
+    );
+    assert!(with_store.event_store().is_some());
+}
+
+/// REQ-SEC-024: a wrapped manager's error keeps its own cause: the source of
+/// a `Delegate` error is the source of the wrapped error, and a refused
+/// session has none (a mutant that dropped the chain was missed).
+#[test]
+fn req_sec_024_an_error_keeps_the_cause_of_the_wrapped_error() {
+    #[derive(Debug)]
+    struct Outer(Inner);
+    #[derive(Debug)]
+    struct Inner;
+    impl fmt::Display for Outer {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("outer")
+        }
+    }
+    impl fmt::Display for Inner {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("inner")
+        }
+    }
+    impl std::error::Error for Outer {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            Some(&self.0)
+        }
+    }
+    impl std::error::Error for Inner {}
+    let delegated = BoundedError::Delegate(Outer(Inner));
+    let source = std::error::Error::source(&delegated).expect("the cause is kept");
+    assert_eq!(source.to_string(), "inner");
+    let refused: BoundedError<Outer> = BoundedError::LimitReached;
+    assert!(std::error::Error::source(&refused).is_none());
+}

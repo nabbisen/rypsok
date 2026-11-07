@@ -313,3 +313,138 @@ fn req_sec_023_a_final_answer_decides_as_rfc_9309_asks() {
         Some(Decision::Disallowed)
     );
 }
+
+/// REQ-CMP-005 (RFC 020, TST-7): the cache reports whether it holds anything
+/// (mutants of `is_empty` were missed).
+#[tokio::test]
+async fn req_cmp_005_the_cache_says_whether_it_is_empty() {
+    let (server, client, policy) = harness().await;
+    Mock::given(method("GET"))
+        .and(path("/robots.txt"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+    let robots = Robots::new(Duration::from_secs(60), 10);
+    assert!(robots.is_empty());
+    assert_eq!(robots.len(), 0);
+    let allowed = EgressPolicy::new(
+        vec![parse_rule("127.0.0.1/32").unwrap()],
+        Vec::new(),
+        true,
+        vec![server.address().port()],
+    );
+    let t = target(&policy, &server, "/page");
+    assert_eq!(
+        robots.check(&client, &allowed, &t, limits()).await,
+        Decision::Allowed
+    );
+    assert!(!robots.is_empty());
+    assert_eq!(robots.len(), 1);
+}
+
+/// REQ-CMP-005 (RFC 020, TST-7): an entry is fresh for LIM-F12 and not a
+/// moment longer: at exactly the time to live it is gone (a mutant of the
+/// comparison was missed). Paused time, so "exactly" is exact.
+#[tokio::test(start_paused = true)]
+async fn req_cmp_005_an_entry_expires_at_its_time_to_live() {
+    let robots = Robots::new(Duration::from_secs(100), 10);
+    robots.store("https://example.org".into(), Verdict::AllowAll);
+    tokio::time::advance(Duration::from_millis(99_999)).await;
+    assert!(robots.fresh("https://example.org").is_some(), "just before");
+    tokio::time::advance(Duration::from_millis(1)).await;
+    assert!(robots.fresh("https://example.org").is_none(), "at the time");
+    // A failure is kept for a twenty-fourth of it.
+    robots.store("https://down.example".into(), Verdict::DisallowAll);
+    tokio::time::advance(Duration::from_millis(4_166)).await;
+    assert!(robots.fresh("https://down.example").is_some());
+    tokio::time::advance(Duration::from_millis(2)).await;
+    assert!(robots.fresh("https://down.example").is_none());
+}
+
+/// REQ-CMP-005 and RFC 9309 (RFC 020, TST-7): the redirects of a robots.txt
+/// are followed up to the limit and no further: a chain of exactly the limit
+/// is followed to its rules, a chain one longer disallows everything
+/// (mutants of the hop count and of its comparison were missed).
+#[tokio::test]
+async fn req_cmp_005_robots_redirects_stop_after_the_limit() {
+    let (server, client, policy) = harness().await;
+    let redirect = |from: &str, to: &str| {
+        Mock::given(method("GET"))
+            .and(path(from.to_owned()))
+            .respond_with(ResponseTemplate::new(302).insert_header("location", to))
+    };
+    // Two hops to the rules, three hops to the rules.
+    redirect("/robots.txt", "/a1").mount(&server).await;
+    redirect("/a1", "/a2").mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/a2"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_string("User-agent: *\nDisallow: /private\n"),
+        )
+        .mount(&server)
+        .await;
+    let allowed = EgressPolicy::new(
+        vec![parse_rule("127.0.0.1/32").unwrap()],
+        Vec::new(),
+        true,
+        vec![server.address().port()],
+    );
+    let limits = ReadLimits {
+        max_bytes: 512 * 1024,
+        max_redirects: 2,
+    };
+    let robots = Robots::new(Duration::from_secs(60), 10);
+    assert_eq!(
+        robots
+            .check(
+                &client,
+                &allowed,
+                &target(&policy, &server, "/public"),
+                limits
+            )
+            .await,
+        Decision::Allowed,
+        "a chain of exactly the limit is followed to its rules"
+    );
+    assert_eq!(
+        robots
+            .check(
+                &client,
+                &allowed,
+                &target(&policy, &server, "/private/x"),
+                limits
+            )
+            .await,
+        Decision::Disallowed,
+        "and the rules it reaches apply"
+    );
+
+    let (longer, client, policy) = harness().await;
+    redirect("/robots.txt", "/b1").mount(&longer).await;
+    redirect("/b1", "/b2").mount(&longer).await;
+    redirect("/b2", "/b3").mount(&longer).await;
+    Mock::given(method("GET"))
+        .and(path("/b3"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("User-agent: *\nDisallow:\n"))
+        .mount(&longer)
+        .await;
+    let allowed = EgressPolicy::new(
+        vec![parse_rule("127.0.0.1/32").unwrap()],
+        Vec::new(),
+        true,
+        vec![longer.address().port()],
+    );
+    let robots = Robots::new(Duration::from_secs(60), 10);
+    assert_eq!(
+        robots
+            .check(
+                &client,
+                &allowed,
+                &target(&policy, &longer, "/public"),
+                limits
+            )
+            .await,
+        Decision::Disallowed,
+        "a chain one hop longer than the limit disallows everything"
+    );
+}

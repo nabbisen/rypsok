@@ -153,3 +153,56 @@ fn req_cache_003_clear_empties_the_cache() {
     assert!(cache.is_empty());
     assert_eq!(cache.lookup(&key("local", "rust")), None);
 }
+
+// --- Mutants the audit run left alive (RFC 020, TST-7) ----------------------
+
+/// REQ-CACHE-005 (LIM-K4): an answer of exactly the entry bound is stored and
+/// one byte more is not (a mutant of the comparison was missed).
+#[test]
+fn req_cache_005_an_entry_of_exactly_the_bound_is_stored() {
+    let one = answer("one");
+    let exact = raw_bytes(&one);
+    let at_bound = ResultCache::new(CacheSettings {
+        max_entry_bytes: exact,
+        ..settings()
+    });
+    assert_eq!(at_bound.store(key("local", "rust"), &one), Ok(()));
+    let below = ResultCache::new(CacheSettings {
+        max_entry_bytes: exact - 1,
+        ..settings()
+    });
+    assert_eq!(
+        below.store(key("local", "rust"), &one),
+        Err(NotStored::TooLarge)
+    );
+}
+
+/// REQ-CACHE-006: the cache that fails says so once, at `warn`, with the
+/// event `cache_disabled`; later calls are silent misses (a mutant that never
+/// said it was missed).
+#[test]
+fn req_cache_006_the_failure_is_logged_once() {
+    let log = crate::telemetry::routed::capture();
+    let cache = Arc::new(ResultCache::new(settings()));
+    let poisoner = Arc::clone(&cache);
+    let _ = std::thread::spawn(move || {
+        let _guard = poisoner.state.lock().unwrap();
+        panic!("poison the cache lock");
+    })
+    .join();
+    assert!(
+        log.lines().is_empty(),
+        "nothing is said before the cache is used"
+    );
+    assert_eq!(cache.lookup(&key("local", "rust")), None);
+    assert_eq!(cache.lookup(&key("local", "rust")), None);
+    assert_eq!(
+        cache.store(key("local", "rust"), &answer("one")),
+        Err(NotStored::Disabled)
+    );
+    let lines = log.lines();
+    assert_eq!(lines.len(), 1, "{lines:#?}");
+    assert_eq!(lines[0]["event"], "cache_disabled");
+    assert_eq!(lines[0]["level"], "WARN");
+    assert_eq!(lines[0]["reason"], "poisoned");
+}

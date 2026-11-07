@@ -370,3 +370,28 @@ proptest! {
         }
     }
 }
+
+/// REQ-RANK-003 (RFC 020, TST-7): a percent-escape is read wherever it is in
+/// the path, not only near the start (a mutant that compared twice the
+/// position with the length was missed): unreserved characters are decoded,
+/// the rest keep their escape in upper case, and a truncated escape stays.
+#[test]
+fn req_rank_003_percent_escapes_are_read_anywhere_in_the_path() {
+    assert_eq!(normalize_percent("/a%41"), "/aA");
+    assert_eq!(
+        normalize_percent("/abcdefghijklmnop%41%7e%2f%2F"),
+        "/abcdefghijklmnopA~%2F%2F"
+    );
+    assert_eq!(
+        normalize_percent("/a/b/c/d/e/f/g/h/i/j/%61%62"),
+        "/a/b/c/d/e/f/g/h/i/j/ab"
+    );
+    assert_eq!(normalize_percent("/%41"), "/A", "an escape at the very end");
+    assert_eq!(normalize_percent("/ab%4"), "/ab%4", "truncated");
+    assert_eq!(normalize_percent("/ab%"), "/ab%");
+    assert_eq!(
+        normalize_percent("/é%41é"),
+        "/éAé",
+        "multi-byte characters around"
+    );
+}

@@ -668,3 +668,41 @@ fn req_sec_023_a_parsed_rule_round_trips_through_its_text() {
         "*.corp.example"
     );
 }
+
+/// REQ-TEST-005 (RFC 020, TST-7): a host name of 253 characters is a rule and
+/// one of 254 is not (the DNS limit; mutants of the bound were missed).
+#[test]
+fn req_test_005_a_rule_name_is_bounded_at_253_characters() {
+    let label = "a".repeat(63);
+    let name_253 = format!("{label}.{label}.{label}.{}", "b".repeat(61));
+    assert_eq!(name_253.len(), 253);
+    assert!(parse_rule(&name_253).is_ok());
+    let name_254 = format!("{label}.{label}.{label}.{}", "b".repeat(62));
+    assert_eq!(name_254.len(), 254);
+    assert!(parse_rule(&name_254).is_err());
+}
+
+/// REQ-TEST-005 (RFC 020, TST-7): the trailing-dot message is for a pattern
+/// that is a rule once the dot is removed; a text that ends with a dot and is
+/// no rule either way gets the general message.
+#[test]
+fn req_test_005_only_a_curable_trailing_dot_gets_the_dot_message() {
+    let problems = EgressPolicy::from_texts(
+        &["blocked.invalid.".to_owned(), "not a rule.".to_owned()],
+        &[],
+        false,
+        &[443],
+    )
+    .unwrap_err();
+    assert_eq!(problems.len(), 2, "{problems:?}");
+    assert!(
+        problems[0].contains("must not end with a dot"),
+        "{}",
+        problems[0]
+    );
+    assert!(
+        problems[1].contains("not a network in CIDR notation"),
+        "{}",
+        problems[1]
+    );
+}

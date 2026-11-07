@@ -1791,3 +1791,164 @@ async fn req_sec_018_the_http2_header_list_is_bounded() {
     );
     s.stop().await;
 }
+
+// --- Mutants the audit run left alive (RFC 020, TST-7) ----------------------
+
+/// REQ-SEC-018 and REQ-CFG-005: a caller's token of exactly the minimum
+/// length is accepted and one byte less is refused with the key and the
+/// number (a mutant of the comparison was missed).
+#[test]
+fn req_sec_018_a_token_of_the_minimum_length_is_accepted_and_one_less_is_not() {
+    let settings = |token: &str| {
+        let path = token_file("min-length", token);
+        let config = Config::parse(&format!(
+            "config_version = 1\n[service.http]\nbind = \"127.0.0.1:0\"\n[[service.http.auth.callers]]\nid = \"alpha\"\ntoken_file = \"{path}\"\n"
+        ))
+        .unwrap();
+        HttpSettings::from_config(&config)
+    };
+    assert_eq!(TOKEN_MIN_BYTES, 32);
+    assert!(settings(&"t".repeat(TOKEN_MIN_BYTES)).is_ok());
+    let error = settings(&"t".repeat(TOKEN_MIN_BYTES - 1)).unwrap_err();
+    let text = format!("{error:?}");
+    assert!(text.contains("at least 32 bytes"), "{text}");
+}
+
+/// REQ-SEC-018: the `Host` names a listener accepts when `allowed_hosts` is
+/// not set are the loopback names, and the bind address when it is a
+/// specific one that is not already among them; an unspecified bind
+/// (`0.0.0.0`) adds nothing, since no client sends it (mutants of the
+/// condition were missed).
+#[test]
+fn req_sec_018_default_allowed_hosts_follow_the_bind_address() {
+    let hosts = |bind: &str| {
+        let config = Config::parse(&format!(
+            "config_version = 1\n[service.http]\nbind = \"{bind}\"\n"
+        ))
+        .unwrap();
+        HttpSettings::from_config(&config).unwrap().allowed_hosts
+    };
+    let loopback = ["localhost", "127.0.0.1", "::1"];
+    assert_eq!(hosts("127.0.0.1:8080"), loopback, "no duplicate");
+    assert_eq!(hosts("[::1]:8080"), loopback, "no duplicate");
+    assert_eq!(
+        hosts("0.0.0.0:8080"),
+        loopback,
+        "nothing for an unspecified bind"
+    );
+    assert_eq!(
+        hosts("[::]:8080"),
+        loopback,
+        "nothing for an unspecified bind"
+    );
+    let mut specific = loopback.to_vec();
+    specific.push("192.0.2.5");
+    assert_eq!(hosts("192.0.2.5:8080"), specific);
+}
+
+/// A POST to `/mcp` with the given headers and a body written as it is, on a
+/// raw connection: the status line and what was sent back.
+async fn raw_post(s: &Server, head: &str, body: &[u8]) -> String {
+    use tokio::io::AsyncWriteExt;
+    let mut stream = tokio::net::TcpStream::connect(address(s)).await.unwrap();
+    let request = format!(
+        "POST {PATH} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nAccept: application/json, text/event-stream\r\nMCP-Protocol-Version: 2026-07-28\r\nMcp-Method: server/discover\r\nConnection: close\r\n{head}\r\n"
+    );
+    let _ = stream.write_all(request.as_bytes()).await;
+    let _ = stream.write_all(body).await;
+    match watch(&mut stream, Duration::from_secs(5)).await {
+        Watched::Closed(_, bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+        Watched::Open => "still open".to_owned(),
+    }
+}
+
+/// REQ-SEC-022 and REQ-OBS-007 (LIM-H2): a body whose declared length is
+/// over the bound is refused by the gate itself, 413, counted and logged
+/// (`body_too_large`), before the SDK sees it; a body of exactly the bound is
+/// not refused (mutants of the comparison were missed: the SDK's own 413
+/// hid them, but it logs nothing).
+#[tokio::test]
+async fn req_sec_022_the_gate_refuses_a_declared_body_over_the_bound_and_only_that() {
+    let (log, _guard) = routed_log();
+    let s = Server::start(&LOOPBACK.replace(
+        "bind = \"127.0.0.1:0\"\n",
+        "bind = \"127.0.0.1:0\"\nmax_request_bytes = 4096\n",
+    ))
+    .await;
+    let counters = s.service.counters();
+    // Exactly the bound: a valid JSON-RPC request padded with white space.
+    let base = json!({
+        "jsonrpc": "2.0", "id": 1, "method": "server/discover",
+        "params": { META: meta() }
+    })
+    .to_string();
+    let padded = format!("{base}{}", " ".repeat(4096 - base.len()));
+    assert_eq!(padded.len(), 4096);
+    let answer = raw_post(
+        &s,
+        &format!("Content-Length: {}\r\n", padded.len()),
+        padded.as_bytes(),
+    )
+    .await;
+    assert!(answer.starts_with("HTTP/1.1 200"), "{answer}");
+    assert_eq!(counters.refusals_of("http", "body_too_large"), 0);
+    assert!(events(&log, "http_refused").is_empty());
+    // One byte over, declared.
+    let over = format!("{padded} ");
+    let answer = raw_post(
+        &s,
+        &format!("Content-Length: {}\r\n", over.len()),
+        over.as_bytes(),
+    )
+    .await;
+    assert!(answer.starts_with("HTTP/1.1 413"), "{answer}");
+    assert_eq!(counters.refusals_of("http", "body_too_large"), 1);
+    let refused = events(&log, "http_refused");
+    assert_eq!(refused.len(), 1, "{refused:?}");
+    assert_eq!(refused[0]["reason"], "body_too_large");
+    s.stop().await;
+}
+
+/// REQ-SEC-022 and REQ-OBS-007: a body with no declared length that grows
+/// past the bound is refused by the SDK behind the gate, 413, and the gate
+/// counts it under the same reason (the arm of `note_sdk_refusal` was
+/// missed).
+#[tokio::test]
+async fn req_sec_022_a_streamed_body_over_the_bound_is_refused_and_counted() {
+    let s = Server::start(&LOOPBACK.replace(
+        "bind = \"127.0.0.1:0\"\n",
+        "bind = \"127.0.0.1:0\"\nmax_request_bytes = 4096\n",
+    ))
+    .await;
+    let counters = s.service.counters();
+    let chunk = "x".repeat(6000);
+    let body = format!("{:x}\r\n{chunk}\r\n0\r\n\r\n", chunk.len());
+    let answer = raw_post(&s, "Transfer-Encoding: chunked\r\n", body.as_bytes()).await;
+    assert!(answer.starts_with("HTTP/1.1 413"), "{answer}");
+    assert_eq!(counters.refusals_of("http", "body_too_large"), 1);
+    s.stop().await;
+}
+
+/// REQ-OBS-005 (RFC 019 D6): the address family in a gate event is the
+/// connection's: a refusal on an IPv6 connection says `ipv6` (a mutant that
+/// left the listener's default in place was missed). Skipped where the
+/// machine has no IPv6 loopback.
+#[tokio::test]
+async fn req_obs_005_a_gate_event_names_the_family_of_the_connection() {
+    if std::net::TcpListener::bind("[::1]:0").is_err() {
+        return;
+    }
+    let (log, _guard) = routed_log();
+    let s = Server::start(&LOOPBACK.replace("127.0.0.1:0", "[::1]:0")).await;
+    let response = s
+        .request("server/discover", json!({}))
+        .header("host", "evil.example")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 403);
+    let refused = events(&log, "http_refused");
+    assert_eq!(refused.len(), 1, "{refused:?}");
+    assert_eq!(refused[0]["family"], "ipv6");
+    s.stop().await;
+}

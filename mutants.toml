@@ -1,0 +1,34 @@
+# cargo-mutants configuration (RFC 020, D-19 as amended by D-23).
+#
+# Run with `--config mutants.toml` (cargo-mutants 27.1.0 reads
+# `.cargo/mutants.toml` by default, not this file).
+#
+# `exclude_re` lists the mutants that cannot change the behaviour of the
+# program, each with one line of reason. A mutant that a test can catch is
+# never listed here; it gets a test. The patterns match the mutant's name as
+# `cargo mutants --list` prints it, **with** its line and column, on purpose:
+# when the code moves, an entry stops matching and the mutant is reported as
+# missed again, to be read and, if it is still equivalent, re-pinned. A stale
+# entry can only add a report, never hide a mutant.
+#
+# The release checks (handoff 020w) run the six security modules with this
+# file and require that nothing is missed.
+
+exclude_re = [
+    # `(buffer << 6) | value`: the six low bits of `buffer << 6` are zero and
+    # `value` is below 64, so `|`, `^` and `+` give the same number.
+    'privacy\.rs:250:32: replace \| with \^ in decode_base64',
+
+    # `Poll::from(Ok(()))` is `Poll::Ready(Ok(()))`: the gate is always ready.
+    'http\.rs:463:9: replace <impl Service<Request<Incoming>> for Gate>::poll_ready -> Poll<Result<\(\), Infallible>> with Poll::from\(Ok\(\(\)\)\)',
+
+    # `i + 2 < bytes.len()` against `<=`: at `i + 2 == len` the next line's
+    # `bytes.get(i + 2)` is `None` and the escape is not read either way.
+    'normalize\.rs:164:52: replace < with <= in normalize_percent',
+
+    # Two observations with the same standing (rank, preference and engine
+    # index) would be one engine's result at one rank twice; ranks within an
+    # engine are unique, so a tie in `merge` cannot happen.
+    'rank\.rs:109:61: replace < with <= in merge',
+    'rank\.rs:113:43: replace < with <= in merge',
+]

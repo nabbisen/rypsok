@@ -29,3 +29,13 @@ fn req_sec_014_poisoned_caller_lock_does_not_stop_the_limiters() {
     let other = limiters.for_caller(&CallerId::new("mimlys"));
     assert!(other.search.admit().is_ok());
 }
+
+/// A limiter prints its name and nothing of its state (a mutant that printed
+/// nothing was missed).
+#[test]
+fn req_mcp_010_a_limiter_debug_names_the_type_only() {
+    assert_eq!(
+        format!("{:?}", super::ToolLimiter::per_minute(5)),
+        "ToolLimiter"
+    );
+}
