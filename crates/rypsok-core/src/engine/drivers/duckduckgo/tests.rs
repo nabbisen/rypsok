@@ -226,3 +226,38 @@ async fn req_mcp_007_cancellation_ends_the_request() {
     assert_eq!(error.class, EngineErrorClass::RequestFailure);
     assert!(started.elapsed() < Duration::from_millis(400));
 }
+
+/// REQ-ENG-001 and REQ-RANK-003 (RFC 020, F-2 of the 020w review): the
+/// driver hands over the provider's text, and the pipeline makes it
+/// canonical: a wrapped link whose target is written oddly (`https:/x`,
+/// `HTTPS://x`, three slashes, a leading space) is a URL the `url` crate
+/// reads as `http` or `https`, and `returned_url` gives it its one form.
+/// (A fuzz run of `scrape_read` found `uddg=https%3A%2F%2extras__url`.)
+#[test]
+fn req_eng_001_oddly_written_links_are_made_canonical_by_the_pipeline() {
+    use crate::search::normalize::returned_url;
+    let wrapped = "//duckduckgo.com/l/?uddg=https%3A%2F%2extras__url";
+    let unwrapped = DuckDuckGo::unwrap_link(wrapped).expect("a link that parses");
+    assert!(
+        !unwrapped.starts_with("https://"),
+        "the driver's text is the provider's: {unwrapped}"
+    );
+    for (href, canonical) in [
+        (wrapped, "https://.xtras__url/"),
+        ("HTTPS://example.org/A", "https://example.org/A"),
+        (
+            "http:///doc.rust-lang.org/book/",
+            "http://doc.rust-lang.org/book/",
+        ),
+        (" https://example.org/page", "https://example.org/page"),
+    ] {
+        let text = DuckDuckGo::unwrap_link(href).unwrap_or_else(|| panic!("{href:?} unwrapped"));
+        let url = url::Url::parse(&text).unwrap();
+        assert!(matches!(url.scheme(), "http" | "https"), "{text}");
+        assert_eq!(
+            returned_url(&text, 2048).as_deref(),
+            Ok(canonical),
+            "{href:?} through unwrap_link ({text:?})"
+        );
+    }
+}
