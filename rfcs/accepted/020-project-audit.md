@@ -36,7 +36,8 @@ findings only); fixes: [`020j`](../handoffs/020j-lock-helper/README.md),
 [`020u`](../handoffs/020u-fuzz-targets/README.md); wave 4:
 [`020w`](../handoffs/020w-check-policy/README.md),
 [`020p`](../handoffs/020p-release-path/README.md),
-[`020t`](../handoffs/020t-documents/README.md) (020v, the version bump, follows).
+[`020t`](../handoffs/020t-documents/README.md),
+[`020x`](../handoffs/020x-truthful-startup-and-estimate/README.md) (020v, the version bump, follows).
 
 ## Problem and motivation
 
