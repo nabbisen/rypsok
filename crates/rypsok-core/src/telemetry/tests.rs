@@ -52,11 +52,11 @@ fn req_priv_004_foreign_targets_are_capped_whatever_the_level() {
 }
 
 /// REQ-OBS-007 (RFC 019 D6): an HTTP refusal is counted under `http` and
-/// its reason, and counting it runs the flush check a call runs: once the
-/// interval has passed, the next refusal logs the counters, with no call
-/// in between.
+/// its reason. (That counting it runs the flush check a call runs, so that
+/// the next refusal after the interval logs the counters with no call in
+/// between, is read from the log in `tests/log_events.rs`.)
 #[test]
-fn req_obs_007_http_refusals_are_counted_and_flush() {
+fn req_obs_007_http_refusals_are_counted() {
     let counters = Counters::new();
     counters.refused_http("sdk_forbidden");
     counters.refused_http("sdk_forbidden");
@@ -64,56 +64,4 @@ fn req_obs_007_http_refusals_are_counted_and_flush() {
     assert_eq!(counters.refusals_of("http", "sdk_forbidden"), 2);
     assert_eq!(counters.refusals_of("http", "unauthorized"), 1);
     assert_eq!(counters.refusals_of("http", "session_limit"), 0);
-
-    // The flush, with no sleep and no dependence on elapsed time: an
-    // interval of an hour stands for "the minute has not passed" and an
-    // interval of zero for "it has".
-    use std::io::Write;
-    use std::sync::{Arc, Mutex};
-    use tracing_subscriber::fmt::MakeWriter;
-    #[derive(Clone, Default)]
-    struct Sink(Arc<Mutex<Vec<u8>>>);
-    struct SinkWriter(Arc<Mutex<Vec<u8>>>);
-    impl Write for SinkWriter {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            self.0.lock().unwrap().extend_from_slice(buf);
-            Ok(buf.len())
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-    impl<'a> MakeWriter<'a> for Sink {
-        type Writer = SinkWriter;
-        fn make_writer(&'a self) -> SinkWriter {
-            SinkWriter(Arc::clone(&self.0))
-        }
-    }
-    let sink = Sink::default();
-    let subscriber = tracing_subscriber::fmt()
-        .json()
-        .flatten_event(true)
-        .with_writer(sink.clone())
-        .finish();
-    tracing::subscriber::with_default(subscriber, || {
-        // An hour has not passed: refusals are counted and nothing is logged.
-        let slow = Counters::with_flush_interval(std::time::Duration::from_secs(3600));
-        slow.refused_http("sdk_forbidden");
-        slow.refused_http("sdk_forbidden");
-        assert!(sink.0.lock().unwrap().is_empty(), "inside the interval");
-        assert_eq!(slow.refusals_of("http", "sdk_forbidden"), 2);
-
-        // The interval has always passed: each refusal runs the flush check
-        // and logs the totals so far, one line per refusal, with no call in
-        // between. The third line carries all three counts.
-        let due = Counters::with_flush_interval(std::time::Duration::ZERO);
-        due.refused_http("sdk_forbidden");
-        due.refused_http("sdk_forbidden");
-        due.refused_http("unauthorized");
-        let log = String::from_utf8(sink.0.lock().unwrap().clone()).unwrap();
-        assert_eq!(log.lines().count(), 3, "{log}");
-        let last = log.lines().last().unwrap();
-        assert!(last.contains("http.sdk_forbidden=2"), "{last}");
-        assert!(last.contains("http.unauthorized=1"), "{last}");
-    });
 }

@@ -702,69 +702,80 @@ async fn req_sec_024_sessions_are_bounded() {
     s.stop().await;
 }
 
-/// REQ-SEC-024 and REQ-OBS-005 (RFC 019 D5): a refused handshake is logged
-/// once as `http_refused` with the reason `session_limit` and the address
-/// family, and with nothing of the request. (A current-thread runtime, so
-/// that the test's subscriber sees the listener's tasks.)
-#[tokio::test]
-async fn req_sec_024_a_refused_handshake_is_logged() {
-    let (log, _guard) = capture_log();
-    let s = Server::start(&LOOPBACK.replace(
-        "bind = \"127.0.0.1:0\"\n",
-        "bind = \"127.0.0.1:0\"\nmax_sessions = 1\n",
-    ))
-    .await;
-    assert_eq!(handshake(&s).await.0, 200);
-    log.lock().unwrap().clear();
-    assert_eq!(handshake(&s).await.0, 503);
-    let text = String::from_utf8(log.lock().unwrap().clone()).unwrap();
-    let refused: Vec<Value> = text
-        .lines()
-        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-        .filter(|v| v["event"] == "http_refused")
-        .collect();
-    assert_eq!(refused.len(), 1, "{text}");
-    assert_eq!(refused[0]["reason"], "session_limit");
-    assert_eq!(refused[0]["family"], "ipv4");
-    s.stop().await;
+thread_local! {
+    /// Where the events written on this thread go: the sink of the test that
+    /// runs on it, if it asked for one.
+    static SINK: std::cell::RefCell<Option<Arc<std::sync::Mutex<Vec<u8>>>>> =
+        const { std::cell::RefCell::new(None) };
 }
 
-/// A subscriber for the current thread whose output the test can read.
-fn capture_log() -> (
-    Arc<std::sync::Mutex<Vec<u8>>>,
-    tracing::subscriber::DefaultGuard,
-) {
-    use std::io::Write;
-    use tracing_subscriber::fmt::MakeWriter;
+/// The writer of the one global subscriber of this test process: it hands
+/// each line to the sink of the thread that wrote it.
+#[derive(Clone, Copy)]
+struct Routed;
 
-    #[derive(Clone, Default)]
-    struct Sink(Arc<std::sync::Mutex<Vec<u8>>>);
-    struct SinkWriter(Arc<std::sync::Mutex<Vec<u8>>>);
-    impl Write for SinkWriter {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            self.0.lock().unwrap().extend_from_slice(buf);
-            Ok(buf.len())
+struct RoutedWriter(Option<Arc<std::sync::Mutex<Vec<u8>>>>);
+
+impl std::io::Write for RoutedWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if let Some(sink) = &self.0 {
+            sink.lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .extend_from_slice(buf);
         }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-    impl<'a> MakeWriter<'a> for Sink {
-        type Writer = SinkWriter;
-        fn make_writer(&'a self) -> SinkWriter {
-            SinkWriter(Arc::clone(&self.0))
-        }
+        Ok(buf.len())
     }
 
-    let sink = Sink::default();
-    let buffer = Arc::clone(&sink.0);
-    // The layer the process installs, so that the test reads what it writes
-    // (span fields such as `request_id` and `caller` are top-level).
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Routed {
+    type Writer = RoutedWriter;
+
+    fn make_writer(&'a self) -> RoutedWriter {
+        RoutedWriter(SINK.with(|sink| sink.borrow().clone()))
+    }
+}
+
+/// Ends the capture of the test's thread.
+struct Capture;
+
+impl Drop for Capture {
+    fn drop(&mut self) {
+        SINK.with(|sink| *sink.borrow_mut() = None);
+    }
+}
+
+/// The log of the test's own thread, read as the process writes it (the
+/// layer the process installs, so span fields such as `request_id` and
+/// `caller` are top-level).
+///
+/// The subscriber is **global and installed once** for the whole test
+/// process, and only the sink it writes to is per thread. A thread-scoped
+/// subscriber per test raced: `tracing` caches whether a callsite is enabled
+/// for the process, and a callsite that another test's thread reached without
+/// a subscriber could be cached as disabled, so the event went missing
+/// (correction R3 of the 020r review). With one dispatcher for the process
+/// there is nothing to race. A test that uses this runs on a current-thread
+/// runtime, so that the tasks of the listener write on its thread; the
+/// tests that can be run against a spawned server are in the protocol tests
+/// instead.
+fn routed_log() -> (Arc<std::sync::Mutex<Vec<u8>>>, Capture) {
     use tracing_subscriber::filter::LevelFilter;
     use tracing_subscriber::prelude::*;
-    let subscriber = tracing_subscriber::registry()
-        .with(rypsok_core::telemetry::layer(sink).with_filter(LevelFilter::INFO));
-    (buffer, tracing::subscriber::set_default(subscriber))
+    static INSTALL: std::sync::Once = std::sync::Once::new();
+    INSTALL.call_once(|| {
+        tracing::subscriber::set_global_default(
+            tracing_subscriber::registry()
+                .with(rypsok_core::telemetry::layer(Routed).with_filter(LevelFilter::INFO)),
+        )
+        .expect("no other test of this process installs a global subscriber");
+    });
+    let sink = Arc::new(std::sync::Mutex::new(Vec::new()));
+    SINK.with(|slot| *slot.borrow_mut() = Some(Arc::clone(&sink)));
+    (sink, Capture)
 }
 
 /// The events of one name in captured JSON log lines.
@@ -790,14 +801,13 @@ fn without_protocol_header(s: &Server) -> reqwest::RequestBuilder {
 }
 
 /// REQ-SEC-018 and REQ-OBS-007 (RFC 019 D6): the four answers the SDK gives
-/// behind the gate, pinned. A foreign `Host` and a refused `Origin` are 403,
-/// the signature of THR-18, and leave one `http_refused` event
-/// (`sdk_forbidden`, the status, the address family and no header value);
-/// a missing protocol header is 400 and an `Accept` without both media
-/// types is 406, counted and not logged per request.
-#[tokio::test]
-async fn req_sec_018_sdk_refusals_are_pinned_logged_and_counted() {
-    let (log, _guard) = capture_log();
+/// behind the gate, pinned and counted: a foreign `Host` and a refused
+/// `Origin` are 403, the signature of THR-18; a missing protocol header is
+/// 400 and an `Accept` without both media types is 406. (What the log says
+/// about them is read from a spawned server, in the protocol test
+/// `req_sec_018_sdk_refusals_are_logged_once_each_without_header_values`.)
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn req_sec_018_sdk_refusals_are_pinned_and_counted() {
     let s = Server::start(LOOPBACK).await;
     let counters = s.service.counters();
 
@@ -815,24 +825,8 @@ async fn req_sec_018_sdk_refusals_are_pinned_logged_and_counted() {
         .await
         .unwrap();
     assert_eq!(origin.status(), 403);
-    let forbidden = events(&log, "http_refused");
-    assert_eq!(forbidden.len(), 2, "{forbidden:?}");
-    for event in &forbidden {
-        assert_eq!(event["reason"], "sdk_forbidden");
-        assert_eq!(event["status"], 403);
-        assert_eq!(event["family"], "ipv4");
-    }
-    // The gate's own event carries no header value. (The SDK writes its own
-    // warning for the same request, with the value; that line is the SDK's.)
-    assert!(
-        !serde_json::to_string(&forbidden)
-            .unwrap()
-            .contains("evil.example"),
-        "no header value in the gate's event"
-    );
     assert_eq!(counters.refusals_of("http", "sdk_forbidden"), 2);
 
-    log.lock().unwrap().clear();
     let bad = without_protocol_header(&s).send().await.unwrap();
     assert_eq!(bad.status(), 400);
     let not_acceptable = s
@@ -849,10 +843,6 @@ async fn req_sec_018_sdk_refusals_are_pinned_logged_and_counted() {
         .await
         .unwrap();
     assert_eq!(not_acceptable.status(), 406);
-    assert!(
-        events(&log, "http_refused").is_empty(),
-        "400 and 406 are counted, not logged"
-    );
     assert_eq!(counters.refusals_of("http", "sdk_bad_request"), 1);
     assert_eq!(counters.refusals_of("http", "sdk_not_acceptable"), 1);
     s.stop().await;
@@ -919,7 +909,7 @@ async fn req_obs_007_gate_refusals_are_counted_per_reason() {
 #[tokio::test]
 async fn req_obs_007_refusals_inside_the_interval_are_counted_not_logged() {
     use rypsok_core::telemetry::Counters;
-    let (log, _guard) = capture_log();
+    let (log, _guard) = routed_log();
     let counters = Arc::new(Counters::with_flush_interval(Duration::from_secs(3600)));
     let s = Server::start_with(LOOPBACK, Some(Arc::clone(&counters))).await;
     for _ in 0..3 {
@@ -949,7 +939,7 @@ async fn req_obs_007_refusals_inside_the_interval_are_counted_not_logged() {
 #[tokio::test]
 async fn req_obs_007_a_flood_of_refusals_is_logged_without_a_tool_call() {
     use rypsok_core::telemetry::Counters;
-    let (log, _guard) = capture_log();
+    let (log, _guard) = routed_log();
     let counters = Arc::new(Counters::with_flush_interval(Duration::ZERO));
     let s = Server::start_with(LOOPBACK, Some(counters)).await;
     for _ in 0..3 {
@@ -1502,7 +1492,7 @@ async fn req_sec_022_an_http2_stream_beyond_max_streams_is_refused() {
 #[tokio::test]
 async fn req_sec_022_idle_closes_are_counted_and_not_logged() {
     use rypsok_core::telemetry::Counters;
-    let (log, _guard) = capture_log();
+    let (log, _guard) = routed_log();
     let counters = Arc::new(Counters::with_flush_interval(Duration::from_secs(3600)));
     let s = Server::start_tuned(LOOPBACK, Some(Arc::clone(&counters)), |settings| {
         settings.idle_timeout = Duration::from_millis(300);

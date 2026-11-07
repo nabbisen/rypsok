@@ -1081,13 +1081,8 @@ fn req_obs_005_stdio_call_events_are_local_and_carry_a_request_id() {
 #[cfg(unix)]
 #[test]
 fn req_obs_005_http_call_events_carry_the_caller_and_a_request_id() {
-    use std::io::{BufRead, BufReader};
-    use std::process::{Command, Stdio};
     const TOKEN_B: &str = "token-b-0123456789-0123456789-0123456789";
     const TOKEN_C: &str = "token-c-0123456789-0123456789-0123456789";
-    let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = probe.local_addr().unwrap().port();
-    drop(probe);
     // A token file is a file with the token in it, readable by its owner only.
     let token_file = |token: &str| {
         use std::os::unix::fs::PermissionsExt;
@@ -1097,38 +1092,13 @@ fn req_obs_005_http_call_events_carry_the_caller_and_a_request_id() {
     };
     let file_b = token_file(TOKEN_B);
     let file_c = token_file(TOKEN_C);
-    let config = config_file(&format!(
-        "config_version = 1\n[service.http]\nbind = \"127.0.0.1:{port}\"\n[[service.http.auth.callers]]\nid = \"beta\"\ntoken_file = \"{file_b}\"\n[[service.http.auth.callers]]\nid = \"gamma\"\ntoken_file = \"{file_c}\"\n[engines.w]\ntype = \"wikipedia\"\ncategories = [\"general\"]\n"
-    ));
-    let mut child = Command::new(env!("CARGO_BIN_EXE_rypsok"))
-        .args(["serve", "--transport", "http", "--config"])
-        .arg(&config)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let stderr = child.stderr.take().unwrap();
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-            let _ = tx.send(line);
-        }
-    });
-    let mut lines: Vec<String> = Vec::new();
-    let mut listening = false;
-    while let Ok(line) = rx.recv_timeout(std::time::Duration::from_secs(10)) {
-        let ready = line.contains("\"event\":\"listening\"");
-        lines.push(line);
-        if ready {
-            listening = true;
-            break;
-        }
-    }
-    assert!(
-        listening,
-        "the listener announces itself on stderr: {lines:?}"
+    let server = HttpServer::start(
+        "",
+        &format!(
+            "[[service.http.auth.callers]]\nid = \"beta\"\ntoken_file = \"{file_b}\"\n[[service.http.auth.callers]]\nid = \"gamma\"\ntoken_file = \"{file_c}\"\n"
+        ),
     );
+    let port = server.port;
     let meta = r#""_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"t","version":"0"},"io.modelcontextprotocol/clientCapabilities":{}}"#;
     let fetch = format!(
         r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"web_fetch","arguments":{{"url":"ftp://127.0.0.1/x"}},{meta}}}}}"#
@@ -1147,32 +1117,15 @@ fn req_obs_005_http_call_events_carry_the_caller_and_a_request_id() {
             "{name} is answered"
         );
     }
-    let killed = Command::new("kill")
-        .arg("-TERM")
-        .arg(child.id().to_string())
-        .status()
-        .unwrap();
-    assert!(killed.success());
-    let started = std::time::Instant::now();
-    let exit = loop {
-        if let Some(exit) = child.try_wait().unwrap() {
-            break exit;
-        }
-        assert!(
-            started.elapsed() < std::time::Duration::from_millis(3000),
-            "did not exit within LIM-O1"
-        );
-        std::thread::sleep(std::time::Duration::from_millis(20));
+    let log = server.stop();
+    let calls: Vec<&Value> = events_named(&log, "call");
+    let of = |tool: &str| -> Vec<&Value> {
+        calls
+            .iter()
+            .copied()
+            .filter(|c| c["tool"] == tool)
+            .collect()
     };
-    assert!(exit.success(), "{exit:?}");
-    // The reader ends at the end of the stream: everything is then in `rx`.
-    lines.extend(rx.iter());
-    let calls: Vec<Value> = lines
-        .iter()
-        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-        .filter(|v| v["event"] == "call")
-        .collect();
-    let of = |tool: &str| -> Vec<&Value> { calls.iter().filter(|c| c["tool"] == tool).collect() };
     let fetches = of("web_fetch");
     let mut callers: Vec<&str> = fetches
         .iter()
@@ -1194,8 +1147,211 @@ fn req_obs_005_http_call_events_carry_the_caller_and_a_request_id() {
     ids.dedup();
     assert_eq!(ids.len(), 3, "three calls, three ids");
     // The label, never the token.
-    let text = lines.join("\n");
+    let text = serde_json::to_string(&log).unwrap();
     assert!(!text.contains("token-b-0123"), "{text}");
+}
+
+/// `rypsok serve --transport http` as a process of its own on a free
+/// loopback port, with its standard error read to the end when it stops, so
+/// that a test reads the log the operator would read. No other test shares
+/// its tracing state.
+#[cfg(unix)]
+struct HttpServer {
+    child: std::process::Child,
+    port: u16,
+    lines: Vec<String>,
+    rx: std::sync::mpsc::Receiver<String>,
+}
+
+#[cfg(unix)]
+impl HttpServer {
+    /// Starts it with `http_keys` added to the `[service.http]` table and
+    /// `more` after it, and waits for the `listening` line.
+    fn start(http_keys: &str, more: &str) -> Self {
+        use std::io::{BufRead, BufReader};
+        use std::process::{Command, Stdio};
+        let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = probe.local_addr().unwrap().port();
+        drop(probe);
+        let config = config_file(&format!(
+            "config_version = 1\n[service.http]\nbind = \"127.0.0.1:{port}\"\n{http_keys}{more}[engines.w]\ntype = \"wikipedia\"\ncategories = [\"general\"]\n"
+        ));
+        let mut child = Command::new(env!("CARGO_BIN_EXE_rypsok"))
+            .args(["serve", "--transport", "http", "--config"])
+            .arg(&config)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let stderr = child.stderr.take().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                let _ = tx.send(line);
+            }
+        });
+        let mut lines = Vec::new();
+        let mut listening = false;
+        while let Ok(line) = rx.recv_timeout(std::time::Duration::from_secs(10)) {
+            let ready = line.contains("\"event\":\"listening\"");
+            lines.push(line);
+            if ready {
+                listening = true;
+                break;
+            }
+        }
+        assert!(listening, "the listener announces itself: {lines:?}");
+        HttpServer {
+            child,
+            port,
+            lines,
+            rx,
+        }
+    }
+
+    /// Stops it with `SIGTERM` (it must exit 0 within LIM-O1) and returns
+    /// every line of its log that is a JSON object.
+    fn stop(mut self) -> Vec<Value> {
+        let killed = std::process::Command::new("kill")
+            .arg("-TERM")
+            .arg(self.child.id().to_string())
+            .status()
+            .unwrap();
+        assert!(killed.success());
+        let started = std::time::Instant::now();
+        let exit = loop {
+            if let Some(exit) = self.child.try_wait().unwrap() {
+                break exit;
+            }
+            assert!(
+                started.elapsed() < std::time::Duration::from_millis(3000),
+                "did not exit within LIM-O1"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
+        assert!(exit.success(), "{exit:?}");
+        // The reader ends at the end of the stream: everything is then in `rx`.
+        self.lines.extend(self.rx.iter());
+        self.lines
+            .iter()
+            .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+            .collect()
+    }
+}
+
+/// The events of one name in a process's log.
+fn events_named<'a>(log: &'a [Value], name: &str) -> Vec<&'a Value> {
+    log.iter().filter(|v| v["event"] == name).collect()
+}
+
+/// REQ-SEC-024 and REQ-OBS-005 (RFC 019 D5; correction R3 of the 020r
+/// review): a refused handshake is logged once as `http_refused` with the
+/// reason `session_limit` and the address family. The server is a process of
+/// its own and its standard error is read.
+#[cfg(unix)]
+#[test]
+fn req_sec_024_a_refused_handshake_is_logged() {
+    let server = HttpServer::start("max_sessions = 1\n", "");
+    let initialize = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}"#;
+    let headers = [
+        ("Content-Type", "application/json"),
+        ("Accept", "application/json, text/event-stream"),
+    ];
+    assert_eq!(
+        http_post_headers(server.port, &headers, initialize),
+        Some(200)
+    );
+    assert_eq!(
+        http_post_headers(server.port, &headers, initialize),
+        Some(503)
+    );
+    let log = server.stop();
+    let refused = events_named(&log, "http_refused");
+    assert_eq!(refused.len(), 1, "{refused:#?}");
+    assert_eq!(refused[0]["reason"], "session_limit");
+    assert_eq!(refused[0]["family"], "ipv4");
+}
+
+/// REQ-SEC-018 and REQ-OBS-007 (RFC 019 D6; correction R3 of the 020r
+/// review): a foreign `Host` and a refused `Origin` are 403, the signature
+/// of THR-18, and leave one `http_refused` event each (`sdk_forbidden`, the
+/// status, the address family and no header value); a missing protocol
+/// header is 400 and an `Accept` without both media types is 406, counted
+/// and not logged per request. (The counts are read in the library test
+/// `req_sec_018_sdk_refusals_are_pinned_and_counted`.)
+#[cfg(unix)]
+#[test]
+fn req_sec_018_sdk_refusals_are_logged_once_each_without_header_values() {
+    let server = HttpServer::start("", "");
+    let discover = r#"{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"t","version":"0"},"io.modelcontextprotocol/clientCapabilities":{}}}}"#;
+    let standard = [
+        ("Content-Type", "application/json"),
+        ("Accept", "application/json, text/event-stream"),
+        ("MCP-Protocol-Version", "2026-07-28"),
+        ("Mcp-Method", "server/discover"),
+    ];
+    let with = |extra: (&'static str, &'static str)| {
+        let mut headers = standard.to_vec();
+        headers.push(extra);
+        headers
+    };
+    let port = server.port;
+    assert_eq!(
+        http_post_headers(port, &with(("Host", "evil.example")), discover),
+        Some(403)
+    );
+    assert_eq!(
+        http_post_headers(port, &with(("Origin", "https://evil.example")), discover),
+        Some(403)
+    );
+    // No protocol header: 400.
+    assert_eq!(
+        http_post_headers(
+            port,
+            &[
+                ("Content-Type", "application/json"),
+                ("Accept", "application/json, text/event-stream"),
+                ("Mcp-Method", "server/discover"),
+            ],
+            discover
+        ),
+        Some(400)
+    );
+    // An `Accept` without both media types: 406.
+    assert_eq!(
+        http_post_headers(
+            port,
+            &[
+                ("Content-Type", "application/json"),
+                ("Accept", "application/json"),
+                ("MCP-Protocol-Version", "2026-07-28"),
+                ("Mcp-Method", "server/discover"),
+            ],
+            discover
+        ),
+        Some(406)
+    );
+    let log = server.stop();
+    let refused = events_named(&log, "http_refused");
+    assert_eq!(
+        refused.len(),
+        2,
+        "the 403s are logged, the 400 and the 406 are counted only: {refused:#?}"
+    );
+    for event in &refused {
+        assert_eq!(event["reason"], "sdk_forbidden");
+        assert_eq!(event["status"], 403);
+        assert_eq!(event["family"], "ipv4");
+    }
+    // The gate's own event carries no header value. (The SDK writes its own
+    // warning for the same request, with the value; that line is the SDK's.)
+    assert!(
+        !serde_json::to_string(&refused)
+            .unwrap()
+            .contains("evil.example"),
+        "no header value in the gate's event"
+    );
 }
 
 /// A minimal HTTP POST of a JSON-RPC body to `/mcp` of the 2026-07-28
@@ -1214,19 +1370,44 @@ fn http_post_mcp_as(
     body: &str,
     bearer: Option<&str>,
 ) -> Option<u16> {
+    let authorization = bearer.map(|t| format!("Bearer {t}"));
+    let mut headers: Vec<(&str, &str)> = vec![
+        ("Content-Type", "application/json"),
+        ("Accept", "application/json, text/event-stream"),
+        ("MCP-Protocol-Version", "2026-07-28"),
+        ("Mcp-Method", method),
+    ];
+    if let Some(name) = name {
+        headers.push(("Mcp-Name", name));
+    }
+    if let Some(authorization) = &authorization {
+        headers.push(("Authorization", authorization));
+    }
+    http_post_headers(port, &headers, body)
+}
+
+/// A POST to `/mcp` with exactly these headers (and a `Host` of the loopback
+/// address unless one is given): the status code, or `None` when nothing
+/// answers.
+#[cfg(unix)]
+fn http_post_headers(port: u16, headers: &[(&str, &str)], body: &str) -> Option<u16> {
     use std::io::{Read, Write};
     let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).ok()?;
     stream
         .set_read_timeout(Some(std::time::Duration::from_secs(5)))
         .ok()?;
-    let name_header = name.map_or(String::new(), |n| format!("Mcp-Name: {n}\r\n"));
-    let auth_header = bearer.map_or(String::new(), |t| format!("Authorization: Bearer {t}\r\n"));
-    write!(
-        stream,
-        "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nAccept: application/json, text/event-stream\r\nMCP-Protocol-Version: 2026-07-28\r\nMcp-Method: {method}\r\n{name_header}{auth_header}Connection: close\r\nContent-Length: {}\r\n\r\n{body}",
+    let mut request = String::from("POST /mcp HTTP/1.1\r\n");
+    if !headers.iter().any(|(n, _)| n.eq_ignore_ascii_case("host")) {
+        request.push_str(&format!("Host: 127.0.0.1:{port}\r\n"));
+    }
+    for (name, value) in headers {
+        request.push_str(&format!("{name}: {value}\r\n"));
+    }
+    request.push_str(&format!(
+        "Connection: close\r\nContent-Length: {}\r\n\r\n{body}",
         body.len()
-    )
-    .ok()?;
+    ));
+    stream.write_all(request.as_bytes()).ok()?;
     let mut buffer = String::new();
     let _ = stream.read_to_string(&mut buffer);
     buffer
