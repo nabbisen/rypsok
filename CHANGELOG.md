@@ -36,6 +36,18 @@ announced here with both values.
   every target for 240 s and its time limit follows their number. Five
   `#[doc(hidden)]` items of `rypsok-core` were made public for them, and
   `Display` for the egress rule types; none is part of the stable surface.
+- Internal: the verification debt on the security paths. Tests for what the
+  audit found unverified: a successful `http` to `https` upgrade against a
+  TLS server with a certificate made at test time, what a fetch sends (method,
+  headers, no cookie, no credentials, no proxy), the engine client's timeout,
+  hostile provider text in errors and logs, every error constructor's message,
+  and a gate that every request is sent on a client `egress.rs` built;
+  a test for 48 of the 54 mutants that `cargo-mutants` found alive on the
+  security paths and `mutants.toml` with the six that cannot change
+  behaviour; `docs/src/maintainers/verification-ledger.md` lists the
+  requirements whose tests are still partial. A property test that could
+  generate `0.0.0.0` as a host name and fail was corrected. `rcgen` is a
+  dev-dependency of `rypsok-core`.
 
 ### Fixed
 
