@@ -1,0 +1,6 @@
+# Tutorial 1: one keyless engine, nothing else to set up.
+config_version = 1
+
+[engines.wikipedia]
+type = "wikipedia"
+categories = ["general", "science"]

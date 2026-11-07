@@ -190,6 +190,14 @@ jobs:
             if [ -s "$dir/missed.txt" ]; then echo; echo "Missed:"; sed 's/^/- /' "$dir/missed.txt"; fi
             if [ -s "$dir/timeout.txt" ]; then echo; echo "Timed out (counted as caught):"; sed 's/^/- /' "$dir/timeout.txt"; fi
           } >> "$GITHUB_STEP_SUMMARY"
+          df -h . /tmp
+          # A mutant whose build or test dies for want of disk is counted as
+          # caught by the tool: such a run proves nothing (020q found it).
+          if grep -rlq "No space left on device" "$dir/log" 2>/dev/null; then
+            echo "::error::the disk filled during the run; the counts are not trustworthy"
+            echo "The disk filled during the run: the counts above are not trustworthy." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
           # cargo-mutants exits 0 when all are caught, 2 when a mutant was
           # missed, 3 when only timeouts happened (caught), and 1 or 4 for a
           # usage error or a baseline that fails. Red unless 0 or 3.
@@ -208,4 +216,7 @@ jobs:
   external:
     name: External checks
     uses: ./.github/workflows/external-checks.yml
-    secrets: inherit
+    # The one secret the live checks need, by name: not every secret of the
+    # repository: passing them all would hand over secrets added later too.
+    secrets:
+      BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}

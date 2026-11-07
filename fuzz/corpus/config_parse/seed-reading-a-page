@@ -1,0 +1,13 @@
+# Tutorial 3: web_fetch with a larger default budget and cross-host
+# redirects still refused (the default), so that a page that moved is
+# reported, not followed.
+config_version = 1
+
+[fetch]
+max_chars = 5000
+max_chars_ceiling = 20000
+follow_cross_host_redirects = false
+
+[engines.wikipedia]
+type = "wikipedia"
+categories = ["general", "science"]

@@ -1,0 +1,17 @@
+# Tutorial 5: the scraping switch. Without [scraping] enabled = true the
+# duckduckgo table is refused at startup; with it, you accept the
+# provider's terms yourself. rypsok still identifies itself honestly.
+config_version = 1
+
+[scraping]
+enabled = true
+
+[engines.wikipedia]
+type = "wikipedia"
+categories = ["general", "science"]
+preference = 10
+
+[engines.ddg]
+type = "duckduckgo"
+categories = ["general"]
+preference = 20

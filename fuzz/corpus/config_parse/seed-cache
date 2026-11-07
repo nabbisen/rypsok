@@ -1,0 +1,14 @@
+# The result cache: off by default. On, it keeps engine answers (only from
+# engines whose record allows storage) for ttl_s seconds in memory, and a
+# hit is marked by the notice from_cache. Enabling it retains queries in
+# memory for that long.
+config_version = 1
+
+[cache]
+enabled = true
+ttl_s = 300
+max_entries = 1000
+
+[engines.wikipedia]
+type = "wikipedia"
+categories = ["general", "science"]

@@ -8,6 +8,10 @@ name: External checks
 on:
   workflow_dispatch:
   workflow_call:
+    secrets:
+      BRAVE_API_KEY:
+        description: The Brave Search key of the live check; without it that check says it skipped.
+        required: false
 
 permissions:
   contents: read

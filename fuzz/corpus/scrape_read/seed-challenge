@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>DuckDuckGo</title></head>
+<body class="body--html">
+  <div class="anomaly-modal__modal">
+    <div class="anomaly-modal__title">Unfortunately, bots use DuckDuckGo too.</div>
+    <p class="anomaly-modal__description">Please complete the following challenge to confirm this search was made by a human.</p>
+    <form class="anomaly-modal__form" action="/html/anomaly" method="post">
+      <p>Select all squares containing a duck:</p>
+      <img src="../assets/anomaly/images/challenge/1.png" alt="">
+      <input type="submit" value="Submit">
+    </form>
+  </div>
+</body>
+</html>

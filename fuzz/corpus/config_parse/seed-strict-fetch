@@ -1,0 +1,14 @@
+# Strict mode: web_fetch reads only URLs that web_search returned in this
+# process or that the operator allows below. Everything else is denied
+# with reason strict_mode before any network request.
+config_version = 1
+
+[fetch]
+strict_mode = true
+
+[egress]
+allow = ["docs.rs", "doc.rust-lang.org"]
+
+[engines.wikipedia]
+type = "wikipedia"
+categories = ["general", "science"]

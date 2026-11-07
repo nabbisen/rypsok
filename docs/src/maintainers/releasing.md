@@ -9,43 +9,45 @@ release workflow builds and attaches, and never creates a release.
 1. **Update dependencies, once per release cycle.** At the start of the cycle
    (D-14 as amended), and not on a timer: `cargo update`; the pinned actions
    (the latest release of each, by commit SHA with its version as a comment);
-   the base image digest in the `Dockerfile`; and the release compiler (the
-   `toolchain:` line of `.github/actions/build-release/action.yml`). One
-   commit, through CI. Between cycles nothing updates by itself.
-2. **Preconditions.** The gates are green on the release commit, the reviewer
-   has recorded a Go, and the owner has authorized the release.
-3. **Run the release checks on the release commit.** Bump the pinned compiler
-   (the `toolchain:` line of `.github/actions/build-release/action.yml`, the
-   one place that names it; set it to the current stable with `rustup update
-   stable`, `rustc --version`), commit it with the release commit, dispatch
+   the base image digest in the `Dockerfile`; and the release compiler, the
+   `toolchain:` line of `.github/actions/build-release/action.yml`, the one
+   place that names it (set it to the current stable: `rustup update stable`,
+   `rustc --version`). One commit, through CI. The compiler is a deliberate
+   change of the cycle, made once, not a surprise of the day and not a change
+   after the checks. CI keeps `stable` on purpose, to see new lints early; its
+   1.88 job covers the floor. Between cycles nothing updates by itself.
+2. **The release commit.** The version bump and the changelog, through CI;
+   the gates are green on it.
+3. **Run the release checks on the release commit.** Dispatch
    `release-checks.yml` from `main` at that commit (Actions, Release checks,
-   Run workflow), and release only when every job is green or explained as
-   [When checks run](./checks.md) says. The tag goes on **the commit the run
-   checked** (its `head_sha`); a later commit runs them again. The compiler
-   is a deliberate change of the release, not a surprise of the day. CI keeps
-   `stable` on purpose, to see new lints early; its 1.88 job covers the floor.
-4. **Tag.** Tag the release commit `X.Y.Z` (no `v` prefix) and push the
-   tag. The tag must equal the workspace `version` of `Cargo.toml`; the
-   attach job fails otherwise.
-5. **Publish.** The owner publishes the release on GitHub from the tag, or
+   Run workflow). Every job must be green or explained as
+   [When checks run](./checks.md) says.
+4. **Go and authorization.** The reviewer's readiness report quotes the id of
+   the release-checks run and its `head_sha` and records the Go; the owner
+   authorizes the release.
+5. **Tag** the commit the run checked (its `head_sha`); a later commit runs
+   the checks again. Tag it `X.Y.Z` (no `v` prefix) and push the tag. The tag
+   must equal the workspace `version` of `Cargo.toml`; the attach job fails
+   otherwise.
+6. **Publish.** The owner publishes the release on GitHub from the tag, or
    publishes first: creating the release creates the tag, which starts the
    workflow, whose attach job then finds the release. When publishing
    first, choose the release commit as the target of the new tag, not the
    branch head: the tag goes on the commit chosen, and the attach job's
    version check catches a wrong version but not a wrong commit with the
    same version.
-6. **Read the run.** The `release` workflow builds the binaries, writes
+7. **Read the run.** The `release` workflow builds the binaries, writes
    `SHA256SUMS`, and builds the container image. If the release did not exist
    when its attach job ran, the job wrote a notice in the run summary and
    attached nothing. In that case run the workflow again from the tag
    (Actions, release, Run workflow, "Use workflow from: Tag X.Y.Z", or
    `gh workflow run release.yml --ref X.Y.Z`): the attach job uploads to the
    release that now exists.
-7. **Check the release page.** It lists three archives and `SHA256SUMS`:
+8. **Check the release page.** It lists three archives and `SHA256SUMS`:
    Linux x86_64 (static, musl), macOS arm64 and Windows x86_64. The release
    notes name the compiler: paste the `rustc --version` line that the
    "Compiler and flags" step of the run printed.
-8. **Nothing is overwritten.** The attach job refuses to replace an asset
+9. **Nothing is overwritten.** The attach job refuses to replace an asset
    that is already on the release. To replace one, delete it on the release
    page by hand and say so in the release notes, then run the workflow again
    from the tag.

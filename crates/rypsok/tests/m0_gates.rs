@@ -457,10 +457,17 @@ fn req_test_019_the_release_checks_are_manual_independent_and_bounded() {
                 body.get("uses").and_then(Yaml::scalar),
                 Some("./.github/workflows/external-checks.yml")
             );
+            let secrets: Vec<(&str, Option<&str>)> = body
+                .get("secrets")
+                .expect("the Brave key is passed")
+                .entries()
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.scalar()))
+                .collect();
             assert_eq!(
-                body.get("secrets").and_then(Yaml::scalar),
-                Some("inherit"),
-                "the Brave key reaches the live check"
+                secrets,
+                [("BRAVE_API_KEY", Some("${{ secrets.BRAVE_API_KEY }}"))],
+                "exactly the Brave key reaches the live check, by name"
             );
         } else {
             assert!(
@@ -468,6 +475,52 @@ fn req_test_019_the_release_checks_are_manual_independent_and_bounded() {
                 "job `{id}` has a time limit"
             );
         }
+    }
+}
+
+/// REQ-TEST-019 and REQ-SEC-020 (review of 020w, C1): a called workflow gets
+/// the one secret it needs, by name. `secrets: inherit` would hand it every
+/// secret of the repository, today and whenever one is added.
+#[test]
+fn req_test_019_a_called_workflow_gets_only_the_secret_it_needs() {
+    for name in workflow_names() {
+        assert!(
+            !read(&format!(".github/workflows/{name}")).contains("secrets: inherit"),
+            "{name} passes every secret"
+        );
+    }
+    let external = workflow("external-checks.yml");
+    let declared = external
+        .at(&["on", "workflow_call", "secrets"])
+        .expect("external-checks.yml declares the secrets it takes");
+    let names: Vec<&str> = declared.entries().iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(names, ["BRAVE_API_KEY"]);
+    assert_eq!(
+        declared
+            .at(&["BRAVE_API_KEY", "required"])
+            .and_then(Yaml::scalar),
+        Some("false"),
+        "a release can be checked without the key (the check says it skipped)"
+    );
+}
+
+/// REQ-TEST-019 (review of 020w, C4): every fuzz target the release checks
+/// run starts from a committed corpus: 300 s from nothing on a structured
+/// format is spent finding the format. The seeds are `seed-*` files.
+#[test]
+fn req_test_019_every_fuzz_target_has_committed_seeds() {
+    let file = release_checks();
+    for target in list_of(matrix_of(&file, "fuzz"), "target") {
+        let dir = repository_root().join("fuzz/corpus").join(target);
+        let seeds = std::fs::read_dir(&dir)
+            .map(|entries| {
+                entries
+                    .filter_map(Result::ok)
+                    .filter(|e| e.file_name().to_string_lossy().starts_with("seed-"))
+                    .count()
+            })
+            .unwrap_or(0);
+        assert!(seeds >= 1, "fuzz/corpus/{target} has no seed-* file");
     }
 }
 
@@ -593,6 +646,29 @@ fn req_test_019_the_release_checks_mutate_the_six_security_modules() {
     );
     let lines = run_lines(&file).join("\n");
     assert!(lines.contains("df -h"), "the disk is checked first");
+    // A full disk makes a mutant's build or test fail, which the tool counts
+    // as caught: the run must say the counts cannot be trusted (review of
+    // 020w, C2). The script checks the logs, and shows the disk again.
+    let mutate = file
+        .at(&["jobs", "mutants", "steps"])
+        .unwrap()
+        .items()
+        .iter()
+        .find(|step| step.get("name").and_then(Yaml::scalar) == Some("Mutate"))
+        .and_then(|step| step.get("run").and_then(Yaml::scalar))
+        .expect("a step named Mutate");
+    assert!(
+        mutate.contains("No space left on device"),
+        "the script fails a run in which the disk filled"
+    );
+    assert!(
+        mutate.contains("df -h"),
+        "the disk is shown after the run too"
+    );
+    assert!(
+        mutate.find("No space left on device") < mutate.find("case \"$code\""),
+        "the disk check comes before the exit-code case"
+    );
     assert!(
         lines.contains("cargo mutants --jobs 2"),
         "two jobs at a time"

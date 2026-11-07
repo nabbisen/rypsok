@@ -1,0 +1,21 @@
+# Tutorial 4: Streamable HTTP behind a reverse proxy that terminates TLS.
+# A bind off loopback requires callers; each caller's token is read from
+# the environment or a file, never written here.
+config_version = 1
+
+[service.http]
+bind = "0.0.0.0:8737"
+allowed_hosts = ["rypsok.example", "rypsok.example:443"]
+legacy_revisions = true
+
+[[service.http.auth.callers]]
+id = "mimlys"
+token_env = "RYPSOK_TOKEN_MIMLYS"
+
+[[service.http.auth.callers]]
+id = "ops"
+token_file = "/run/secrets/rypsok-ops"
+
+[engines.wikipedia]
+type = "wikipedia"
+categories = ["general", "science"]

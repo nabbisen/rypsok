@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Why bounded tools matter</title>
+<link rel="stylesheet" href="/s.css"><script src="/a.js"></script></head>
+<body>
+<header class="site-header"><a href="/">Example Blog</a><nav><a href="/posts">Posts</a> <a href="/about">About</a></nav></header>
+<div class="layout">
+<article>
+<h1>Why bounded tools matter</h1>
+<p class="byline">By A. Writer</p>
+<p>This is the body of the article, written long enough that the extractor treats it as the content of the page rather than a teaser or a caption. It mentions <a href="https://example.org/limits">the limits page</a> and uses <em>emphasis</em> and <strong>strength</strong>.</p>
+<h2>A second section</h2>
+<p>This is the body of the article, written long enough that the extractor treats it as the content of the page rather than a teaser or a caption. </p>
+<ul><li>First point</li><li>Second point</li></ul>
+</article>
+<aside class="sidebar"><h3>Popular</h3><ul><li><a href="/p1">Post one</a></li></ul></aside>
+</div>
+<footer><p>Copyright notice in the footer</p></footer>
+<div class="comments"><p>First comment text</p></div>
+</body></html>
