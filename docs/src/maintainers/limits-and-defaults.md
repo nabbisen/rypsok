@@ -4,6 +4,12 @@
 **Governs:** every number that the [requirements](./requirements.md) and the
 [external design](./external-design.md) refer to by a `LIM-` identifier.
 
+A bare `D-nn` in this book is a decision of the startup review that fixed the
+first requirements. That review is not a page of this book and no page lists its
+decisions; the requirements quote what they need. The decisions of the audit
+(RFC 020) are written `RFC 020, D-n`.
+([Requirements](./requirements.md) says the same in its introduction.)
+
 Every value here is a starting point. It is confirmed or corrected by
 measurement in milestones M1 and M3 (see `ROADMAP.md`). The requirements do
 not repeat the values; they cite the identifier, so that a value changes in
@@ -31,7 +37,7 @@ by a key is "fixed").
 | LIM-S1 | Length of `query` | 400 characters | 1–600 | Brave accepts 600 characters and 75 words; an engine with a lower limit is skipped for a longer query |
 | LIM-S2 | `max_results` | 5 | 1–20 | Study example; Brave returns at most 20 |
 | LIM-S3 | Results requested from each engine | 10 | 5–20 | Overlap for ranking |
-| LIM-S4 | Overall deadline of a search | 2500 ms | 500–10000 | Study proposes 1500 ms; to be measured (R-10) |
+| LIM-S4 | Overall deadline of a search | 2500 ms | 500–10000 | Study proposes 1500 ms (R-10). Measured: cold start to the first answer 729 ms at M1 and 715 ms at M8; rypsok's own share about 6 ms (RFC 020, 020e) |
 | LIM-S5 | Timeout of one engine request | 2000 ms | ≤ LIM-S4 − LIM-S6 | C-14 |
 | LIM-S6 | Reserve for post-processing | 200 ms | 50–1000 | Architecture overview §4.6 |
 | LIM-S7 | Maximum duration of a `web_search` call | LIM-S4 + 300 ms | derived | X-04 |
@@ -48,7 +54,7 @@ by a key is "fixed").
 |---|---|---:|---|---|
 | LIM-F1 | `max_chars` | 3000 | 500 to LIM-F2 | Draft external design §4.2 and §15; mimlys study; X-06 |
 | LIM-F2 | Ceiling of `max_chars` | 20000 | 500–100000 | M-02 |
-| LIM-F3 | Response bytes after decompression | 5 MiB | 64 KiB–10 MiB | Study; the ceiling is 10 MiB since RFC 020 D-20: four 20 MiB pages need 265 to 282 MiB (audit 020e), more than the 256 MiB of the documented unit |
+| LIM-F3 | Response bytes after decompression | 5 MiB | 64 KiB–10 MiB | Study; the ceiling is 10 MiB since RFC 020, D-20: four 20 MiB pages need 265 to 282 MiB (audit 020e), more than the 256 MiB of the documented unit |
 | LIM-F4 | Overall deadline of a fetch | 10000 ms | 1000–30000 | — |
 | LIM-F5 | Maximum duration of a `web_fetch` call | LIM-F4 + 1000 ms | derived | X-04, R-04 |
 | LIM-F6 | Connect timeout | 3000 ms | 500–10000 | — |
@@ -56,7 +62,7 @@ by a key is "fixed").
 | LIM-F8 | Ports | 80, 443 | operator | M-07 |
 | LIM-F9 | Length of `url` | 2048 characters | fixed | — |
 | LIM-F10 | HTML nodes parsed | 100000 | fixed | R-04 |
-| LIM-F11 | HTML nesting depth; enforced while parsing, a deeper page is read in part | 256 | fixed | R-04; RFC 020 D-3 |
+| LIM-F11 | HTML nesting depth; enforced while parsing, a deeper page is read in part | 256 | fixed | R-04; RFC 020, D-3 |
 | LIM-F12 | robots.txt kept in memory | 24 hours | fixed | RFC 9309 §2.4 |
 | LIM-F13 | Size of a robots.txt read | 512 KiB | fixed | Parser bound |
 | LIM-F14 | URLs remembered for strict mode | 10000 | operator | REQ-SEC-021; bounded memory (RFC 011) |
@@ -85,7 +91,7 @@ by a key is "fixed").
 | LIM-H3 | Idle HTTP connection timeout, including a connection that has sent nothing or only the first bytes of the HTTP/2 preface (HTTP/1: close after; HTTP/2: keep-alive ping after, close when unanswered) | 60 s | 5–600 s | Resource hygiene (RFC 013) |
 | LIM-H4 | Streams one HTTP/2 connection may open | 16 | 1–256 | THR-26 (RFC 018) |
 | LIM-H5 | Time one HTTP request may take, whatever its state | 30 s | 3–600 s, at least `fetch.deadline_ms` + 2 s | THR-26 (RFC 018) |
-| LIM-H6 | Live sessions of the handshake-based revisions over HTTP; each costs about 60 KiB | 256 | 1–2048 | THR-27 (RFC 019); the ceiling is 2048 since RFC 020 D-21: 65536 sessions need 3.7 GiB (audit 020e), 2048 about 120 MiB |
+| LIM-H6 | Live sessions of the handshake-based revisions over HTTP; each costs about 60 KiB | 256 | 1–2048 | THR-27 (RFC 019); the ceiling is 2048 since RFC 020, D-21: 65536 sessions need 3.7 GiB (audit 020e), 2048 about 120 MiB |
 | LIM-H7 | Size of the header block of an HTTP request (HTTP/1: request line and headers; HTTP/2: the header list) | 16384 bytes | fixed | NET-12 (audit 020b); the same bound on both protocols |
 
 ## Circuit breaker
@@ -143,7 +149,7 @@ These are not limits an operator sets. They are the costs that the audit
 measured (handoff 020e, the delivered musl release build of 0.8.0), rounded
 up, and `rypsok check` combines them with the effective settings into the
 worst-case memory it prints and compares with `MemoryMax` of the documented
-unit (RFC 020 D-20, D-21):
+unit (RFC 020, D-20, D-21):
 
 `13 MiB + fetches_in_flight × max_bytes + parsing_in_flight × (4.5 × max_bytes + 13 MiB) + max_sessions × 60 KiB` (the sessions only while `legacy_revisions` is on),
 plus `cache.max_entries × cache.max_entry_bytes` (LIM-K3 × LIM-K4) when the

@@ -22,7 +22,10 @@ that holds from M1 on. Numbers are never written here; they are cited as
 `LIM-` identifiers of [Limits and Defaults](./limits-and-defaults.md).
 Threats are cited as `THR-` identifiers of the
 [Threat Register](./threat-register.md). Decisions `D-nn` and findings
-(`C-`, `M-`, `T-`, `A-`, `R-`, `X-`) refer to the startup review.
+(`C-`, `M-`, `T-`, `A-`, `R-`, `X-`) refer to the startup review. A bare `D-nn` is a decision of the startup review that fixed the
+requirements. That review is not a page of this book and no page lists its
+decisions; the requirements quote what they need. The decisions of the audit
+(RFC 020) are written `RFC 020, D-n`.
 
 Normative words: **shall** (binding), **should** (binding unless a recorded
 reason exists), **may** (permitted). A requirement written with "should"
@@ -330,7 +333,7 @@ shall end the call with `unavailable` and the reason `http_status`, giving
 the status code and never the body; the message says whether retrying can
 help (408, 425, 429 and 5xx: retry later; any other 4xx: the same URL will not
 help), and `retry_after_ms` carries a `Retry-After` of at most an hour in
-seconds where retrying can help. 3xx follows REQ-FETCH-006. (RFC 020 D-7)
+seconds where retrying can help. 3xx follows REQ-FETCH-006. (RFC 020, D-7)
 
 ### REQ-FETCH-009 No script execution — M3 · I
 `web_fetch` shall not execute scripts and shall not follow `meta refresh`.
@@ -617,7 +620,7 @@ content with the notice `extraction_partial`, or, when nothing can be extracted,
 failure. Parsing shall stop at LIM-F10 nodes or LIM-F11
 levels of nesting: both bounds are enforced while the document is parsed, so
 that a deeply nested page cannot occupy a parse permit for longer than a
-shallow one. (R-04, RFC 020 D-3)
+shallow one. (R-04, RFC 020, D-3)
 
 ### REQ-PAGE-007 Charset handling — M3 · T
 Documents shall be decoded according to the declared charset, with detection
@@ -666,7 +669,7 @@ shall report the removal. The two joiners (U+200C, U+200D) are kept only
 where they carry orthography: ZWNJ between two characters of Arabic script
 or of an Indic script, ZWJ in an Indic conjunct (next to a virama) or
 between two emoji; never more than one in a row, and none at the start or
-the end of the text. (R-03, CLR-11; RFC 020 D-10)
+the end of the text. (R-03, CLR-11; RFC 020, D-10)
 
 ### REQ-SEC-016 Fixed error vocabulary — M1 · T
 Error kinds, notice codes and engine error classes shall come from fixed

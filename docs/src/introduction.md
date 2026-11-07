@@ -1,5 +1,9 @@
 # rypsok
 
+<!-- release -->
+This book describes the development version of rypsok, not a release.
+<!-- /release -->
+
 rypsok is a headless meta-search service for AI agents. It searches several
 engines at once, deduplicates and ranks the results, reads the main content
 of web pages, and returns compact, structured responses in which external

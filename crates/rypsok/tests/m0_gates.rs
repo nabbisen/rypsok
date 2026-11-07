@@ -1945,3 +1945,162 @@ fn req_sec_014_no_expect_on_a_standard_library_lock() {
         offenders.join("\n")
     );
 }
+
+/// REQ-DOC-002 (RFC 020, D-17): the book is published from the release tag
+/// (or on a visible dispatch), never on a push to `main`, and a failed
+/// publish is red; CI still builds the book on every push.
+#[test]
+fn req_doc_002_the_book_is_published_from_the_release_tag() {
+    let docs = workflow("docs.yml");
+    let triggers: Vec<&str> = docs
+        .get("on")
+        .expect("triggers")
+        .entries()
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .collect();
+    assert_eq!(triggers, ["push", "workflow_dispatch"]);
+    let push = docs.at(&["on", "push"]).unwrap();
+    assert!(push.get("branches").is_none(), "no push to a branch");
+    assert_eq!(list_of_items(push.get("tags").expect("tags")), ["[0-9]*"]);
+    assert!(
+        docs.find_all("continue-on-error").is_empty(),
+        "a failed publish is red"
+    );
+    let deploy = docs.at(&["jobs", "deploy", "permissions"]).unwrap();
+    assert_eq!(deploy.get("pages").and_then(Yaml::scalar), Some("write"));
+    assert_eq!(deploy.get("id-token").and_then(Yaml::scalar), Some("write"));
+    let ci = workflow("ci.yml");
+    assert!(
+        run_lines(&ci).iter().any(|l| l == "mdbook build docs"),
+        "CI builds the book on every push"
+    );
+}
+
+/// REQ-DOC-002 (RFC 020, D-17): the first page says which release the book
+/// describes, between two markers that the publishing workflow replaces, and
+/// the workflow fails when the markers are gone.
+#[test]
+fn req_doc_002_the_first_page_says_which_release_it_describes() {
+    let intro = read("docs/src/introduction.md");
+    let open = intro.find("<!-- release -->").expect("opening marker");
+    let close = intro.find("<!-- /release -->").expect("closing marker");
+    assert!(open < close);
+    assert!(
+        intro[open..close]
+            .contains("This book describes the development version of rypsok, not a release."),
+        "the text between the markers is the development line"
+    );
+    assert!(
+        intro[..open].lines().filter(|l| !l.is_empty()).count() == 1,
+        "the line is directly under the title"
+    );
+    let docs = workflow("docs.yml");
+    let steps = docs.at(&["jobs", "build", "steps"]).unwrap().items();
+    let step_with = |needle: &str| {
+        steps.iter().position(|step| {
+            step.at(&["run"])
+                .and_then(Yaml::scalar)
+                .is_some_and(|run| run.contains(needle))
+        })
+    };
+    let replace = step_with("<!-- release -->").expect("a step that replaces the line");
+    let build = step_with("mdbook build docs").expect("the build step");
+    assert!(replace < build, "the line is replaced before the build");
+    let script = steps[replace].at(&["run"]).and_then(Yaml::scalar).unwrap();
+    assert!(script.contains("<!-- /release -->") && script.contains("exit 1"));
+    assert!(script.contains("This book describes rypsok "));
+    assert!(script.contains("not a release."));
+}
+
+/// REQ-DOC-002 (RFC 020, D-17): the maintainer's page names the setting that
+/// lets the tag deploy and says a documentation fix is a patch release.
+#[test]
+fn req_doc_002_releasing_names_the_pages_setting() {
+    let releasing = read("docs/src/maintainers/releasing.md");
+    for needle in ["github-pages", "[0-9]*", "patch release", "fails red"] {
+        assert!(releasing.contains(needle), "releasing.md: {needle}");
+    }
+}
+
+/// REQ-PERF-003 (RFC 020, PRF-4): the memory ceiling of the documented unit
+/// and of the documented container run leaves no room for swap.
+#[test]
+fn req_perf_003_the_deployment_page_forbids_swap() {
+    let deployment = read("docs/src/reference/deployment.md");
+    assert!(deployment.contains("MemoryMax=256M"));
+    assert!(deployment.contains("MemorySwapMax=0"));
+    let line = deployment
+        .lines()
+        .find(|l| l.contains("--memory 256m"))
+        .expect("the docker run line");
+    assert!(line.contains("--memory-swap 256m"), "{line}");
+}
+
+/// RFC 020, D-17 and item 7 of 020t: a decision id a reader can resolve. Two
+/// lists use `D-n`, the startup review's and the audit's (RFC 020). Outside
+/// `requirements.md`, an audit decision is written `RFC 020, D-n` (the
+/// `RFC 020` before it in the same sentence or parenthesis), and a bare id is
+/// allowed only on a page that says what a bare id is.
+#[test]
+fn req_doc_003_a_decision_id_names_its_list() {
+    let src = repository_root().join("docs").join("src");
+    let mut stack = vec![src.clone()];
+    let mut bare_pages = 0;
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let name = path
+                .strip_prefix(&src)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            if !name.ends_with(".md") || name == "maintainers/requirements.md" {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).unwrap();
+            let explained = text.contains("A bare `D-nn`");
+            let bytes = text.as_bytes();
+            let mut from = 0;
+            while let Some(at) = text[from..].find("D-") {
+                let start = from + at;
+                from = start + 2;
+                let digits = bytes[from..]
+                    .iter()
+                    .take_while(|b| b.is_ascii_digit())
+                    .count();
+                let word_start = start == 0 || !bytes[start - 1].is_ascii_alphanumeric();
+                if digits == 0 || !word_start {
+                    continue;
+                }
+                // The sentence or parenthesis so far: back to the last `.`,
+                // `(` or line start.
+                let before = &text[..start];
+                let line_start = before.rfind('\n').map_or(0, |i| i + 1);
+                let context = &before[line_start..];
+                let cut = context.rfind(['.', '(']).map_or(0, |i| i + 1);
+                let audit = context[cut..].contains("RFC 020")
+                    || context.rsplit_once("RFC 020").is_some_and(|(_, tail)| {
+                        tail.chars().all(|c| !matches!(c, '.' | '(' | ';'))
+                    });
+                if audit {
+                    assert!(
+                        !context[cut..].contains("RFC 020 D-"),
+                        "{name}: write `RFC 020, D-n` with the comma: {context}D-"
+                    );
+                    continue;
+                }
+                assert!(
+                    explained,
+                    "{name}: a bare `D-n` without saying what it is: {context}D-"
+                );
+                bare_pages += 1;
+            }
+        }
+    }
+    assert!(bare_pages > 0 || src.exists());
+}

@@ -11,6 +11,7 @@ on 2026-10-20 against the live API.
 | Identification | Descriptive User-Agent with contact information required; browser imitation is treated as malicious; requests must not be spread over several user agents. rypsok sends its standard User-Agent with the operator's contact |
 | Rate limit | 200 requests per minute with a compliant User-Agent; configured at 100 per minute for headroom |
 | Concurrency | At most 3; configured at 1 for the Action API |
+| Burst | The admission is 100 per minute with a burst of 10. From the eleventh search in quick succession the engine's limiter makes a call wait for its turn, about 600 ms per call at 100 per minute. This is by design (REQ-CMP-002): the wait is bounded by the deadline of the search and counts against it (LIM-S4), and a call that cannot be admitted before the deadline is not made, so the limit the provider allows is not exceeded |
 | Storage | No restriction; `cacheable = true` |
 | Attribution | Not mandatory beyond the URL; `attribution_required = false` |
 | Languages | Every Wikipedia language edition: `languages = All`, mapped to the subdomain from the primary language subtag |

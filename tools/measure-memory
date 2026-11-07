@@ -6,6 +6,20 @@
 # resident set (VmHWM) of the rypsok process is read from /proc.
 #
 # Usage: tools/measure-memory [concurrent fetches, default 4]
+#        tools/measure-memory --defaults [--binary=PATH]
+#
+# Two modes. The first is the measurement of RFC 012, which the constants of
+# `rypsok check` come from: it raises `fetch.max_bytes` to 10 MiB and sets
+# both in-flight limits to the number given, so that it is not the delivered
+# configuration. `--defaults` (RFC 020, 020t) runs the DELIVERED
+# configuration: `fetches_in_flight`, `parsing_in_flight` and `fetch.max_bytes`
+# are left at their defaults (read back from `rypsok check`, not repeated
+# here), the page is the largest one `fetch.max_bytes` admits, and the
+# fetches go to as many hosts as may run at once (127.0.0.1, 127.0.0.2, ...,
+# one server each), so none waits for another on the same host. It prints,
+# beside its measurement, the worst case that `rypsok check` derives for the
+# same settings.
+#
 # Prints the peak resident set in MiB and the per-fetch cost above the
 # idle baseline. Linux only (reads /proc); not a CI gate.
 
@@ -18,12 +32,32 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-CONCURRENT = int(sys.argv[1]) if len(sys.argv) > 1 else 4
+DEFAULTS = "--defaults" in sys.argv[1:]
+_numbers = [a for a in sys.argv[1:] if a.isdigit()]
+CONCURRENT = int(_numbers[0]) if _numbers else 4
 NODES = 100_000  # LIM-F10
-PAGE = ("<html><head><title>Memory</title></head><body><main>"
-        + "".join(f"<p>paragraph {i} with enough text to fill the page body up to the byte budget of the measurement run</p>" for i in range(NODES // 2))
-        + "</main></body></html>").encode()
-assert len(PAGE) > 4 * 1024 * 1024, f"{len(PAGE)} bytes: make the page bigger"
+FILLER = "paragraph {i} with enough text to fill the page body up to the byte budget of the measurement run"
+
+
+def make_page(target_bytes=None):
+    """The measurement page; with `target_bytes`, padded to just under it."""
+    def build(filler, pad):
+        return ("<html><head><title>Memory</title></head><body><main>"
+                + "".join(f"<p>{filler.format(i=i)}{pad}</p>" for i in range(NODES // 2))
+                + "</main></body></html>").encode()
+    if target_bytes is None:
+        page = build(FILLER, "")
+    else:
+        # A short filler, padded so that the page is just under the bound.
+        short = "paragraph {i}"
+        base = len(build(short, ""))
+        page = build(short, "x" * ((target_bytes - base) // (NODES // 2)))
+        assert len(page) <= target_bytes, f"{len(page)} bytes is over {target_bytes}"
+    assert len(page) > 4 * 1024 * 1024, f"{len(page)} bytes: make the page bigger"
+    return page
+
+
+PAGE = b""  # set in main()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -48,22 +82,67 @@ def rss_mib(pid):
     return int(fields["VmHWM"].split()[0]) / 1024, int(fields["VmRSS"].split()[0]) / 1024
 
 
-def main():
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    port = server.server_address[1]
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+def check_lines(binary, config):
+    done = subprocess.run([binary, "check", "--config", config], capture_output=True, text=True, check=False)
+    return (done.stdout + done.stderr).splitlines()
 
-    subprocess.run(["cargo", "build", "--release", "-q", "-p", "rypsok"], check=True)
-    binary = os.path.join("target", "release", "rypsok")
+
+def check_report(binary, config):
+    """What `rypsok check` says for this configuration: (limits line, memory line)."""
+    lines = check_lines(binary, config)
+    limits = next((x for x in lines if " limits: " in x), "")
+    memory = next((x for x in lines if " memory: " in x), "")
+    return limits, memory
+
+
+def main():
+    global PAGE, CONCURRENT
+    # `--binary PATH` measures a binary built elsewhere (the constants of
+    # `rypsok check` come from the musl release build, whose allocator keeps
+    # less than the host's glibc); without it the host release build is used.
+    given = [a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--binary=")]
+    if given:
+        binary = given[0]
+    else:
+        subprocess.run(["cargo", "build", "--release", "-q", "-p", "rypsok"], check=True)
+        binary = os.path.join("target", "release", "rypsok")
+    hosts = 1
+    port = 0
+    servers = []
     with tempfile.TemporaryDirectory() as tmp:
         config = os.path.join(tmp, "rypsok.toml")
-        with open(config, "w", encoding="utf-8") as f:
-            f.write(
-                "config_version = 1\n[egress]\nallow = [\"127.0.0.1/32\"]\nallow_http = true\n"
-                f"[fetch]\nports = [80, 443, {port}]\nmax_bytes = 10485760\nmax_chars_ceiling = 20000\n"
-                f"[limits]\nfetches_in_flight = {CONCURRENT}\nparsing_in_flight = {CONCURRENT}\n"
-                "[engines.w]\ntype = \"wikipedia\"\ncategories = [\"general\"]\n"
-            )
+        if DEFAULTS:
+            # Port first (any free one), then the delivered limits read back.
+            first = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+            port = first.server_address[1]
+            with open(config, "w", encoding="utf-8") as f:
+                f.write(
+                    "config_version = 1\n[egress]\nallow = [\"127.0.0.0/24\"]\nallow_http = true\n"
+                    f"[fetch]\nports = [80, 443, {port}]\n"
+                    "[engines.w]\ntype = \"wikipedia\"\ncategories = [\"general\"]\n"
+                )
+            limits_line, memory_line = check_report(binary, config)
+            fetches = int(limits_line.split("fetches_in_flight=")[1].split()[0])
+            fetch_line = next(x for x in check_lines(binary, config) if " fetch: " in x)
+            max_bytes = int(fetch_line.split("max_bytes=")[1].split()[0])
+            CONCURRENT = fetches
+            hosts = fetches
+            PAGE = make_page(max_bytes - 1024)
+            servers = [first] + [ThreadingHTTPServer((f"127.0.0.{n}", port), Handler) for n in range(2, hosts + 1)]
+        else:
+            PAGE = make_page()
+            first = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+            port = first.server_address[1]
+            servers = [first]
+            with open(config, "w", encoding="utf-8") as f:
+                f.write(
+                    "config_version = 1\n[egress]\nallow = [\"127.0.0.1/32\"]\nallow_http = true\n"
+                    f"[fetch]\nports = [80, 443, {port}]\nmax_bytes = 10485760\nmax_chars_ceiling = 20000\n"
+                    f"[limits]\nfetches_in_flight = {CONCURRENT}\nparsing_in_flight = {CONCURRENT}\n"
+                    "[engines.w]\ntype = \"wikipedia\"\ncategories = [\"general\"]\n"
+                )
+        for server in servers:
+            threading.Thread(target=server.serve_forever, daemon=True).start()
         stderr_path = os.path.join(tmp, "stderr.log")
         stderr_file = open(stderr_path, "w", encoding="utf-8")  # noqa: SIM115 (closed with the process)
         proc = subprocess.Popen(
@@ -93,7 +172,7 @@ def main():
         for i in range(CONCURRENT):
             send({"jsonrpc": "2.0", "id": i + 1, "method": "tools/call",
                   "params": {"_meta": meta, "name": "web_fetch",
-                             "arguments": {"url": f"http://127.0.0.1:{port}/page{i}", "max_chars": 20000}}})
+                             "arguments": {"url": f"http://127.0.0.{1 + i % hosts}:{port}/page{i}", "max_chars": 20000}}})
         peak = base_hwm
         answers = 0
         while answers < CONCURRENT:
@@ -110,10 +189,16 @@ def main():
         proc.wait(timeout=10)
         stderr_file.close()
     per_fetch = (peak - base_rss) / CONCURRENT
-    print(f"measure-memory: page {len(PAGE) / 1048576:.1f} MiB, {NODES} nodes, {CONCURRENT} concurrent fetches")
+    mode = "the delivered defaults (--defaults)" if DEFAULTS else "the RFC 012 measurement (not the delivered configuration)"
+    print(f"measure-memory: mode: {mode}")
+    print(f"measure-memory: binary {binary}")
+    print(f"measure-memory: page {len(PAGE) / 1048576:.1f} MiB, {NODES} nodes, {CONCURRENT} concurrent fetches on {hosts} host(s)")
     print(f"measure-memory: idle RSS {base_rss:.1f} MiB, peak RSS {peak:.1f} MiB, "
           f"{per_fetch:.1f} MiB per concurrent fetch above idle")
     print(f"measure-memory: answers {answers}/{CONCURRENT}")
+    if DEFAULTS:
+        print(f"measure-memory: rypsok check, same settings:{limits_line.split('limits:')[1]}")
+        print(f"measure-memory: rypsok check, same settings:{memory_line.split('memory:')[1]}")
 
 
 if __name__ == "__main__":

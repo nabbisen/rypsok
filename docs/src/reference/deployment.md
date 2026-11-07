@@ -72,6 +72,7 @@ CapabilityBoundingSet=
 AmbientCapabilities=
 UMask=077
 MemoryMax=256M
+MemorySwapMax=0
 TasksMax=64
 LimitNOFILE=128   # max_connections (default 64) + 64
 IPAddressDeny=any
@@ -80,9 +81,12 @@ IPAddressAllow=127.0.0.0/8 ::1 <the engines' addresses>
 
 Every line below `ProtectSystem` confines the process to what rypsok
 needs: a network socket, memory, no devices, no namespaces, no new
-privileges and no executable memory. `MemoryMax` and `TasksMax` turn a
-resource bomb that got past rypsok's own bounds into a restart instead
-of a host-wide problem. The `IPAddressAllow` line names the proxy, the
+privileges and no executable memory. `MemoryMax`, `MemorySwapMax=0` and
+`TasksMax` turn a resource bomb that got past rypsok's own bounds into a
+restart instead of a host-wide problem. Without `MemorySwapMax=0` a host with
+swap slows down instead of restarting the process: the audit measured 200 MiB
+of the process moved to swap with no kill, because `MemoryMax` alone lets the
+kernel swap out before it kills. The `IPAddressAllow` line names the proxy, the
 engines and the sites the operator admits: replace `<the engines'
 addresses>` with the addresses (or networks) of the engines you configured
 and of any site you allow, and keep the line in step with `[egress]`.
@@ -107,11 +111,18 @@ They were measured on the musl release build of 0.8.0 (audit 020e, rounded
 up) and are rows LIM-M1 to LIM-M5 of the
 [limits table](../maintainers/limits-and-defaults.md). The result is an
 estimate, not a guarantee: with the defaults it says 119 MiB, where four
-5 MiB pages at once measured 90 to 98 MiB without sessions. The ceilings
+5 MiB pages at once, from four hosts, measured 98 to 107 MiB without
+sessions on the musl release build (`tools/measure-memory --defaults`, which
+prints the estimate beside its measurement). The estimate is of the musl
+binaries of the release and the image. A glibc build, which `cargo install`
+makes on Linux, measured 171 to 187 MiB in the same run: above the estimate
+and inside the 256 MiB of the unit, with less room than the estimate shows. The ceilings
 `fetch.max_bytes` (10 MiB) and `service.http.max_sessions` (2048) each fit
 the unit with the other at its default (184 and 224 MiB); both at once
 (289 MiB) do not, and `check` warns. In a container, `--memory` takes the
-place of `MemoryMax` in the same comparison.
+place of `MemoryMax` in the same comparison, and `--memory-swap` set to the same
+value takes the place of `MemorySwapMax=0` (memory and swap together, so no
+swap).
 
 ## Binaries
 
@@ -144,7 +155,7 @@ as a non-root user and reads `/etc/rypsok/rypsok.toml`:
 docker load < rypsok-X.Y.Z-image-amd64.tar.gz
 docker run --rm -p 127.0.0.1:8737:8737 \
   --read-only --cap-drop ALL --security-opt no-new-privileges \
-  --memory 256m --pids-limit 64 --ulimit nofile=128:128 \
+  --memory 256m --memory-swap 256m --pids-limit 64 --ulimit nofile=128:128 \
   -v "$PWD/rypsok.toml:/etc/rypsok/rypsok.toml:ro" \
   -e RYPSOK_TOKEN_MIMLYS=… rypsok:X.Y.Z-amd64
 ```
@@ -158,12 +169,42 @@ the release's.
 
 The image is static and runs as a non-root user; the flags take away
 what it does not need: a writable root, every capability, privilege
-escalation, unbounded memory and processes.
+escalation, unbounded memory (and swap) and processes.
 
 Inside the container the bind must be `0.0.0.0:8737`, so callers are
 required; publish the port on loopback or behind the proxy only. Restrict
 the container's egress at the network level as the integration guide
 describes.
+
+## Which certificates the fetches trust
+
+Every outbound HTTPS connection, to the engines and to the pages `web_fetch`
+reads, is checked against the operating system's certificate store. rypsok
+bundles no root certificates of its own. The code that does this is the
+platform verifier of the TLS library (`reqwest` with the `rustls-no-provider`
+feature, which uses `rustls-platform-verifier`; no `webpki-roots`).
+
+- **Linux and other Unix systems** (not macOS): the roots are read from the
+  system locations, usually `/etc/ssl/certs`. When `SSL_CERT_FILE` or
+  `SSL_CERT_DIR` is set (`SSL_CERT_DIR` is a colon-separated list), roots are
+  read **only** from there and the system locations are not read. A private
+  certificate authority is therefore added either to the system store
+  (`update-ca-certificates`, `update-ca-trust`) or through these variables,
+  and in the second case the file must hold the public roots as well, for
+  example a copy of the system bundle with the private root appended.
+- **macOS and Windows:** the system's own verifier and store; the variables do
+  nothing. Add a private authority to the system store.
+- **A minimal container needs a CA bundle.** The documented distroless image
+  has one (`/etc/ssl/certs/ca-certificates.crt`). An image of your own that
+  starts from `scratch` has none, and rypsok then does not start: it exits
+  with status 1 and says "the HTTP client could not be built". The same
+  happens when `SSL_CERT_FILE` names a file that does not exist. A broken
+  trust configuration is thus found at start, not at the first fetch.
+
+Nothing in the configuration file changes this. A certificate that fails
+verification is, like any failed connection, a fetch that ends `unavailable`
+with the reason `network`; the response does not say why, so check the
+store first when every HTTPS fetch fails.
 
 ## Tokens
 

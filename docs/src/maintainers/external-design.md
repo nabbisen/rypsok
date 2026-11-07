@@ -10,6 +10,12 @@ Numbers are cited from [Limits and Defaults](./limits-and-defaults.md),
 threats from the [Threat Register](./threat-register.md), terms from the
 [Glossary](./glossary.md).
 
+A bare `D-nn` in this book is a decision of the startup review that fixed the
+first requirements. That review is not a page of this book and no page lists its
+decisions; the requirements quote what they need. The decisions of the audit
+(RFC 020) are written `RFC 020, D-n`.
+([Requirements](./requirements.md) says the same in its introduction.)
+
 ---
 
 ## 1. System context

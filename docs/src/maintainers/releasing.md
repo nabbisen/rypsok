@@ -7,8 +7,9 @@ release workflow builds and attaches, and never creates a release.
 ## The procedure
 
 1. **Update dependencies, once per release cycle.** At the start of the cycle
-   (D-14 as amended), and not on a timer: `cargo update`; the pinned actions
-   (the latest release of each, by commit SHA with its version as a comment);
+   (RFC 020, D-14 as amended by D-23), and not on a timer: `cargo update`;
+   the pinned actions (the latest release of each, by commit SHA with its
+   version as a comment);
    the base image digest in the `Dockerfile`; and the release compiler, the
    `toolchain:` line of `.github/actions/build-release/action.yml`, the one
    place that names it (set it to the current stable: `rustup update stable`,
@@ -55,6 +56,28 @@ release workflow builds and attaches, and never creates a release.
    that is already on the release. To replace one, delete it on the release
    page by hand and say so in the release notes, then run the workflow again
    from the tag.
+
+## The book
+
+The book is published from the release tag (RFC 020, D-17), so that a reader
+of a release reads what that release does. The `docs` workflow runs on a tag
+`X.Y.Z` and on a manual run, and never on a push to `main`; CI's `rules` job
+builds the book on every push, so a broken book is red at once. Before it
+builds, the workflow puts on the first page the line "This book describes
+rypsok X.Y.Z." (or, for a manual run from a branch, the commit and the words
+"not a release") and fails if the markers around that line are missing.
+
+Pages publishes only from the branches and tags that the `github-pages`
+environment allows. The owner sets one rule once: Settings, Environments,
+`github-pages`, Deployment branches and tags, add the tag rule `[0-9]*`. Until
+it is set, the publish job of a tag fails red, which is visible, and nothing
+is published. A failed publish is never ignored.
+
+A fix to the documents alone is a patch release (RFC 020, D-17): the book is
+published from a tag, so a corrected page reaches readers with the next tag. A
+manual run from `main` (Actions, Book, Run workflow, "Use workflow from:
+Branch main") publishes the development version, and its first page says so;
+it needs the same environment rule for `main`.
 
 ## If the attach job fails
 

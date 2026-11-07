@@ -64,6 +64,10 @@ announced here with both values.
   `rypsok-X.Y.Z-image-amd64.tar.gz` and `-arm64.tar.gz`, and are listed in
   `SHA256SUMS` (RFC 020, D-12). There is still no registry.
 
+- Internal: `tools/measure-memory --defaults` measures the delivered
+  configuration (default limits, the largest page `fetch.max_bytes` admits,
+  four hosts) and prints the worst case of `rypsok check` beside it.
+
 ### Fixed
 
 - A panic is logged as one JSON line without its message (`event` `panic`,
@@ -129,6 +133,20 @@ announced here with both values.
 
 ### Changed
 
+- The book is published from the release tag and says on its first page which
+  release it describes (RFC 020, D-17): a push to `main` publishes nothing, a
+  tag `X.Y.Z` publishes, and a manual run publishes the ref it was started
+  from and says so; a failed publish is red. The owner allows the tag in the
+  `github-pages` environment (`releasing.md`).
+- Documents: the deployment page adds `MemorySwapMax=0` and `--memory-swap
+  256m` (without them a host with swap slows down instead of restarting the
+  process), says which certificates the fetches trust (the system store, and
+  on Linux `SSL_CERT_FILE` and `SSL_CERT_DIR`; a start without any root fails
+  at once) and the measured memory of the delivered defaults (98 to 107 MiB on
+  the musl build, 171 to 187 MiB on a glibc build); the Wikipedia admission
+  record states the burst wait; the basis of LIM-S4 names its measurements.
+  Every audit decision in the book is written `RFC 020, D-n`, and a bare
+  `D-nn` is said to be a decision of the startup review.
 - The container image is made from the release binary instead of being built
   from source with another compiler: the `Dockerfile` compiles nothing and
   copies the binary of the release onto the pinned distroless base (RFC 020,
