@@ -3,7 +3,8 @@
 **Created 2026-11-07.** A fix handoff of the audit (RFC 020, D3), wave 3.
 Owner decisions **D-18** (close in 0.9.0 the debt on security paths and
 behind the Medium findings; the rest is a published ledger) and **D-19** (a
-weekly mutation job with a committed exclusion list). Findings TST-1, TST-5,
+committed exclusion list for mutation testing; the job itself runs in the
+release checks of 020w, D-23). Findings TST-1, TST-5,
 TST-6, TST-7 (Medium); the `partial` and `names-only` rows of the audit's
 per-requirement table (`.git-exclude/review-requests/020d-tests-and-code-audit/requirements-table.md`)
 named below.
@@ -29,7 +30,7 @@ run time (a bare prefix is fine; a prefix with its body is not).
 | 5 | **REQ-SEC-011: the engine client really times out.** A loopback engine that accepts and never answers: the engine's call ends at LIM-S5 (with the test's shortened value) as a `timeout`, not by the overall deadline | REQ-SEC-011 |
 | 6 | **Security statements asserted for one path only.** (a) REQ-SEC-001/REQ-ERR-004: a hostile provider title and snippet (instruction text, markup, a URL, an address) never appear in an error message or a log line at the default level (capture the log); every error constructor's message is at most LIM-I4 and contains no URL, host or address (a table over all constructors). (b) REQ-SEC-014: a panic inside extraction is contained and logged `extraction_panic` (inject one through a test-only page that the extractor cannot handle, or a test-only hook; if a hook is needed in production code, stop and ask). (c) REQ-SEC-016: the provider-text debug event is asserted by capturing the event, not by searching the source file. (d) REQ-PRIV-003/004: after a search and a fetch, the counters, the health table, the cache keys' `Debug` and the log at the default level contain no query text, no URL path and no query string. (e) REQ-SEC-005: a gate test that every `.send()` in non-test code of `rypsok-core` is on a client built by `egress.rs` (a source scan, as the lock gate does) | REQ-SEC-001, REQ-ERR-004, REQ-SEC-014, REQ-SEC-016, REQ-PRIV-003, REQ-PRIV-004, REQ-SEC-005 |
 | 7 | **The five `names-only` rows.** REQ-ENG-002 (concurrent use: one driver instance called from eight tasks at once against a mock, all answers correct); REQ-PAGE-005 (rename or add the media-type test under its id); REQ-CACHE-003 (read RFC 014: the engine set, configuration version and policy live in the key or the process; if the requirement text is the drift, propose the corrected sentence in the review request instead of a test; the architect edits requirements); REQ-OBS-005 (handled by 020r; leave); REQ-MAIN-005 (a structural requirement: propose changing its verification method from T to I in the review request) | REQ-ENG-002, REQ-PAGE-005, REQ-CACHE-003, REQ-MAIN-005 |
-| 8 | **On hold (2026-11-07): do not build this item yet.** The owner is deciding when checks run (a proposed policy moves mutation testing into a release-time matrix instead of a weekly job); the architect amends this item when it is decided. Items 1 to 7 and 9 go on. *Original text:* **D-19, the weekly mutation job.** A job `mutants` in `scheduled.yml` (independent of the other two, `permissions: contents: read`, a timeout of 120 minutes, `cargo-mutants` pinned to the version you used) on the six security modules (`egress/policy`, `privacy`, `boundary`, `fetch/robots`, `mcp/http` with `detect` and `sessions`), `--jobs 2`; `mutants.toml` at the repository root holds the exclusion list from item 2. **Green at baseline, red when a new mutant survives.** The gate tests of 020o (`workflow_yaml`) are extended to the new job | — |
+| 8 | **D-19 as amended by D-23 (2026-11-07): the exclusion list only, no job.** Write `mutants.toml` at the repository root with the equivalent mutants of item 2, each with one line of reason, never silently. Name the `cargo-mutants` version you used in the review request: handoff 020w pins it in the release-check matrix job, which replaces the weekly job. **Do not add a job to any workflow here.** The baseline is that a run over the six security modules (`egress/policy` with `policy/`, `privacy`, `boundary`, `fetch/robots`, `mcp/http` with `http/detect`, `mcp/http/sessions`) with `mutants.toml` misses nothing. Show it in the evidence (`--jobs 2`, `df` checked first) | — |
 | 9 | **The ledger.** A file `docs/src/maintainers/verification-ledger.md` (in `SUMMARY.md`) that lists every `T` requirement still `partial` after this handoff with the one-line missing assertion from the audit table, so the debt is public and is closed before 1.0.0 (D-18) | — |
 
 ## Explicit non-change scope
@@ -40,6 +41,6 @@ and ask first). REQ-OBS-005 is 020r's. Timing hygiene (paused time) is 020s's.
 ## Required evidence and review request
 
 The gates; the mutation reports before and after; failing-first output for
-items 3 to 7; the dispatched `scheduled` run (after the architect pushes) for
+items 3 to 7; the baseline run over the six modules with `mutants.toml` for
 item 8; the review request at
 `.git-exclude/review-requests/020q-verification-debt/README.md`.

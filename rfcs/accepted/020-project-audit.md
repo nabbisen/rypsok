@@ -33,7 +33,8 @@ findings only); fixes: [`020j`](../handoffs/020j-lock-helper/README.md),
 [`020q`](../handoffs/020q-verification-debt/README.md),
 [`020r`](../handoffs/020r-request-id/README.md),
 [`020s`](../handoffs/020s-clean-up/README.md),
-[`020u`](../handoffs/020u-fuzz-targets/README.md) (more follow).
+[`020u`](../handoffs/020u-fuzz-targets/README.md); wave 4:
+[`020w`](../handoffs/020w-check-policy/README.md) (more follow).
 
 ## Problem and motivation
 
@@ -179,6 +180,30 @@ Each is answered with evidence in the report named; the decision follows.
 | Which floating tools and bases, permissions and `continue-on-error` settings should be pinned or removed? aarch64 in the matrix? | C2, C3, C5, C6 | 020f |
 | What does a pace of releases cost, and how long should fuzzing run? | C7 | 020f |
 | Residuals recorded in 0.8.0 (SDK log lines with caller-chosen text; per-caller session quota; latency of a refused versus an unreachable name; the public book running ahead of releases) | review M3, N7, N8, B2, C1 | 020b, 020f |
+
+### D5. When checks run (amendment, 2026-11-07, D-23)
+
+Authorized by the owner on 2026-11-07. It replaces the weekly schedule of
+REQ-TEST-003 and REQ-SEC-023 and the weekly mutation job of D-19. A check
+runs when the thing it checks can have changed, as wide as the change, and
+once:
+
+| When | What | Who waits |
+|---|---|---|
+| Every push | CI (REQ-TEST-012), unchanged | nobody |
+| Every handoff that changes a parser, the egress policy, the boundary, the privacy check or the HTTP listener | mutation testing of the changed modules and 120 s of fuzzing of their targets, in the review request; a request without them is returned | nobody |
+| Before every release, on the commit to be tagged | the release checks (REQ-TEST-019): reproducibility of the release builds, every fuzz target 300 s, mutation testing of the six security modules against the committed exclusion list, the live checks, the advisory check; all in parallel, capped so CI is not queued behind them | only the release |
+| On demand | the live checks and the advisory check, when a user reports a broken engine or an advisory is published | nobody |
+
+There is no timer. Checks of our code repeated on unchanged code find
+nothing new, and the outside world (provider formats, advisories) is checked
+at every release and on demand. **Accepted residual:** drift or an advisory
+between two releases is seen at the next release, or sooner when someone
+reports it; GitHub's Dependabot security alerts, if turned on, see an
+advisory without any run of ours. Dependencies are updated once per release
+cycle, at its start, in one commit (D-14 as amended): no update on a timer.
+What a red release-check job means is stated in `docs/src/maintainers/checks.md`.
+Handoff 020w builds it.
 
 ## Compatibility
 
