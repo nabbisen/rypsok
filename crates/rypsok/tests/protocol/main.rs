@@ -1240,7 +1240,8 @@ impl HttpServer {
     }
 }
 
-/// The events of one name in a process's log.
+/// The events of one name in a process's log (used by the Unix-only tests).
+#[cfg(unix)]
 fn events_named<'a>(log: &'a [Value], name: &str) -> Vec<&'a Value> {
     log.iter().filter(|v| v["event"] == name).collect()
 }
