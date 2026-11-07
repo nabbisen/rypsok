@@ -128,6 +128,10 @@ third-party crates and must never hold a token that can sign. The attestation
 shows the file came out of the workflow; it does not show that the source is
 free of defects, and the workflow is trusted as the owner's.
 
+The `checksums` job verifies what it signs: it checks the four archives
+against the SHA-256 each `build` job wrote, before it writes `SHA256SUMS` and
+attests the files.
+
 The images are built from the release binaries (RFC 020, D-12): the `image`
 job checks the Linux archives it downloads against the SHA-256 that each
 `build` job computed, unpacks them, and copies each binary onto the pinned

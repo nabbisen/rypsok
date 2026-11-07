@@ -60,8 +60,14 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
+          # Linux and Git Bash on Windows have sha256sum; macOS has the other tool.
+          if command -v sha256sum >/dev/null; then
+            hash_of() { sha256sum "$@"; }
+          else
+            hash_of() { shasum -a 256 "$@"; }
+          fi
           for file in rypsok-*.tar.gz rypsok-*.zip; do
-            if [ -f "$file" ]; then shasum -a 256 "$file"; fi
+            if [ -f "$file" ]; then hash_of "$file"; fi
           done > "sha256-$TARGET.txt"
           cat "sha256-$TARGET.txt"
           {
@@ -156,6 +162,20 @@ jobs:
           pattern: "{archive,image}-*"
           merge-multiple: true
           path: dist
+      # What is signed is checked first: the hashes the build jobs wrote go to
+      # a directory of their own, so that they are neither in SHA256SUMS nor
+      # attested, and the four archives must match them. (The image job checks
+      # the Linux archives before it makes an image; this covers all four.)
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: sha-*
+          merge-multiple: true
+          path: hashes
+      - name: Check the archives against the hashes of the build jobs
+        run: |
+          set -euo pipefail
+          cd dist
+          cat ../hashes/sha256-*.txt | sha256sum --check
       - name: SHA256SUMS
         run: |
           cd dist

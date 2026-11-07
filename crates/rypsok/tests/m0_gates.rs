@@ -1260,15 +1260,54 @@ fn req_dep_005_checksums_list_the_images_and_attach_uploads_them() {
     );
     // The hash of each archive travels from its build job to the image job.
     let build_runs = run_lines(&release.at(&["jobs", "build"]).cloned().unwrap()).join("\n");
+    // Git Bash on Windows has `sha256sum` and no `shasum`; macOS the reverse
+    // (020p review, C2): `shasum` only inside the fallback, never unconditionally.
     assert!(
-        build_runs.contains("shasum -a 256"),
-        "the build jobs hash their archive"
+        build_runs.contains("command -v sha256sum"),
+        "the build jobs hash their archive with what the runner has"
     );
+    for line in build_runs.lines().filter(|l| l.contains("shasum")) {
+        assert!(
+            line.contains("() {"),
+            "`shasum` only as the fallback function: {line}"
+        );
+    }
     let image_runs = run_lines(&release.at(&["jobs", "image"]).cloned().unwrap()).join("\n");
     assert!(
         image_runs.contains("sha256sum --check"),
         "the image job checks the archives it downloaded"
     );
+}
+
+/// REQ-DEP-005 (RFC 020, D-16; 020p review, C1): the checksums job verifies
+/// what it signs: it downloads the hashes of the build jobs into a directory
+/// of their own (so they are neither in `SHA256SUMS` nor attested) and checks
+/// the archives against them before it writes `SHA256SUMS`.
+#[test]
+fn req_dep_005_checksums_verifies_the_archives_before_it_writes_the_sums() {
+    let release = workflow("release.yml");
+    let steps = release.at(&["jobs", "checksums", "steps"]).unwrap().items();
+    let mut hashes_to = None;
+    for step in steps {
+        if step.at(&["with", "pattern"]).and_then(Yaml::scalar) == Some("sha-*") {
+            hashes_to = step.at(&["with", "path"]).and_then(Yaml::scalar);
+        }
+    }
+    let hashes_to = hashes_to.expect("checksums downloads the sha-* artifacts");
+    assert!(
+        !hashes_to.starts_with("dist"),
+        "the hashes are not in dist/: {hashes_to}"
+    );
+    let position = |needle: &str| {
+        steps.iter().position(|step| {
+            step.at(&["run"])
+                .and_then(Yaml::scalar)
+                .is_some_and(|run| run.contains(needle))
+        })
+    };
+    let check = position("sha256sum --check").expect("a --check step in checksums");
+    let write = position("> SHA256SUMS").expect("the step that writes SHA256SUMS");
+    assert!(check < write, "the check comes before the sums are written");
 }
 
 /// REQ-SEC-020 (RFC 020, D-16): only the checksums job can sign, and it runs
