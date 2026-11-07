@@ -320,10 +320,13 @@ rypsok: cache: enabled=false max_entries=1000 ttl_s=300 max_entry_bytes=32768
 rypsok: scraping: enabled=false
 rypsok: resilience: failures_to_open=3 first_cooldown_s=60 max_cooldown_s=900
 rypsok: limits: outbound_in_flight=32 per_engine_in_flight=2 fetches_in_flight=4 parsing_in_flight=2 strict_mode_urls=10000 robots_cache_entries=1000
-rypsok: memory: worst case about 119 MiB (base 13 + bodies 20 + parses 71 + sessions 15 + cache 0 MiB; an estimate measured on the musl release build)
+rypsok: memory: worst case about 119 MiB (base 13 + bodies 20 + parses 71 + sessions 15 + cache 0 MiB; an estimate for the musl build)
 ```
 
-(The `search`, rate-limit, engine and category lines come first.) The format
+(The `search`, rate-limit, engine and category lines come first. The last
+line names the build its figure is for: `an estimate for the glibc build` on a
+glibc build, whose figure is higher, and `measured on Linux; not measured for
+this platform` elsewhere.) The format
 of the lines may change in a minor version; the exit code does not.
 
 ### Warnings

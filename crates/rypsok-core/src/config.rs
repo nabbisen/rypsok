@@ -1063,14 +1063,23 @@ impl Config {
     /// formula of [`Limits::worst_case_memory`] with the cache bound when
     /// the cache is on and the sessions only while `legacy_revisions` is on.
     pub fn worst_case_memory(&self) -> crate::limits::MemoryEstimate {
+        self.worst_case_memory_for(crate::limits::EstimateBasis::current())
+    }
+
+    /// [`Self::worst_case_memory`] with the costs of a named build (RFC 020,
+    /// 020x, F-4).
+    pub fn worst_case_memory_for(
+        &self,
+        basis: crate::limits::EstimateBasis,
+    ) -> crate::limits::MemoryEstimate {
         let cache_bytes = if self.cache.enabled {
             u64::from(self.cache.max_entries) * u64::from(self.cache.max_entry_bytes)
         } else {
             0
         };
-        let mut estimate = self
-            .limits()
-            .worst_case_memory(self.service.http.max_sessions, cache_bytes);
+        let mut estimate =
+            self.limits()
+                .worst_case_memory_for(basis, self.service.http.max_sessions, cache_bytes);
         // Sessions exist only for the handshake-based revisions: a
         // configuration is not warned about memory it cannot use (RFC 020,
         // L2 of the 020l review).

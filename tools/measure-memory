@@ -6,7 +6,7 @@
 # resident set (VmHWM) of the rypsok process is read from /proc.
 #
 # Usage: tools/measure-memory [concurrent fetches, default 4]
-#        tools/measure-memory --defaults [--binary=PATH]
+#        tools/measure-memory --defaults [--binary=PATH] [--page-mib=N] [--fetches=K]
 #
 # Two modes. The first is the measurement of RFC 012, which the constants of
 # `rypsok check` come from: it raises `fetch.max_bytes` to 10 MiB and sets
@@ -19,6 +19,13 @@
 # one server each), so none waits for another on the same host. It prints,
 # beside its measurement, the worst case that `rypsok check` derives for the
 # same settings.
+#
+# With `--defaults`, `--page-mib=N` sets `fetch.max_bytes` to N MiB (a key an
+# operator may set) and serves a page just under it, and `--fetches=K` runs K
+# fetches at once instead of `fetches_in_flight`. One fetch of a page of P
+# MiB gives the cost of one parse: peak - idle - P (RFC 020, 020x: the
+# constants LIM-M1 to LIM-M3 come from two page sizes, so that the cost is a
+# line in the size of the page).
 #
 # Prints the peak resident set in MiB and the per-fetch cost above the
 # idle baseline. Linux only (reads /proc); not a CI gate.
@@ -35,6 +42,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 DEFAULTS = "--defaults" in sys.argv[1:]
 _numbers = [a for a in sys.argv[1:] if a.isdigit()]
 CONCURRENT = int(_numbers[0]) if _numbers else 4
+
+
+def option(name):
+    for argument in sys.argv[1:]:
+        if argument.startswith(f"--{name}="):
+            return int(argument.split("=", 1)[1])
+    return None
+
+
+PAGE_MIB = option("page-mib")
+FETCHES = option("fetches")
 NODES = 100_000  # LIM-F10
 FILLER = "paragraph {i} with enough text to fill the page body up to the byte budget of the measurement run"
 
@@ -119,14 +137,15 @@ def main():
                 f.write(
                     "config_version = 1\n[egress]\nallow = [\"127.0.0.0/24\"]\nallow_http = true\n"
                     f"[fetch]\nports = [80, 443, {port}]\n"
-                    "[engines.w]\ntype = \"wikipedia\"\ncategories = [\"general\"]\n"
+                    + (f"max_bytes = {PAGE_MIB * 1048576}\n" if PAGE_MIB else "")
+                    + "[engines.w]\ntype = \"wikipedia\"\ncategories = [\"general\"]\n"
                 )
             limits_line, memory_line = check_report(binary, config)
             fetches = int(limits_line.split("fetches_in_flight=")[1].split()[0])
             fetch_line = next(x for x in check_lines(binary, config) if " fetch: " in x)
             max_bytes = int(fetch_line.split("max_bytes=")[1].split()[0])
-            CONCURRENT = fetches
-            hosts = fetches
+            CONCURRENT = FETCHES or fetches
+            hosts = CONCURRENT
             PAGE = make_page(max_bytes - 1024)
             servers = [first] + [ThreadingHTTPServer((f"127.0.0.{n}", port), Handler) for n in range(2, hosts + 1)]
         else:
@@ -196,6 +215,9 @@ def main():
     print(f"measure-memory: idle RSS {base_rss:.1f} MiB, peak RSS {peak:.1f} MiB, "
           f"{per_fetch:.1f} MiB per concurrent fetch above idle")
     print(f"measure-memory: answers {answers}/{CONCURRENT}")
+    print(f"measure-memory: raw idle_mib={base_rss:.2f} idle_hwm_mib={base_hwm:.2f} peak_mib={peak:.2f} page_mib={len(PAGE) / 1048576:.3f}")
+    if CONCURRENT == 1:
+        print(f"measure-memory: one parse costs {peak - base_rss - len(PAGE) / 1048576:.1f} MiB (peak - idle - page)")
     if DEFAULTS:
         print(f"measure-memory: rypsok check, same settings:{limits_line.split('limits:')[1]}")
         print(f"measure-memory: rypsok check, same settings:{memory_line.split('memory:')[1]}")

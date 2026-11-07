@@ -151,6 +151,22 @@ pub mod defaults {
     /// `MemoryMax` of the documented systemd unit, the figure the estimate
     /// is compared with.
     pub const MEMORY_UNIT_BYTES: u64 = 268_435_456; // LIM-M5
+
+    // The same costs on the glibc build (RFC 020, 020x), which holds more
+    // after a parse than musl does. Measured with `tools/measure-memory
+    // --defaults` at four fetches and two parses, at a 5 MiB and a 10 MiB
+    // page (fetch.max_bytes), five runs each; the maximum of the runs minus
+    // the idle process and the four bodies is the cost of two parses, and the
+    // constants are the line through the two points rounded up, so that the
+    // estimate is above every run. The sessions cost the same.
+
+    /// The process at rest: 12.8 to 13.4 MiB idle, and a margin.
+    pub const MEASURED_BASE_BYTES_GLIBC: u64 = 14_680_064; // LIM-M6
+    /// The part of one parse that does not grow with the page.
+    pub const MEASURED_PARSE_FIXED_BYTES_GLIBC: u64 = 22_020_096; // LIM-M7
+    /// The part of one parse that grows with the page, in tenths of a byte
+    /// per byte.
+    pub const MEASURED_PARSE_TENTHS_PER_BYTE_GLIBC: u64 = 106; // LIM-M8
 }
 
 /// The effective limits of a process: the table's defaults, overridden by
@@ -230,12 +246,52 @@ pub struct Limits {
     pub max_cooldown_s: u32,
 }
 
+/// The build an estimate was measured on (RFC 020, 020x, F-4). The allocator
+/// decides how much a process holds after a parse, so the costs differ.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EstimateBasis {
+    /// Linux with musl: the release binaries and the container image
+    /// (LIM-M1 to LIM-M4).
+    Musl,
+    /// Linux with glibc: what `cargo install` builds there (LIM-M6 to
+    /// LIM-M8).
+    Glibc,
+    /// Any other platform: nothing was measured. The figure uses the larger
+    /// of the two sets, as an order of magnitude, and never warns against the
+    /// unit.
+    NotMeasured,
+}
+
+impl EstimateBasis {
+    /// The basis of the build that runs.
+    pub const fn current() -> Self {
+        if cfg!(all(target_os = "linux", target_env = "musl")) {
+            EstimateBasis::Musl
+        } else if cfg!(all(target_os = "linux", target_env = "gnu")) {
+            EstimateBasis::Glibc
+        } else {
+            EstimateBasis::NotMeasured
+        }
+    }
+
+    /// What `check` prints beside the figure.
+    pub const fn label(self) -> &'static str {
+        match self {
+            EstimateBasis::Musl => "an estimate for the musl build",
+            EstimateBasis::Glibc => "an estimate for the glibc build",
+            EstimateBasis::NotMeasured => "measured on Linux; not measured for this platform",
+        }
+    }
+}
+
 /// The worst-case memory of a process, from its effective limits and the
-/// measured costs of audit 020e (RFC 020 D-20, D-21): an estimate, measured
-/// on the musl release build, not a guarantee. Bytes.
+/// measured costs of audit 020e and of 020x (RFC 020 D-20, D-21): an
+/// estimate for the build named in `basis`, not a guarantee. Bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct MemoryEstimate {
+    /// The build the costs were measured on.
+    pub basis: EstimateBasis,
     /// The process at rest (LIM-M1).
     pub base: u64,
     /// The bodies being read: fetches in flight times `fetch.max_bytes`.
@@ -264,9 +320,10 @@ impl MemoryEstimate {
         Self::mib(self.total_bytes())
     }
 
-    /// Whether the sum is above `MemoryMax` of the documented unit.
+    /// Whether the sum is above `MemoryMax` of the documented unit. A
+    /// platform that was not measured never is: the unit is a Linux unit.
     pub fn exceeds_unit(&self) -> bool {
-        self.total_bytes() > defaults::MEMORY_UNIT_BYTES
+        self.basis != EstimateBasis::NotMeasured && self.total_bytes() > defaults::MEMORY_UNIT_BYTES
     }
 }
 
@@ -276,11 +333,33 @@ impl Limits {
     /// (LIM-K3 times LIM-K4 when the cache is on, else 0); `sessions` is
     /// `[service.http] max_sessions`, which the configuration owns.
     pub fn worst_case_memory(&self, sessions: u32, cache_bytes: u64) -> MemoryEstimate {
+        self.worst_case_memory_for(EstimateBasis::current(), sessions, cache_bytes)
+    }
+
+    /// [`Self::worst_case_memory`] with the costs of a named build.
+    pub fn worst_case_memory_for(
+        &self,
+        basis: EstimateBasis,
+        sessions: u32,
+        cache_bytes: u64,
+    ) -> MemoryEstimate {
         let page = self.fetch_max_bytes;
-        let one_parse = page * defaults::MEASURED_PARSE_TENTHS_PER_BYTE / 10
-            + defaults::MEASURED_PARSE_FIXED_BYTES;
+        let (base, fixed, tenths) = match basis {
+            EstimateBasis::Musl => (
+                defaults::MEASURED_BASE_BYTES,
+                defaults::MEASURED_PARSE_FIXED_BYTES,
+                defaults::MEASURED_PARSE_TENTHS_PER_BYTE,
+            ),
+            EstimateBasis::Glibc | EstimateBasis::NotMeasured => (
+                defaults::MEASURED_BASE_BYTES_GLIBC,
+                defaults::MEASURED_PARSE_FIXED_BYTES_GLIBC,
+                defaults::MEASURED_PARSE_TENTHS_PER_BYTE_GLIBC,
+            ),
+        };
+        let one_parse = page * tenths / 10 + fixed;
         MemoryEstimate {
-            base: defaults::MEASURED_BASE_BYTES,
+            basis,
+            base,
             bodies: u64::from(self.fetches_in_flight) * page,
             parses: u64::from(self.parsing_in_flight) * one_parse,
             sessions: u64::from(sessions) * defaults::MEASURED_SESSION_BYTES,

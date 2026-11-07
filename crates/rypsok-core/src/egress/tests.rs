@@ -299,3 +299,64 @@ async fn req_res_008_the_configured_proxy_is_used_and_an_empty_one_is_none() {
     let direct = engine_client(&settings(false)).unwrap();
     assert!(direct.get("http://engine.invalid/").send().await.is_err());
 }
+
+/// An error with a cause, like the one `reqwest` returns for a client it
+/// cannot build.
+#[derive(Debug)]
+struct Outer(
+    &'static str,
+    Option<Box<dyn std::error::Error + Send + Sync>>,
+);
+
+impl std::fmt::Display for Outer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl std::error::Error for Outer {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.1
+            .as_deref()
+            .map(|e| e as &(dyn std::error::Error + 'static))
+    }
+}
+
+/// REQ-OPS-001 (RFC 020, F-3): a build failure is described by its cause,
+/// from the source chain, and never by the generic `builder error` alone.
+#[test]
+fn req_ops_001_a_build_failure_is_described_by_its_cause() {
+    let chain = Outer(
+        "builder error",
+        Some(Box::new(Outer(
+            "first cause",
+            Some(Box::new(Outer("second cause", None))),
+        ))),
+    );
+    assert_eq!(describe_build_failure(&chain), "first cause: second cause");
+    // An error without a cause is shown as its own text.
+    assert_eq!(
+        describe_build_failure(&Outer("only text", None)),
+        "only text"
+    );
+}
+
+/// REQ-OPS-001 (RFC 020, F-3): when no root certificate could be loaded the
+/// message says so and where roots come from.
+#[test]
+fn req_ops_001_missing_roots_are_named_with_where_they_come_from() {
+    let no_roots = Outer(
+        "builder error",
+        Some(Box::new(rustls::Error::General(
+            "No CA certificates were loaded from the system".to_owned(),
+        ))),
+    );
+    let text = describe_build_failure(&no_roots);
+    assert_eq!(
+        text,
+        "no root certificates could be loaded (the system store, or SSL_CERT_FILE / SSL_CERT_DIR when set; see the deployment page, \"Which certificates the fetches trust\")"
+    );
+    // The clause "could not be built" comes once, from the error type.
+    let shown = ClientError::Build(text).to_string();
+    assert_eq!(shown.matches("could not be built").count(), 1, "{shown}");
+}

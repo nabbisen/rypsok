@@ -55,6 +55,36 @@ pub enum ClientError {
     Build(String),
 }
 
+/// The message for a client that could not be built because the trust store
+/// holds no root certificate.
+const NO_ROOTS: &str = "no root certificates could be loaded (the system store, or SSL_CERT_FILE / SSL_CERT_DIR when set; see the deployment page, \"Which certificates the fetches trust\")";
+
+/// Describes why a client could not be built, from the error's source chain
+/// (RFC 020, 020x, F-3). `reqwest` reports `builder error` and keeps the
+/// cause as the source, so the cause is the message; when there is none, the
+/// error's own text is. A cause that is the TLS library's "no CA
+/// certificates were loaded" is named for what it means and where roots come
+/// from. The clause "the HTTP client could not be built" is added once, by
+/// [`ClientError`].
+pub(crate) fn describe_build_failure(error: &(dyn std::error::Error + 'static)) -> String {
+    let mut causes = Vec::new();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        if let Some(rustls::Error::General(text)) = cause.downcast_ref::<rustls::Error>()
+            && text.contains("No CA certificates")
+        {
+            return NO_ROOTS.to_owned();
+        }
+        causes.push(cause.to_string());
+        source = cause.source();
+    }
+    if causes.is_empty() {
+        error.to_string()
+    } else {
+        causes.join(": ")
+    }
+}
+
 /// Installs the TLS crypto provider once per process.
 pub fn ensure_crypto_provider() {
     static ONCE: Once = Once::new();
@@ -85,7 +115,7 @@ pub fn engine_client(settings: &EngineClientSettings) -> Result<reqwest::Client,
     };
     builder
         .build()
-        .map_err(|e| ClientError::Build(e.to_string()))
+        .map_err(|e| ClientError::Build(describe_build_failure(&e)))
 }
 
 /// What the agent-directed profile needs to build its one client
@@ -139,7 +169,7 @@ pub fn agent_client<L: resolver::Lookup>(
         .tcp_keepalive(Some(Duration::from_secs(60)))
         .pool_idle_timeout(Some(Duration::from_secs(30)))
         .build()
-        .map_err(|e| ClientError::Build(e.to_string()))
+        .map_err(|e| ClientError::Build(describe_build_failure(&e)))
 }
 
 /// Why a body could not be read.

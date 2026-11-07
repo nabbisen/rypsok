@@ -70,6 +70,20 @@ announced here with both values.
 
 ### Fixed
 
+- `rypsok check` gives the memory estimate of the build it runs as (musl or
+  glibc on Linux, each with its own measured constants, LIM-M6 to LIM-M8 for
+  glibc) and says which build the figure is for; on a platform that was not
+  measured it prints the figure with a note and does not warn against the
+  Linux unit (RFC 020, F-4). A glibc build with `fetch.max_bytes`
+  at its ceiling of 10 MiB is now warned about: its measured peak is above
+  256 MiB.
+- A client that cannot be built says why, once: `rypsok: configuration:
+  fetch: the HTTP client could not be built: no root certificates could be
+  loaded (the system store, or SSL_CERT_FILE / SSL_CERT_DIR when set; ...)`.
+  It used to say `could not be built` twice and `builder error` (RFC 020,
+  F-3). The reason of an engine that is inactive for the same cause changes
+  the same way.
+
 - A panic is logged as one JSON line without its message (`event` `panic`,
   `level` `ERROR`, `location`, `thread`); before, the standard hook wrote its
   location and message as plain text to standard error, outside the JSON log

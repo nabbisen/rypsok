@@ -136,9 +136,8 @@ impl Rypsok {
             &limits,
         )
         .map_err(|error| ConfigError {
-            problems: vec![format!(
-                "fetch: the HTTP client could not be built: {error}"
-            )],
+            // `ClientError` already says "the HTTP client could not be built".
+            problems: vec![format!("fetch: {error}")],
         })?
         .with_parsing(Arc::clone(registry.parsing()));
         // Scraping drivers run only by the operator's decision; the log

@@ -3,7 +3,7 @@
 use rypsok_core::config::{Config, ConfigError, ConfigSource, LogLevel, SecretDetection};
 use rypsok_core::egress::policy::is_wide_network_rule;
 use rypsok_core::engine::drivers;
-use rypsok_core::limits::MemoryEstimate;
+use rypsok_core::limits::{EstimateBasis, MemoryEstimate};
 
 use super::describe;
 use crate::mcp::http::HttpSettings;
@@ -21,6 +21,16 @@ pub(super) struct Report {
 /// Builds the report of a validated configuration, or the error `serve`
 /// would stop with.
 pub(super) fn build(config: &Config, source: &ConfigSource) -> Result<Report, ConfigError> {
+    build_for(config, source, EstimateBasis::current())
+}
+
+/// [`build`] with the memory estimate of a named build, so that the figures
+/// of each allocator can be pinned on any host (RFC 020, 020x, F-4).
+pub(super) fn build_for(
+    config: &Config,
+    source: &ConfigSource,
+    basis: EstimateBasis,
+) -> Result<Report, ConfigError> {
     // What `serve --transport http` resolves, `check` resolves: a file that
     // names callers is a network configuration by intent, so a token that is
     // unset, unreadable or too short is the error `serve` stops with (RFC 020,
@@ -113,15 +123,16 @@ pub(super) fn build(config: &Config, source: &ConfigSource) -> Result<Report, Co
         }
     ));
     sections(config, &mut lines);
-    let memory = config.worst_case_memory();
+    let memory = config.worst_case_memory_for(basis);
     lines.push(format!(
-        "rypsok: memory: worst case about {} MiB (base {} + bodies {} + parses {} + sessions {} + cache {} MiB; an estimate measured on the musl release build)",
+        "rypsok: memory: worst case about {} MiB (base {} + bodies {} + parses {} + sessions {} + cache {} MiB; {})",
         memory.total_mib(),
         MemoryEstimate::mib(memory.base),
         MemoryEstimate::mib(memory.bodies),
         MemoryEstimate::mib(memory.parses),
         MemoryEstimate::mib(memory.sessions),
         MemoryEstimate::mib(memory.cache),
+        memory.basis.label(),
     ));
     warnings.extend(risks(config, &memory));
     Ok(Report { lines, warnings })
@@ -303,8 +314,9 @@ fn risks(config: &Config, memory: &MemoryEstimate) -> Vec<String> {
         warn(
             "memory",
             &format!(
-                "the worst case is about {} MiB, above the 256 MiB of the documented unit (an estimate measured on the musl release build); lower fetch.max_bytes, limits.fetches_in_flight, limits.parsing_in_flight or service.http.max_sessions",
-                memory.total_mib()
+                "the worst case is about {} MiB, above the 256 MiB of the documented unit ({}); lower fetch.max_bytes, limits.fetches_in_flight, limits.parsing_in_flight or service.http.max_sessions",
+                memory.total_mib(),
+                memory.basis.label()
             ),
         );
     }

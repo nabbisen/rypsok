@@ -104,25 +104,34 @@ it is above the 256 MiB of this unit. The estimate is
 + cache.max_entries × cache.max_entry_bytes   (only when the cache is on)
 ```
 
-The constants are measured: the idle process takes 10 to 12 MiB; one parse
-of a page costs 34 MiB at 5 MiB and 99 MiB at 20 MiB (a line through both
-gives 4.34 per byte of page and 12.4 MiB at none); a session takes 58.5 KiB.
-They were measured on the musl release build of 0.8.0 (audit 020e, rounded
-up) and are rows LIM-M1 to LIM-M5 of the
-[limits table](../maintainers/limits-and-defaults.md). The result is an
-estimate, not a guarantee: with the defaults it says 119 MiB, where four
-5 MiB pages at once, from four hosts, measured 98 to 107 MiB without
-sessions on the musl release build (`tools/measure-memory --defaults`, which
-prints the estimate beside its measurement). The estimate is of the musl
-binaries of the release and the image. A glibc build, which `cargo install`
-makes on Linux, measured 171 to 187 MiB in the same run: above the estimate
-and inside the 256 MiB of the unit, with less room than the estimate shows. The ceilings
-`fetch.max_bytes` (10 MiB) and `service.http.max_sessions` (2048) each fit
-the unit with the other at its default (184 and 224 MiB); both at once
-(289 MiB) do not, and `check` warns. In a container, `--memory` takes the
-place of `MemoryMax` in the same comparison, and `--memory-swap` set to the same
-value takes the place of `MemorySwapMax=0` (memory and swap together, so no
-swap).
+The constants are measured, once for each Linux build, because the allocator
+decides how much a process holds after a parse. The figures above are those of
+the musl build (the release binaries and the image): the idle process takes 10
+to 12 MiB; one parse of a page costs 34 MiB at 5 MiB and 99 MiB at 20 MiB (a
+line through both gives 4.34 per byte of page and 12.4 MiB at none); a session
+takes 58.5 KiB (audit 020e, rounded up). A glibc build, which `cargo install`
+makes on Linux, holds more: its constants are 14 MiB for the process at rest
+and `10.6 × fetch.max_bytes + 21 MiB` for a parse (020x). All are rows LIM-M1
+to LIM-M8 of the [limits table](../maintainers/limits-and-defaults.md). The
+result is an estimate, not a guarantee.
+
+`rypsok check` uses the constants of the build it runs as and says which build
+the figure is for. With the defaults it says 119 MiB on musl and 197 MiB on
+glibc. Four 5 MiB pages at once, from four hosts, measured 98 to 107 MiB without
+sessions on the musl release build and 171 to 187 MiB on a glibc build
+(`tools/measure-memory --defaults`, which prints the estimate beside its
+measurement). With `fetch.max_bytes` at its ceiling of 10 MiB a glibc build
+peaked at 269 to 302 MiB, above the 256 MiB of the unit, and `check` warns; a
+musl build peaked at 173 to 175 MiB. On a platform other than Linux `check`
+prints the figure with the note that it was not measured there and gives no
+warning.
+
+On musl the ceilings `fetch.max_bytes` (10 MiB) and `service.http.max_sessions`
+(2048) each fit the unit with the other at its default (184 and 224 MiB); both
+at once (289 MiB) do not, and `check` warns. On glibc the first already does
+not (323 MiB). In a container, `--memory` takes the place of `MemoryMax` in the
+same comparison, and `--memory-swap` set to the same value takes the place of
+`MemorySwapMax=0` (memory and swap together, so no swap).
 
 ## Binaries
 

@@ -34,10 +34,18 @@ impl Drop for Dir {
 }
 
 /// The report of a configuration text: parse, validate, build.
+///
+/// The figures of the memory estimate depend on the allocator of the build
+/// that runs, so the tests pin them for a named build: this one is musl,
+/// whose figures they were written for (`report_for` names another).
 fn report_of(text: &str) -> Result<Report, ConfigError> {
+    report_for(text, EstimateBasis::Musl)
+}
+
+fn report_for(text: &str, basis: EstimateBasis) -> Result<Report, ConfigError> {
     let config = Config::parse(text)?;
     config.validate()?;
-    build(&config, &ConfigSource::Defaults)
+    build_for(&config, &ConfigSource::Defaults, basis)
 }
 
 fn all_lines(report: &Report) -> String {
@@ -293,7 +301,7 @@ fn req_ops_001_each_risky_setting_has_its_warning() {
         (
             "more parses than the unit holds",
             "config_version = 1\n[limits]\nparsing_in_flight = 16\n".to_owned(),
-            "rypsok: warning: memory: the worst case is about 616 MiB, above the 256 MiB of the documented unit (an estimate measured on the musl release build); lower fetch.max_bytes, limits.fetches_in_flight, limits.parsing_in_flight or service.http.max_sessions",
+            "rypsok: warning: memory: the worst case is about 616 MiB, above the 256 MiB of the documented unit (an estimate for the musl build); lower fetch.max_bytes, limits.fetches_in_flight, limits.parsing_in_flight or service.http.max_sessions",
         ),
     ];
     let mut wrong = Vec::new();
@@ -382,7 +390,7 @@ fn req_perf_003_check_prints_the_memory_estimate() {
     };
     assert_eq!(
         line("config_version = 1\n"),
-        "rypsok: memory: worst case about 119 MiB (base 13 + bodies 20 + parses 71 + sessions 15 + cache 0 MiB; an estimate measured on the musl release build)"
+        "rypsok: memory: worst case about 119 MiB (base 13 + bodies 20 + parses 71 + sessions 15 + cache 0 MiB; an estimate for the musl build)"
     );
     let ceiling = line("config_version = 1\n[fetch]\nmax_bytes = 10485760\n");
     assert!(ceiling.contains("about 184 MiB"), "{ceiling}");
@@ -497,4 +505,76 @@ fn req_ops_001_check_prints_the_connect_timeout_and_the_shutdown_time() {
     );
     assert!(report.contains("connect_timeout_ms=250"), "{report}");
     assert!(report.contains("shutdown_ms=700"), "{report}");
+}
+
+/// REQ-PERF-003 (RFC 020, 020x, F-4): `check` prints the figure of the build
+/// it runs as and says which build that is. The glibc figures are higher.
+#[test]
+fn req_perf_003_check_names_the_build_of_the_estimate() {
+    let line = |text: &str, basis| -> String {
+        report_for(text, basis)
+            .unwrap()
+            .lines
+            .into_iter()
+            .find(|l| l.starts_with("rypsok: memory:"))
+            .expect("a memory line")
+    };
+    assert_eq!(
+        line("config_version = 1\n", EstimateBasis::Glibc),
+        "rypsok: memory: worst case about 197 MiB (base 14 + bodies 20 + parses 148 + sessions 15 + cache 0 MiB; an estimate for the glibc build)"
+    );
+    // At the ceiling of fetch.max_bytes a glibc build is above the unit and
+    // is told so; a musl build is not (the measurement peaked at 269 to 302
+    // MiB against 173 to 175).
+    let ceiling = "config_version = 1\n[fetch]\nmax_bytes = 10485760\n";
+    let glibc = report_for(ceiling, EstimateBasis::Glibc).unwrap().warnings;
+    assert_eq!(glibc.len(), 1, "{glibc:?}");
+    assert!(glibc[0].contains("about 323 MiB"), "{glibc:?}");
+    assert!(
+        glibc[0].contains("(an estimate for the glibc build)"),
+        "{glibc:?}"
+    );
+    assert!(
+        report_for(ceiling, EstimateBasis::Musl)
+            .unwrap()
+            .warnings
+            .is_empty()
+    );
+}
+
+/// REQ-PERF-003 (RFC 020, 020x): on a platform that was not measured the
+/// estimate is printed with the note and no warning is given against the
+/// Linux unit, however large the figure.
+#[test]
+fn req_perf_003_an_unmeasured_platform_gets_the_note_and_no_warning() {
+    let huge = "config_version = 1\n[limits]\nparsing_in_flight = 16\n";
+    let report = report_for(huge, EstimateBasis::NotMeasured).unwrap();
+    let line = report
+        .lines
+        .iter()
+        .find(|l| l.starts_with("rypsok: memory:"))
+        .unwrap();
+    assert!(
+        line.ends_with("MiB; measured on Linux; not measured for this platform)"),
+        "{line}"
+    );
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+}
+
+/// REQ-PERF-003 (RFC 020, 020x): the command itself uses the basis of the
+/// build that runs it.
+#[test]
+fn req_perf_003_the_command_uses_the_basis_of_its_own_build() {
+    let config = Config::parse("config_version = 1\n").unwrap();
+    config.validate().unwrap();
+    let report = build(&config, &ConfigSource::Defaults).unwrap();
+    let line = report
+        .lines
+        .iter()
+        .find(|l| l.starts_with("rypsok: memory:"))
+        .unwrap();
+    assert!(
+        line.ends_with(&format!("{})", EstimateBasis::current().label())),
+        "{line}"
+    );
 }
