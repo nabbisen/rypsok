@@ -207,9 +207,11 @@ fn req_test_012_ci_workflow_lists_every_gate() {
 #[test]
 fn req_sec_020_every_workflow_declares_least_permissions() {
     // (workflow, job, the permissions the job may write)
-    const MAY_WRITE: [(&str, &str, &[&str]); 2] = [
+    const MAY_WRITE: [(&str, &str, &[&str]); 3] = [
         ("docs.yml", "deploy", &["pages", "id-token"]),
         ("release.yml", "attach", &["contents"]),
+        // The one job that may sign (RFC 020, D-16): it runs no build code.
+        ("release.yml", "checksums", &["id-token", "attestations"]),
     ];
     for name in workflow_names() {
         let file = workflow(&name);
@@ -1070,6 +1072,300 @@ fn req_test_012_cargo_commands_of_the_workflows_are_locked() {
     assert!(seen >= 5, "{seen} cargo commands found");
 }
 
+/// The workflow `release.yml`, and the targets of a matrix's `include`.
+fn include_targets(file: &Yaml, job: &str) -> Vec<(String, String)> {
+    file.at(&["jobs", job, "strategy", "matrix", "include"])
+        .unwrap_or_else(|| panic!("job `{job}` has include entries"))
+        .items()
+        .iter()
+        .filter_map(|entry| {
+            Some((
+                entry.get("target")?.scalar()?.to_owned(),
+                entry.get("os")?.scalar()?.to_owned(),
+            ))
+        })
+        .collect()
+}
+
+/// RFC 020 (D-22): the release profile strips symbols and nothing else: no
+/// LTO, no `codegen-units`, no `panic` (unwinding stays, REQ-SEC-014).
+#[test]
+fn req_sec_014_the_release_profile_strips_symbols_and_keeps_unwinding() {
+    let manifest = read("Cargo.toml");
+    let profile = manifest
+        .split("[profile.release]")
+        .nth(1)
+        .expect("a [profile.release] table")
+        .split("\n[")
+        .next()
+        .unwrap();
+    assert!(
+        profile.lines().any(|l| l.trim() == "strip = \"symbols\""),
+        "strip = \"symbols\""
+    );
+    for forbidden in ["lto", "panic", "codegen-units"] {
+        assert!(
+            !profile
+                .lines()
+                .any(|l| l.trim_start().starts_with(forbidden)),
+            "the release profile sets {forbidden}"
+        );
+    }
+}
+
+/// REQ-RUST-002 and REQ-DEP-005 (RFC 020, D-13): the release builds the same
+/// four targets as the release checks compare, Linux aarch64 on the native
+/// arm runner, and the action installs the musl tools for both musl targets.
+#[test]
+fn req_dep_005_the_release_and_its_checks_build_the_same_four_targets() {
+    let release = include_targets(&workflow("release.yml"), "build");
+    let checks_file = release_checks();
+    let checks_os = include_targets(&checks_file, "reproducible");
+    let mut released: Vec<&str> = release.iter().map(|(t, _)| t.as_str()).collect();
+    released.sort_unstable();
+    let mut checked: Vec<&str> = list_of(matrix_of(&checks_file, "reproducible"), "target");
+    checked.sort_unstable();
+    assert_eq!(released, checked, "one set of targets");
+    assert_eq!(
+        released,
+        [
+            "aarch64-apple-darwin",
+            "aarch64-unknown-linux-musl",
+            "x86_64-pc-windows-msvc",
+            "x86_64-unknown-linux-musl"
+        ]
+    );
+    for (name, entries) in [
+        ("release.yml", &release),
+        ("release-checks.yml", &checks_os),
+    ] {
+        assert!(
+            entries.contains(&(
+                "aarch64-unknown-linux-musl".to_owned(),
+                "ubuntu-24.04-arm".to_owned()
+            )),
+            "{name}: Linux aarch64 builds on the native arm runner"
+        );
+    }
+    let action = read(".github/actions/build-release/action.yml");
+    assert!(
+        action.contains("endsWith(inputs.target, '-linux-musl')"),
+        "the musl tools are installed for both musl targets"
+    );
+    // Four targets, two builds each, three at a time.
+    assert_eq!(
+        checks_file
+            .at(&["jobs", "reproducible", "strategy", "max-parallel"])
+            .and_then(Yaml::scalar),
+        Some("3")
+    );
+}
+
+/// REQ-DEP-002 and REQ-DEP-005 (RFC 020, D-12): the image is made from the
+/// release binary: the `Dockerfile` builds nothing (no `RUN`, no `cargo`),
+/// every base is pinned by digest, and the binary is copied in by
+/// architecture; the `image` job waits for the builds, runs on every run, and
+/// makes one image per architecture with the names the release page lists.
+#[test]
+fn req_dep_002_the_image_is_made_from_the_release_binary() {
+    let dockerfile = read("Dockerfile");
+    let instructions: Vec<&str> = dockerfile
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .collect();
+    assert!(
+        !instructions.iter().any(|l| l.starts_with("RUN ")),
+        "the Dockerfile builds nothing"
+    );
+    assert!(!dockerfile.contains("cargo"), "no cargo in the Dockerfile");
+    let froms: Vec<&&str> = instructions
+        .iter()
+        .filter(|l| l.starts_with("FROM "))
+        .collect();
+    assert_eq!(froms.len(), 1, "one stage");
+    for from in froms {
+        assert!(
+            from.contains("@sha256:"),
+            "`{from}` is not pinned by digest"
+        );
+    }
+    assert!(instructions.contains(&"ARG TARGETARCH"));
+    assert!(
+        instructions.contains(&"COPY dist/linux-${TARGETARCH}/rypsok /rypsok"),
+        "the binary of the architecture is copied in"
+    );
+    let release = workflow("release.yml");
+    let image = release.at(&["jobs", "image"]).expect("an image job");
+    assert!(
+        image.get("if").is_none(),
+        "the image is made on every run, so that a dry run proves it builds"
+    );
+    let needs: Vec<&str> = match image.get("needs") {
+        Some(n) => n.scalar().map_or_else(|| list_of_items(n), |one| vec![one]),
+        None => Vec::new(),
+    };
+    assert!(needs.contains(&"build"), "the image waits for the builds");
+    let text = read(".github/workflows/release.yml");
+    for arch in ["amd64", "arm64"] {
+        assert!(
+            text.contains(&format!("-image-{arch}.tar.gz")),
+            "no image file for {arch}"
+        );
+        assert!(text.contains(&format!("--platform linux/{arch}")));
+    }
+}
+
+/// The scalars of a sequence node.
+fn list_of_items(node: &Yaml) -> Vec<&str> {
+    node.items().iter().filter_map(Yaml::scalar).collect()
+}
+
+/// REQ-DEP-005 (RFC 020, D-12): the order of the release jobs is build, image,
+/// checksums, attach; the sums list the images too; the build jobs write the
+/// hash of their archive, and the image job checks the archives it downloaded
+/// against those hashes before it makes an image.
+#[test]
+fn req_dep_005_checksums_list_the_images_and_attach_uploads_them() {
+    let release = workflow("release.yml");
+    let needs = |job: &str| -> Vec<&str> {
+        let node = release
+            .at(&["jobs", job, "needs"])
+            .unwrap_or_else(|| panic!("{job} needs"));
+        node.scalar()
+            .map_or_else(|| list_of_items(node), |one| vec![one])
+    };
+    assert_eq!(needs("image"), ["build"]);
+    let mut checksums = needs("checksums");
+    checksums.sort_unstable();
+    assert_eq!(checksums, ["build", "image"]);
+    let attach = needs("attach");
+    assert!(attach.contains(&"checksums") && attach.contains(&"image"));
+    let text = read(".github/workflows/release.yml");
+    assert!(
+        text.contains("sha256sum rypsok-* > SHA256SUMS"),
+        "the sums cover the archives and the images (all start with rypsok-)"
+    );
+    // The attach job downloads the images as well as the archives.
+    let downloads = release
+        .at(&["jobs", "attach", "steps"])
+        .unwrap()
+        .items()
+        .iter()
+        .filter_map(|step| step.at(&["with", "pattern"]).and_then(Yaml::scalar));
+    let patterns: Vec<&str> = downloads.collect();
+    assert!(
+        patterns.contains(&"archive-*") && patterns.contains(&"image-*"),
+        "{patterns:?}"
+    );
+    // The hash of each archive travels from its build job to the image job.
+    let build_runs = run_lines(&release.at(&["jobs", "build"]).cloned().unwrap()).join("\n");
+    assert!(
+        build_runs.contains("shasum -a 256"),
+        "the build jobs hash their archive"
+    );
+    let image_runs = run_lines(&release.at(&["jobs", "image"]).cloned().unwrap()).join("\n");
+    assert!(
+        image_runs.contains("sha256sum --check"),
+        "the image job checks the archives it downloaded"
+    );
+}
+
+/// REQ-SEC-020 (RFC 020, D-16): only the checksums job can sign, and it runs
+/// no third-party build code: it downloads artifacts and hashes them, with no
+/// checkout and no cargo; the attestation is made on a tag only and names the
+/// files of `SHA256SUMS` (the archives and the images, `rypsok-*`).
+#[test]
+fn req_sec_020_only_the_checksums_job_signs_and_runs_no_build_code() {
+    for name in workflow_names() {
+        let file = workflow(&name);
+        for (job, body) in jobs(&file) {
+            let signs = body.get("permissions").is_some_and(|p| {
+                p.entries().iter().any(|(permission, level)| {
+                    matches!(permission.as_str(), "id-token" | "attestations")
+                        && level.scalar() == Some("write")
+                })
+            });
+            let may = matches!(
+                (name.as_str(), job.as_str()),
+                ("release.yml", "checksums") | ("docs.yml", "deploy")
+            );
+            assert!(!signs || may, "{name}: job `{job}` may not sign");
+        }
+    }
+    let release = workflow("release.yml");
+    let checksums = release.at(&["jobs", "checksums"]).unwrap();
+    assert_eq!(
+        checksums
+            .at(&["permissions", "contents"])
+            .and_then(Yaml::scalar),
+        Some("read")
+    );
+    assert_eq!(
+        checksums
+            .at(&["permissions", "id-token"])
+            .and_then(Yaml::scalar),
+        Some("write")
+    );
+    assert_eq!(
+        checksums
+            .at(&["permissions", "attestations"])
+            .and_then(Yaml::scalar),
+        Some("write")
+    );
+    let steps = checksums.get("steps").unwrap().items();
+    for step in steps {
+        let uses = step.get("uses").and_then(Yaml::scalar).unwrap_or("");
+        assert!(
+            !uses.starts_with("actions/checkout"),
+            "the signing job checks out nothing"
+        );
+        assert!(
+            !uses.starts_with("./"),
+            "the signing job runs no local action"
+        );
+    }
+    assert!(
+        !run_lines(checksums).iter().any(|l| l.contains("cargo")),
+        "the signing job runs no cargo"
+    );
+    let attest = steps
+        .iter()
+        .find(|step| {
+            step.get("uses")
+                .and_then(Yaml::scalar)
+                .is_some_and(|u| u.starts_with("actions/attest-build-provenance@"))
+        })
+        .expect("an attestation step");
+    assert_eq!(
+        attest.get("if").and_then(Yaml::scalar),
+        Some("github.ref_type == 'tag'"),
+        "attested on a tag only"
+    );
+    let subjects = attest
+        .at(&["with", "subject-path"])
+        .and_then(Yaml::scalar)
+        .unwrap();
+    assert!(
+        subjects.contains("dist/rypsok-*"),
+        "the subjects are the files of SHA256SUMS"
+    );
+}
+
+/// REQ-DEP-005 (RFC 020, DEP-3): the attach job's summary says which compiler
+/// built the release, read from the action's `toolchain:` line, so that the
+/// owner can copy it into the release notes.
+#[test]
+fn req_dep_005_the_attach_summary_names_the_compiler() {
+    let release = workflow("release.yml");
+    let runs = run_lines(release.at(&["jobs", "attach"]).unwrap()).join("\n");
+    assert!(
+        runs.contains(".github/actions/build-release/action.yml") && runs.contains("toolchain:"),
+        "the summary reads the action's toolchain line"
+    );
+    assert!(runs.contains("Built with rustc"));
+}
+
 /// RFC 020 (DEP-4): the Windows release build links reproducibly, in the
 /// release and in its reproducibility check: the Windows entry carries the
 /// flag and the build passes it to the action.
@@ -1179,12 +1475,17 @@ jobs:
     assert!(refused.is_err(), "an anchor is refused, not read");
 }
 
-/// REQ-RUST-002: CI builds and tests on Linux, macOS and Windows; the
-/// release job (crates.io and binaries) is where aarch64 is added.
+/// REQ-RUST-002: CI builds and tests on Linux (x86_64 and aarch64), macOS and
+/// Windows; the release builds the four targets (a test of its own).
 #[test]
 fn req_rust_002_ci_matrix_covers_three_platforms() {
     let ci = read(".github/workflows/ci.yml");
-    for os in ["ubuntu-latest", "macos-latest", "windows-latest"] {
+    for os in [
+        "ubuntu-latest",
+        "ubuntu-24.04-arm",
+        "macos-latest",
+        "windows-latest",
+    ] {
         assert!(ci.contains(os), "{os}");
     }
     assert!(ci.contains("cargo test --workspace"));

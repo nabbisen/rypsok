@@ -43,6 +43,13 @@ Add an MCP server entry to your agent runtime, for example:
 { "mcpServers": { "rypsok": { "command": "rypsok", "args": ["serve"] } } }
 ```
 
+Each release also carries static binaries for Linux x86_64 and aarch64, a
+binary for macOS arm64 and one for Windows x86_64, a container image for each
+Linux architecture, and `SHA256SUMS`. Verify a download with
+`sha256sum --check --ignore-missing SHA256SUMS` (it is intact) and
+`gh attestation verify <file> --repo nabbisen/rypsok` (this repository's
+release workflow built it).
+
 That is a working setup with Wikipedia. From there, five tutorials take
 you to a keyed engine, reading pages, network mode and the scraping
 switch, each with a checked example:

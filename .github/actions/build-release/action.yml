@@ -27,7 +27,7 @@ runs:
         toolchain: 1.99.1
         targets: ${{ inputs.target }}
     - name: C toolchain for the static Linux build
-      if: inputs.target == 'x86_64-unknown-linux-musl'
+      if: endsWith(inputs.target, '-linux-musl')
       run: sudo apt-get update && sudo apt-get install -y musl-tools
       shell: bash
     - name: Compiler and flags

@@ -1,14 +1,18 @@
-# Release artifacts (RFC 013, RFC 019 D8). This workflow never creates a
-# release: the owner publishes it. It builds the binaries and the container
-# image, and attaches the binaries and SHA256SUMS to the release of a tag
-# that already exists.
+# Release artifacts (RFC 013, RFC 019 D8; RFC 020, D-12, D-13, D-16). This
+# workflow never creates a release: the owner publishes it. It builds the
+# binaries of four targets, makes the container images from the Linux
+# binaries, writes SHA256SUMS over the archives and the images, attests their
+# provenance on a tag, and attaches them to the release of a tag that already
+# exists.
+#
+#   build -> image -> checksums -> attach
 #
 #   * A tag push builds everything; the attach job uploads to the release of
 #     that tag if there is one, and otherwise says so in the run summary.
 #   * To attach after publishing, run this workflow again from the tag
 #     (Actions, release, Run workflow, "Use workflow from: Tag X.Y.Z").
-#   * A run from a branch builds the artifacts and attaches nothing: that
-#     is the dry run.
+#   * A run from a branch builds the artifacts, the images and SHA256SUMS
+#     and attests and attaches nothing: that is the dry run.
 #
 # See docs/src/maintainers/releasing.md for the procedure.
 name: release
@@ -31,6 +35,8 @@ jobs:
         include:
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
           - target: aarch64-apple-darwin
             os: macos-latest
           - target: x86_64-pc-windows-msvc
@@ -46,6 +52,26 @@ jobs:
         with:
           target: ${{ matrix.target }}
           rustflags: ${{ matrix.rustflags }}
+      # The hash of the archive as this job built it. The image job checks the
+      # archives it downloads against it, so that a file changed between jobs
+      # is caught before an image is made.
+      - name: SHA-256 of the archive
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          for file in rypsok-*.tar.gz rypsok-*.zip; do
+            [ -f "$file" ] && shasum -a 256 "$file"
+          done > "sha256-$TARGET.txt"
+          cat "sha256-$TARGET.txt"
+          {
+            echo "### SHA-256 of the archive of $TARGET"
+            echo
+            echo '```'
+            cat "sha256-$TARGET.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+        shell: bash
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: archive-${{ matrix.target }}
@@ -53,15 +79,81 @@ jobs:
             rypsok-*.tar.gz
             rypsok-*.zip
           if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sha-${{ matrix.target }}
+          path: sha256-*.txt
+          if-no-files-found: error
 
-  checksums:
-    name: Checksums
+  image:
+    name: Container images
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          pattern: archive-*
+          pattern: "*-unknown-linux-musl"
+          merge-multiple: true
+          path: work
+      - name: Check the archives against the hashes the build jobs wrote
+        run: |
+          set -euo pipefail
+          cd work
+          ls -l
+          cat sha256-*.txt | sha256sum --check
+      - name: The binaries of the two architectures
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -n 1)"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          for pair in amd64:x86_64 arm64:aarch64; do
+            arch="${pair%%:*}"
+            cpu="${pair##*:}"
+            name="rypsok-$version-$cpu-unknown-linux-musl"
+            mkdir -p "dist/linux-$arch"
+            tar -xzf "work/$name.tar.gz" -C "dist/linux-$arch" --strip-components=1 "$name/rypsok"
+          done
+          ls -l dist/linux-*
+      # No emulation: the Dockerfile has no RUN, so an image of the other
+      # architecture is made by copying its binary onto its base.
+      - name: Build the images
+        run: |
+          set -euo pipefail
+          docker buildx build --platform linux/amd64 --load -t "rypsok:$VERSION-amd64" .
+          docker save "rypsok:$VERSION-amd64" | gzip > "rypsok-$VERSION-image-amd64.tar.gz"
+          docker buildx build --platform linux/arm64 --load -t "rypsok:$VERSION-arm64" .
+          docker save "rypsok:$VERSION-arm64" | gzip > "rypsok-$VERSION-image-arm64.tar.gz"
+          ls -l rypsok-*-image-*.tar.gz
+      - name: Run the image of this runner's architecture
+        run: docker run --rm --entrypoint /rypsok "rypsok:$VERSION-amd64" --version
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: image-amd64
+          path: rypsok-*-image-amd64.tar.gz
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: image-arm64
+          path: rypsok-*-image-arm64.tar.gz
+          if-no-files-found: error
+
+  checksums:
+    name: Checksums and provenance
+    needs: [build, image]
+    runs-on: ubuntu-latest
+    # The only job that can sign (RFC 020, D-16). The build jobs run the
+    # build.rs of third-party crates and must never hold a token that can
+    # sign, so this job runs no build code: it downloads artifacts and hashes
+    # them, with no checkout of the source and no cargo.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: "{archive,image}-*"
           merge-multiple: true
           path: dist
       - name: SHA256SUMS
@@ -69,6 +161,13 @@ jobs:
           cd dist
           sha256sum rypsok-* > SHA256SUMS
           cat SHA256SUMS
+      # On a tag only: the dry run attests nothing. The subjects are the files
+      # of SHA256SUMS: the four archives and the two images.
+      - name: Attest the provenance
+        if: github.ref_type == 'tag'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/rypsok-*
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: checksums
@@ -77,7 +176,7 @@ jobs:
 
   attach:
     name: Attach to the release
-    needs: [build, checksums]
+    needs: [build, image, checksums]
     # Only on a tag ref: a run from a branch is the dry run.
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
@@ -106,11 +205,15 @@ jobs:
             echo "::error::the workspace version ($version) is not the tag ($tag)"
             exit 1
           fi
-      # The binaries and the checksums, and not the container image that the
-      # image job uploads to the same run.
+      # The archives, the two images and the checksums.
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: archive-*
+          merge-multiple: true
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: image-*
           merge-multiple: true
           path: dist
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -138,24 +241,11 @@ jobs:
           ls -l dist
           # No --clobber: an asset that is already there fails the upload.
           gh release upload "$tag" dist/*
+          compiler="$(sed -n 's/^ *toolchain: *//p' .github/actions/build-release/action.yml | head -n 1)"
           {
             echo "### Attached to the release of $tag"
             echo
             for file in dist/*; do echo "- ${file##*/}"; done
+            echo
+            echo "Built with rustc $compiler"
           } >> "$GITHUB_STEP_SUMMARY"
-
-  image:
-    name: Container image
-    # A branch run would tag the image after the branch.
-    if: github.ref_type == 'tag'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - name: Build the image
-        run: docker build -t rypsok:${GITHUB_REF_NAME} .
-      - name: Save the image
-        run: docker save rypsok:${GITHUB_REF_NAME} | gzip > rypsok-${GITHUB_REF_NAME}-image.tar.gz
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: rypsok-${{ github.ref_name }}-image
-          path: rypsok-*-image.tar.gz

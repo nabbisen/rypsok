@@ -115,26 +115,46 @@ place of `MemoryMax` in the same comparison.
 
 ## Binaries
 
-Each release lists archives for Linux x86_64 (static), macOS arm64 and
-Windows x86_64, and a file `SHA256SUMS`. Verify a download before running
-it: on Linux, `sha256sum --check --ignore-missing SHA256SUMS` in the
-directory that holds it; elsewhere, compute the archive's SHA-256 and
-compare it with its line in `SHA256SUMS`. The sums show the file is
-intact; they do not show who published it.
+Each release lists archives for Linux x86_64 and aarch64 (both static),
+macOS arm64 and Windows x86_64, two container images (below), and a file
+`SHA256SUMS` that names all six. Verify a download before running it, in
+two steps:
+
+1. **Integrity.** On Linux, `sha256sum --check --ignore-missing SHA256SUMS`
+   in the directory that holds the file; elsewhere, compute the file's
+   SHA-256 and compare it with its line in `SHA256SUMS`. This shows the file
+   is intact. It does not show who made it: anyone who can replace the file
+   can replace `SHA256SUMS` beside it.
+2. **Origin.** `gh attestation verify <file> --repo nabbisen/rypsok`. Each
+   release file carries a provenance attestation that GitHub signs when this
+   repository's release workflow builds it from a tag. The command checks the
+   signature and that the file is the one the workflow built. It needs the
+   GitHub CLI and a network.
 
 ## Container
 
-The repository's `Dockerfile` builds a static binary into a distroless
-image that runs as a non-root user and reads `/etc/rypsok/rypsok.toml`:
+Each release holds an image for Linux x86_64 and one for Linux aarch64:
+`rypsok-X.Y.Z-image-amd64.tar.gz` and `rypsok-X.Y.Z-image-arm64.tar.gz`. There
+is no registry; the image is a file of the release, and it contains the very
+binary of the release's Linux archive of the same architecture. Verify the
+file as described under Binaries, then load it. The image is distroless, runs
+as a non-root user and reads `/etc/rypsok/rypsok.toml`:
 
 ```sh
-docker build -t rypsok .
+docker load < rypsok-X.Y.Z-image-amd64.tar.gz
 docker run --rm -p 127.0.0.1:8737:8737 \
   --read-only --cap-drop ALL --security-opt no-new-privileges \
   --memory 256m --pids-limit 64 --ulimit nofile=128:128 \
   -v "$PWD/rypsok.toml:/etc/rypsok/rypsok.toml:ro" \
-  -e RYPSOK_TOKEN_MIMLYS=… rypsok
+  -e RYPSOK_TOKEN_MIMLYS=… rypsok:X.Y.Z-amd64
 ```
+
+(`rypsok:X.Y.Z-arm64` on aarch64.) To make an image yourself, build the static
+binary for `x86_64-unknown-linux-musl` (or `aarch64-unknown-linux-musl`),
+copy it to `dist/linux-amd64/rypsok` (or `dist/linux-arm64/rypsok`) and run
+`docker build -t rypsok .`; the `Dockerfile` compiles nothing and only copies
+that file onto the pinned base image. An image made so is your own build, not
+the release's.
 
 The image is static and runs as a non-root user; the flags take away
 what it does not need: a writable root, every capability, privilege

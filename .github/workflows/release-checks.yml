@@ -3,7 +3,7 @@ name: Release checks
 # Everything that is too slow or too deep for every push runs here, once,
 # on the commit that is about to be tagged (RFC 020, D-23; handoff 020w):
 #
-#   reproducible, reproducible-compare  two builds of every release target
+#   reproducible, reproducible-compare  two builds of every release target (four)
 #                                       and the comparison of their binaries
 #   fuzz                                every fuzz target, 300 s each
 #   mutants                             mutation testing of the six security
@@ -40,11 +40,13 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        target: [x86_64-unknown-linux-musl, aarch64-apple-darwin, x86_64-pc-windows-msvc]
+        target: [x86_64-unknown-linux-musl, aarch64-unknown-linux-musl, aarch64-apple-darwin, x86_64-pc-windows-msvc]
         build: [a, b]
         include:
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
           - target: aarch64-apple-darwin
             os: macos-latest
           - target: x86_64-pc-windows-msvc

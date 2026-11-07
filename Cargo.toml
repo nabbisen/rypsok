@@ -57,3 +57,9 @@ await_holding_lock = "deny"
 print_stdout = "deny"
 print_stderr = "deny"
 dbg_macro = "deny"
+
+# The release binary (RFC 020, D-22): symbols stripped, nothing else changed.
+# No LTO and no other size setting, and unwinding stays: the panics that the
+# extraction and the engine calls contain (REQ-SEC-014) need it.
+[profile.release]
+strip = "symbols"

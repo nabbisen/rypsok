@@ -10,9 +10,19 @@ cargo install rypsok
 rypsok --version
 ```
 
-Binaries for Linux x86_64, macOS arm64 and Windows x86_64 are attached to
-each release; `SHA256SUMS` proves a download is intact, not where it came
-from. A container image is built for each release.
+Binaries for Linux x86_64 and aarch64 (both static), macOS arm64 and Windows
+x86_64 are attached to each release, with a container image for Linux x86_64
+and one for Linux aarch64. Verify a download before running it:
+
+```sh
+sha256sum --check --ignore-missing SHA256SUMS
+gh attestation verify rypsok-X.Y.Z-x86_64-unknown-linux-musl.tar.gz --repo nabbisen/rypsok
+```
+
+The first proves the file is intact. The second proves where it comes from: the
+release workflow of this repository built it from the tagged commit. The
+[deployment page](./reference/deployment.md) says more, and how to load the
+image.
 
 ## Run
 

@@ -53,6 +53,16 @@ announced here with both values.
   requirements whose tests are still partial. A property test that could
   generate `0.0.0.0` as a host name and fail was corrected. `rcgen` is a
   dev-dependency of `rypsok-core`.
+- Linux aarch64: a static binary (`aarch64-unknown-linux-musl`) is built for
+  each release and CI runs on GitHub's native arm runner (RFC 020, D-13). macOS
+  x86_64 and Windows aarch64 are not built.
+- Provenance attestations (RFC 020, D-16): on a release tag the `checksums`
+  job attests the four archives and the two images, so that
+  `gh attestation verify <file> --repo nabbisen/rypsok` shows that the release
+  workflow built a file. Only that job can sign, and it runs no build code.
+- The container images (Linux x86_64 and aarch64) are files of the release,
+  `rypsok-X.Y.Z-image-amd64.tar.gz` and `-arm64.tar.gz`, and are listed in
+  `SHA256SUMS` (RFC 020, D-12). There is still no registry.
 
 ### Fixed
 
@@ -119,6 +129,13 @@ announced here with both values.
 
 ### Changed
 
+- The container image is made from the release binary instead of being built
+  from source with another compiler: the `Dockerfile` compiles nothing and
+  copies the binary of the release onto the pinned distroless base (RFC 020,
+  D-12). `docker build` needs the musl binary under `dist/linux-<arch>/`.
+- Release binaries are stripped of symbols (`strip = "symbols"`; RFC 020,
+  D-22): the Linux x86_64 binary shrinks from 18,997,040 to 13,692,376 bytes
+  (28 %). Unwinding stays, and there is no LTO. Nothing a binary does changes.
 - Internal: checks run per change and before every release, not on a timer.
   `release-checks.yml` (reproducibility of the release builds, every fuzz
   target for 300 s, mutation testing of the six security modules, the live

@@ -81,5 +81,4 @@ rows were narrowed to what is still missing.
 | `REQ-TEST-017` Circuit tests | partial | opening after consecutive counted failures, reset by a success, transition fields; cooldown growth, probing, closing and Retry-After are under REQ-RES-004/005 |
 | `REQ-TEST-018` Scraping driver tests | partial | three page states told apart, results in order with wrappers unwrapped, the node bound without panic; refusal without the switch, header absence, statuses and the redirect rule are under REQ-ENG-013..015 |
 | `REQ-TEST-012` CI gate | partial | the gates are looked for in the `run` lines of the parsed workflow; the "1.88" and the OS names are still looked for as text (`req_rust_002_ci_matrix_covers_three_platforms`) |
-| `REQ-RUST-002` Platforms | partial | the test asserts that ci.yml contains "ubuntu-latest", "macos-latest", "windows-latest" and `cargo test --workspace`; aarch64 is absent from CI and from the test (020f DEP-2); the release builds three of six combinations |
 | `REQ-OPS-001` Command line | partial | check exit 1 on invalid/missing and 0 on valid, unknown command exit 2, the token and warning cases of the audit; `--version` is asserted by no test |

@@ -1177,8 +1177,9 @@ rypsok is implemented in Rust, edition 2024, minimum version 1.88.
 (D-23)
 
 ### REQ-RUST-002 Platforms — M1 · T
-Releases shall build and pass tests on Linux, macOS and Windows, on x86_64
-and aarch64. (D-23)
+Releases shall build and pass tests on Linux x86_64 and aarch64, macOS arm64
+and Windows x86_64. macOS x86_64 and Windows aarch64 are not built. (D-23;
+RFC 020, D-13)
 
 ### REQ-RUST-003 Typed boundaries — All · I
 Every external structure shall be an explicit type validated at
@@ -1235,8 +1236,10 @@ network limits and shall document its needs.
 
 ### REQ-DEP-005 Distribution — M1 · D
 Releases shall be published on crates.io and as binaries on the release
-page, and from M4 also as a container image; tags carry no `v` prefix.
-(D-32)
+page, and from M4 also as a container image; tags carry no `v` prefix. The
+container image is attached to the release page as a file, made from the
+release binary and listed in `SHA256SUMS`; there is no registry. (D-32;
+RFC 020, D-12)
 
 ---
 

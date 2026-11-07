@@ -20,7 +20,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # ubuntu-24.04-arm: GitHub's native arm runner, free for public
+        # repositories; Linux aarch64 is a release target (RFC 020, D-13).
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
         # `stable` on purpose: a new compiler's lints are seen here early,
         # and the 1.88 entry holds the floor (REQ-RUST-001). The release
         # workflow builds with a named compiler (RFC 020, DEP-3).

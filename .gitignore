@@ -38,3 +38,6 @@ fuzz/artifacts/
 fuzz/corpus/*/*
 !fuzz/corpus/*/seed-*
 fuzz/coverage/
+
+# Release binaries assembled for the container image (Dockerfile)
+/dist/
