@@ -738,7 +738,7 @@ contract. Changing one is a breaking change.
 | REQ-SEC-019 | Per-caller limits | M4 | §8 Egress policy; §9 Content boundary; §2 HTTP listener; §16 Invariants |
 | REQ-SEC-020 | Supply chain and hardening | M0 | §8 Egress policy; §9 Content boundary; §2 HTTP listener; §16 Invariants |
 | REQ-SEC-022 | Request time and stream bounds | M7 | §2 Transports and protocol (the listener's statuses: 408); the stream bound LIM-H4 is in the limits table, not in this document |
-| REQ-SEC-023 | Fuzzing | M7 | Internal: the fourteen fuzz targets in `fuzz/` (the eight parsers of RFC 018 and, since RFC 020, the URL policy, the egress rules, robots.txt, the engines' JSON and the header values) and the scheduled workflow (REQ-TEST-003); no section of this document specifies it |
+| REQ-SEC-023 | Fuzzing | M7 | Internal: the fourteen fuzz targets in `fuzz/` (the eight parsers of RFC 018 and, since RFC 020, the URL policy, the egress rules, robots.txt, the engines' JSON and the header values) in the release checks (REQ-TEST-019); no section of this document specifies it |
 | REQ-SEC-024 | Session bound | M7 | §2 Transports and protocol (the listener's statuses: 503) |
 | REQ-PRIV-001 | Queries are sensitive | All | §10 Privacy |
 | REQ-PRIV-002 | Secrets in queries and URLs | M1 | §10 Privacy |
@@ -803,6 +803,7 @@ contract. Changing one is a breaking change.
 | REQ-TEST-016 | Limit tests | M1 | Internal: verified by the test suite named in each requirement |
 | REQ-TEST-017 | Circuit tests | M2 | Internal: verified by the test suite named in each requirement |
 | REQ-TEST-018 | Scraping driver tests | M5 | Internal: verified by the test suite named in each requirement |
+| REQ-TEST-019 | Release checks | M8 | Internal: `release-checks.yml` and `external-checks.yml`; verified by the gate tests of the workflows |
 | REQ-TEST-012 | CI gate | M0 | Internal: verified by the test suite named in each requirement |
 | REQ-MAIN-001 | Isolated drivers | All | Internal: crate structure; §13.2 configuration version; §18 note on contract versioning |
 | REQ-MAIN-002 | Tools depend on the core only | All | Internal: crate structure; §13.2 configuration version; §18 note on contract versioning |

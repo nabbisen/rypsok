@@ -6,38 +6,46 @@ release workflow builds and attaches, and never creates a release.
 
 ## The procedure
 
-1. **Preconditions.** The gates are green on the release commit, the
-   reviewer has recorded a Go, and the owner has authorized the release.
-2. **Bump the pinned compiler, then run the dry run.** The release workflow
-   builds with a named compiler (the `toolchain:` line of the `build` job in
-   `release.yml`), so that two builds of one commit use one compiler. Set it
-   to the current stable (`rustup update stable`, `rustc --version`), commit
-   that with the release commit, run the dry run (below) from `main`, and
-   release only when it is green. The compiler is a deliberate change of the
-   release, not a surprise of the day. CI keeps `stable` on purpose, to see
-   new lints early; its 1.88 job covers the floor.
-3. **Tag.** Tag the release commit `X.Y.Z` (no `v` prefix) and push the
+1. **Update dependencies, once per release cycle.** At the start of the cycle
+   (D-14 as amended), and not on a timer: `cargo update`; the pinned actions
+   (the latest release of each, by commit SHA with its version as a comment);
+   the base image digest in the `Dockerfile`; and the release compiler (the
+   `toolchain:` line of `.github/actions/build-release/action.yml`). One
+   commit, through CI. Between cycles nothing updates by itself.
+2. **Preconditions.** The gates are green on the release commit, the reviewer
+   has recorded a Go, and the owner has authorized the release.
+3. **Run the release checks on the release commit.** Bump the pinned compiler
+   (the `toolchain:` line of `.github/actions/build-release/action.yml`, the
+   one place that names it; set it to the current stable with `rustup update
+   stable`, `rustc --version`), commit it with the release commit, dispatch
+   `release-checks.yml` from `main` at that commit (Actions, Release checks,
+   Run workflow), and release only when every job is green or explained as
+   [When checks run](./checks.md) says. The tag goes on **the commit the run
+   checked** (its `head_sha`); a later commit runs them again. The compiler
+   is a deliberate change of the release, not a surprise of the day. CI keeps
+   `stable` on purpose, to see new lints early; its 1.88 job covers the floor.
+4. **Tag.** Tag the release commit `X.Y.Z` (no `v` prefix) and push the
    tag. The tag must equal the workspace `version` of `Cargo.toml`; the
    attach job fails otherwise.
-4. **Publish.** The owner publishes the release on GitHub from the tag, or
+5. **Publish.** The owner publishes the release on GitHub from the tag, or
    publishes first: creating the release creates the tag, which starts the
    workflow, whose attach job then finds the release. When publishing
    first, choose the release commit as the target of the new tag, not the
    branch head: the tag goes on the commit chosen, and the attach job's
    version check catches a wrong version but not a wrong commit with the
    same version.
-5. **Read the run.** The `release` workflow builds the binaries, writes
+6. **Read the run.** The `release` workflow builds the binaries, writes
    `SHA256SUMS`, and builds the container image. If the release did not exist
    when its attach job ran, the job wrote a notice in the run summary and
    attached nothing. In that case run the workflow again from the tag
    (Actions, release, Run workflow, "Use workflow from: Tag X.Y.Z", or
    `gh workflow run release.yml --ref X.Y.Z`): the attach job uploads to the
    release that now exists.
-6. **Check the release page.** It lists three archives and `SHA256SUMS`:
+7. **Check the release page.** It lists three archives and `SHA256SUMS`:
    Linux x86_64 (static, musl), macOS arm64 and Windows x86_64. The release
    notes name the compiler: paste the `rustc --version` line that the
    "Compiler and flags" step of the run printed.
-7. **Nothing is overwritten.** The attach job refuses to replace an asset
+8. **Nothing is overwritten.** The attach job refuses to replace an asset
    that is already on the release. To replace one, delete it on the release
    page by hand and say so in the release notes, then run the workflow again
    from the tag.
@@ -77,20 +85,22 @@ it uses the workflow as the tag holds it. The defect is fixed in the next
 release. Never rebuild the binaries locally for a release: the checksums
 and the notes would then describe files the workflow did not build.
 
-## The dry run
-
-A run of the workflow from a branch (Actions, release, Run workflow, "Use
-workflow from: Branch main") builds the archives and the checksums and
-uploads them as workflow artifacts of that run. It attaches nothing and
-builds no image: both jobs run on a tag ref only. Use it to see that the
-build matrix works before tagging. What it cannot show is the attach itself,
-which first runs for a real tag.
+## The reproducibility check
 
 Builds of one commit are meant to be reproducible: the same compiler, the
-locked dependencies and, on Windows, the linker flag `/Brepro` (without it
-the linker writes a timestamp into the executable). Two dry runs of one
-commit give byte-identical `rypsok` binaries (the archives themselves differ
-in their own timestamps, so compare the unpacked binaries, not the archives).
+locked dependencies and, on Windows, the linker flag `/Brepro` (without it the
+linker writes a timestamp into the executable). The release checks prove it on
+every release: the jobs `reproducible` and `reproducible-compare` build every
+release target twice, through the same local action as the release itself,
+and compare the SHA-256 of the unpacked `rypsok` binaries (the archives differ
+in their own timestamps, so the binaries are compared, not the archives). A
+difference fails the run.
+
+A run of `release.yml` from a branch (Actions, release, Run workflow, "Use
+workflow from: Branch main") still builds the archives and the checksums and
+uploads them as workflow artifacts. It attaches nothing and builds no image:
+both jobs run on a tag ref only. What no check shows is the attach itself,
+which first runs for a real tag.
 
 ## What the checksums prove
 

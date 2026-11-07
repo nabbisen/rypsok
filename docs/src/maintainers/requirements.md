@@ -773,8 +773,8 @@ cleaner, charset decoding, the HTML document pipeline, the scraping
 reader, URL normalization, the secret check, configuration parsing, the
 egress policy's judgment of a URL, an egress rule, a robots.txt answer, a
 provider's JSON answer, and the `Retry-After` and charset header values)
-shall have a fuzz target that runs on the schedule of REQ-TEST-003, report
-only; a finding becomes a test. (RFC 018; RFC 020, TST-14)
+shall have a fuzz target that runs in the release checks (REQ-TEST-019); a crash is a
+No-Go for the release and becomes a test. (RFC 018; RFC 020, TST-14, D-23)
 
 ### REQ-SEC-024 Session bound — M7 · T
 In HTTP mode the handshake-based revisions shall hold at most LIM-H6 live sessions; a handshake beyond the bound shall be answered 503 with a Retry-After hint and no session, logged and counted; the stateless revision is unaffected. (THR-27; RFC 019)
@@ -1034,8 +1034,7 @@ Every driver shall have fixture tests for a successful response, an empty
 response, and each error class.
 
 ### REQ-TEST-003 Live checks — M2 · D
-Each driver shall have a scheduled live check, outside the CI gate, within
-the provider's terms, that detects format drift. (R-12)
+Each driver shall have a live check, outside the CI gate, within the provider's terms, that detects format drift. It runs in the release checks before every release and on demand, never on a timer. (R-12; RFC 020, D-23)
 
 ### REQ-TEST-004 Deadline and partial-failure tests — M1 · T
 Tests shall verify LIM-S4, LIM-S5, early completion, cancellation, and that
@@ -1104,6 +1103,14 @@ extraction of results in order, the no-results page, the drifted page,
 the challenge page and the blocking statuses, the parsing bounds, the
 refusal without the switch, the absence of browser headers and the
 on-host redirect rule. (RFC 015)
+
+### REQ-TEST-019 Release checks — M8 · T
+Before every release, on the commit to be tagged, one manual workflow shall
+run in parallel the reproducibility check of the release builds, every fuzz
+target, mutation testing of the security modules against a committed
+exclusion list, the live checks and the advisory check; no job may be
+ignored, and the release is tagged on the commit the run checked. (RFC 020,
+D-23)
 
 ### REQ-TEST-012 CI gate — M0 · T
 Formatting, lints (including one that forbids printing to standard output in

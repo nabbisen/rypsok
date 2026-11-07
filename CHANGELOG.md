@@ -119,6 +119,16 @@ announced here with both values.
 
 ### Changed
 
+- Internal: checks run per change and before every release, not on a timer.
+  `release-checks.yml` (reproducibility of the release builds, every fuzz
+  target for 300 s, mutation testing of the six security modules, the live
+  checks and the advisory check) replaces the weekly `scheduled.yml`; the live
+  checks and the advisories are also `external-checks.yml`, run on demand. The
+  release build is one local action, `.github/actions/build-release`, which
+  alone names the release compiler. New requirement REQ-TEST-019.
+  `docs/src/maintainers/checks.md` says when each check runs and what red
+  means.
+
 - **Removed from `rypsok-core`'s public items** (RFC 020, TST-10; none is in the
   frozen surface of the stability page): the type `UserAgentFormat` and the
   field `EngineProperties::user_agent`; the six builders

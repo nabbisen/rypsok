@@ -13,8 +13,9 @@ is a change to the other.
 | Brave Search | `brave` | `X-Subscription-Token` | [brave.md](./brave.md) |
 | DuckDuckGo (HTML), a scraping driver behind `[scraping]` (RFC 015) | `duckduckgo` | none | [duckduckgo.md](./duckduckgo.md) |
 
-Live checks run on a schedule from `.github/workflows/scheduled.yml`,
-never on a pull request and never as a gate (REQ-TEST-003). They send one
+Live checks run from `.github/workflows/external-checks.yml`: in the
+release checks before every release and on demand, never on a timer, on a
+pull request or as a gate (REQ-TEST-003). They send one
 fixed query per driver to the real endpoint and assert that the response
 parses; a failure means the provider changed its format or its terms and
 the driver and the record need review.
