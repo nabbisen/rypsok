@@ -16,6 +16,11 @@ announced here with both values.
 
 ### Added
 
+- Two settings for limits that had no key (RFC 020, D-9):
+  `search.connect_timeout_ms` (LIM-S12, 200 to 5000, default 1000) and
+  `service.shutdown_ms` (LIM-O1, 500 to 10000, default 3000). The defaults are
+  the values the program used; `rypsok check` prints both. The limits table
+  now calls "fixed" every row that no key sets.
 - Every event of a tool call now carries `request_id` and `caller` as
   top-level fields of its log line (RFC 009 and RFC 013 promised them; no
   line had them): a per-call identifier (the start time in milliseconds and
@@ -50,6 +55,18 @@ announced here with both values.
   dev-dependency of `rypsok-core`.
 
 ### Fixed
+
+- A panic is logged as one JSON line without its message (`event` `panic`,
+  `level` `ERROR`, `location`, `thread`); before, the standard hook wrote its
+  location and message as plain text to standard error, outside the JSON log
+  and its privacy rules. A panic inside the extraction of a page still ends
+  that call only.
+- The client that fetches pages now probes a pooled connection every 60 s
+  (`tcp_keepalive`), as RFC 011 says; it only dropped an idle one after 30 s.
+- Internal: tests that depended on elapsed time run with paused time and exact
+  assertions; the crate builds without a warning with no engine feature and
+  with each one alone (CI checks it); `cfg(test)` helpers moved into test
+  modules; the page behind four example answers is in `examples/pages/`.
 
 - A panic inside a critical section no longer makes every later call
   panic: the counters, health table, limiters, robots.txt cache, returned
@@ -101,6 +118,19 @@ announced here with both values.
   (RFC 020, DAT-1).
 
 ### Changed
+
+- **Removed from `rypsok-core`'s public items** (RFC 020, TST-10; none is in the
+  frozen surface of the stability page): the type `UserAgentFormat` and the
+  field `EngineProperties::user_agent`; the six builders
+  `EngineProperties::with_max_query_words`, `with_languages`,
+  `with_attribution_required`, `with_user_agent`, `with_max_response_bytes` and
+  `with_scraping`; `Rypsok::returned_urls`; the fields `fetch_ports`,
+  `http_max_connections`, `http_max_request_bytes`, `http_idle_timeout_s`,
+  `http_max_streams`, `http_request_timeout_s` and `http_max_sessions` of
+  `Limits` (the listener and the fetch service read the configuration, which
+  is the one source of those numbers). `Limits::worst_case_memory` takes the
+  number of sessions as its first argument, and `EngineLimiter::acquire` takes a
+  `tokio::time::Instant`.
 
 - New refusal reason `idle_connection` in the `counters` event (`refusals`,
   under `http`): a connection closed because it had not told its protocol

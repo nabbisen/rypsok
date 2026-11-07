@@ -228,3 +228,10 @@ The served `web_fetch` description says "Scripts are not run and `meta
 refresh` is not followed" since RFC 012 (REQ-FETCH-009 asks the
 description to say so). RFC 012 did not amend this RFC or the external
 design §3.2; both now carry the sentence. No behavior changed.
+
+## Amendment to RFC 003 (2026-11-07, RFC 020, TST-15)
+
+The message of the `redirected` error in the table above reads, as built,
+`the page moved to another host; see detail.location`. The address is in
+`detail.location`, as the error contract says, and the message never repeats
+it (REQ-ERR-004); the longer wording above is withdrawn.

@@ -28,6 +28,7 @@ chooses it on the command line, where the launching host can see it.
 |---|---|---|---|
 | `structured_content` | `true` | boolean | Return results as `structuredContent` plus text, or as text alone |
 | `user_agent_contact` | `""` | a URL or an address | Appended to the User-Agent so that providers can reach the operator |
+| `shutdown_ms` | `3000` | 500–10000 | Time to exit after the end of input or `SIGTERM` (LIM-O1): the HTTP listener waits this long for its connections to finish, then closes them |
 
 ### `[service.http]`
 
@@ -80,6 +81,7 @@ token_env = "RYPSOK_TOKEN_MIMLYS"
 | `query_max_chars` | `400` | 1–600 | Length of `query` (LIM-S1) |
 | `deadline_ms` | `2500` | 500–10000 | Overall deadline of a search (LIM-S4) |
 | `engine_timeout_ms` | `2000` | 100 to `deadline_ms` − `reserve_ms` (depends on `deadline_ms` and `reserve_ms`) | Timeout of one engine request (LIM-S5); the message names both keys and their values |
+| `connect_timeout_ms` | `1000` | 200–5000 | Connect timeout of an engine request (LIM-S12) |
 | `reserve_ms` | `200` | 50–1000 | Reserve for post-processing (LIM-S6) |
 | `engines_per_request` | `8` | 1–16 | Engines queried per request (LIM-S8) |
 | `results_per_engine` | `10` | 5–20 | Results requested from each engine (LIM-S3) |

@@ -175,3 +175,11 @@ length of the real format, not hyphenated words.
   GitHub token), while findings that only touch are both kept. This is one
   small function with its own test.
 - **No per-pattern override**; the modes of LIM-P1 stay global.
+
+## Amendment to RFC 009 (2026-11-07, RFC 020, TST-15)
+
+The secret kind `basic_auth_url` covers a URL whose userinfo has **both** a
+user and a password (`https://user:password@host/`). A URL with a user and no
+password (`https://user@host/`) is not a secret finding: `web_fetch` refuses
+it as `denied` with the reason `credential_in_url` (RFC 011), and a query
+that contains one is searched as text.

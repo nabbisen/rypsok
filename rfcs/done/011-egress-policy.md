@@ -233,3 +233,12 @@ globally reachable but that lie inside a larger refused block stay refused
 (stricter). The independent copy of the registries for the tests is
 `crates/rypsok-core/src/egress/policy/special_purpose.csv`. Operator `allow`
 rules still override the table.
+
+## Amendment to RFC 011 (2026-11-07, RFC 020, TST-15)
+
+The agent client now sets what the design above says: `tcp_keepalive` to
+**60 s** and `pool_idle_timeout` to 30 s. (The code set only the second; the
+text said 30 s for both, and 60 s is the probe interval the audit's handoff
+fixed. A pooled connection that the peer has dropped is found by a probe at
+the latest after 60 s, and an idle one is closed after 30 s in any case.) A
+gate test reads both settings from `agent_client`.

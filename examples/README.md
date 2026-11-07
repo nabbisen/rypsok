@@ -22,6 +22,7 @@ mock provider.
 | `hosts/http.json` | Tutorial 4 | A runtime that connects to a listener with a token |
 | `calls/first-search.jsonl` | Tutorial 1 | The two JSON-RPC lines piped into `rypsok serve` |
 | `calls/*.json` | Tutorials 1, 3; Reading a response | One request and the answer rypsok gave, as `{"request", "response"}` |
+| `pages/rust-ownership.html` | Tutorial 3 | The page the fetched answers were made from (a loopback server serves it as `/rust-ownership`) |
 
 ## Warnings that `rypsok check` gives for them
 
@@ -44,11 +45,33 @@ Each `calls/*.json` answer was produced on 2026-10-27 by piping the
 request into `rypsok serve` (release 0.5.0 plus the M6 work) with the
 Wikipedia engine pointed at a loopback server that served the Wikipedia
 fixture of `crates/rypsok-core/fixtures/wikipedia/search-ok.json` and a
-hand-written page. Two edits were made afterwards and nothing else: the
-loopback host in URLs was replaced by `https://en.wikipedia.org/` for
-search results and `https://example.org/` for the fetched page, and the
-`_note` key was added where a file points to its continuation. The
-`web-search-partial` answer used a second Wikipedia engine pointed at a
-port where nothing listens; `web-search-empty` used the
-`search-empty.json` fixture; `web-fetch-denied` asked for a private
-address, which the egress policy refuses before any request.
+page. Two edits were made afterwards and nothing else: the loopback host
+in URLs was replaced by `https://en.wikipedia.org/` for search results
+and `https://example.org/` for the fetched page, and the `_note` key was
+added where a file points to its continuation. The `web-search-partial`
+answer used a second Wikipedia engine pointed at a port where nothing
+listens; `web-search-empty` used the `search-empty.json` fixture;
+`web-fetch-denied` asked for a private address, which the egress policy
+refuses before any request.
+
+**The four answers made from the page** (`web-fetch-ok`,
+`web-fetch-continuation`, `web-fetch-continuation-2` and
+`web-fetch-redirected`) can be made again. The page they were made from
+was written by hand and lost; `pages/rust-ownership.html` is the page
+written back from their content (RFC 020, TST-13), and
+`tools/regenerate-example-answers` runs the four requests against it:
+
+```sh
+cargo build -p rypsok
+tools/regenerate-example-answers            # prints what differs, exit 1 if anything does
+tools/regenerate-example-answers --write    # replaces the files
+```
+
+The script serves the page and a redirect to another host from a loopback
+address, starts `rypsok serve` with `fetch.follow_cross_host_redirects =
+false`, sends `server/discover` and the four requests, and puts
+`https://example.org` where the loopback address was. On 2026-11-07, with
+release 0.8.0 plus the unreleased changes, all four answers came out
+**identical** to the committed files. When a release changes an answer,
+run it with `--show`, read the difference, and commit the new files with
+the change.

@@ -187,3 +187,15 @@ fan-out deadline). Applied with this RFC.
 - Brave's `page_age` is the date; the relative `age` text is ignored.
 - Environment proxies are ignored (`system-proxy` off, `no_proxy()`);
   `[egress].proxy` is the only proxy path.
+
+## Amendment to RFC 006 (2026-11-07, RFC 020, TST-10, TST-15)
+
+The `user_agent` property of `EngineProperties` and its type
+`UserAgentFormat` (`Standard` or a provider-mandated `Custom` format) are
+removed. Every driver set `Standard`, nothing read the property, and the
+standard User-Agent is built once from `[service] user_agent_contact` for
+every engine (REQ-CMP-004). If a provider ever mandates another format, the
+admission record says so and a new RFC brings the property back with its
+reader. The six `EngineProperties::with_*` builders that no code used are
+removed with it; the properties are set by `EngineProperties::new` and the
+two builders the example shows (`with_time_ranges`, `with_cacheable`).

@@ -164,3 +164,9 @@ so that a new variant is a compile error, which is what "needs a major
 version" should feel like. Also: `check` writes its report to standard
 error, not standard output, as the configuration page and REQ-MCP-002
 say; the sentence above that says "stdout" was wrong (review B10).
+
+## Amendment to RFC 016 (2026-11-07, RFC 020, TST-10)
+
+`UserAgentFormat` is removed (see the amendment to RFC 006), so it leaves
+the list of `#[non_exhaustive]` enums of the amendment above. The stability
+page never listed it: it is outside the frozen surface.

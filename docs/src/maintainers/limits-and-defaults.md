@@ -9,9 +9,11 @@ measurement in milestones M1 and M3 (see `ROADMAP.md`). The requirements do
 not repeat the values; they cite the identifier, so that a value changes in
 one place only.
 
-"Range" is what an operator may configure. Where a range is "operator", the
-operator may choose any value; where it is "fixed", no configuration changes
-it.
+"Range" is what an operator may configure, through the key the
+[configuration reference](../reference/configuration.md) names for the row.
+Where a range is "operator", the operator may choose any value; where it is
+"fixed", no configuration changes it (RFC 020, D-9: a row that is not backed
+by a key is "fixed").
 
 ## Units
 
@@ -36,8 +38,8 @@ it.
 | LIM-S8 | Engines queried per request | 8 | 1–16 | Bounded fan-out |
 | LIM-S9 | Length of a snippet | 300 characters | 50–1000 | Context budget |
 | LIM-S10 | Length of a title | 150 characters | 50–300 | Context budget |
-| LIM-S11 | Window for the typical latency of an engine | last 20 completed requests | 5–100 | Median over the window |
-| LIM-S12 | Connect timeout of an engine request | 1000 ms | 200–5000 | — |
+| LIM-S11 | Window for the typical latency of an engine | last 20 completed requests | fixed | Median over the window |
+| LIM-S12 | Connect timeout of an engine request (`search.connect_timeout_ms`) | 1000 ms | 200–5000 | — |
 | LIM-S13 | Maximum duration of an `engine_status` call | 200 ms | derived | X-04 |
 
 ## Fetch
@@ -52,11 +54,11 @@ it.
 | LIM-F6 | Connect timeout | 3000 ms | 500–10000 | — |
 | LIM-F7 | Redirects followed | 5 | 0–10 | Draft external design §15 |
 | LIM-F8 | Ports | 80, 443 | operator | M-07 |
-| LIM-F9 | Length of `url` | 2048 characters | 256–8192 | — |
-| LIM-F10 | HTML nodes parsed | 100000 | operator | R-04 |
+| LIM-F9 | Length of `url` | 2048 characters | fixed | — |
+| LIM-F10 | HTML nodes parsed | 100000 | fixed | R-04 |
 | LIM-F11 | HTML nesting depth; enforced while parsing, a deeper page is read in part | 256 | fixed | R-04; RFC 020 D-3 |
-| LIM-F12 | robots.txt kept in memory | 24 hours | ≤ 24 hours | RFC 9309 §2.4 |
-| LIM-F13 | Size of a robots.txt read | 512 KiB | operator | Parser bound |
+| LIM-F12 | robots.txt kept in memory | 24 hours | fixed | RFC 9309 §2.4 |
+| LIM-F13 | Size of a robots.txt read | 512 KiB | fixed | Parser bound |
 | LIM-F14 | URLs remembered for strict mode | 10000 | operator | REQ-SEC-021; bounded memory (RFC 011) |
 | LIM-F15 | robots.txt entries kept in memory | 1000 origins | operator | REQ-CMP-005; bounded memory (RFC 011) |
 
@@ -72,7 +74,7 @@ it.
 | LIM-C6 | `web_search` calls accepted | 60 per minute | 1–6000 per minute | MCP: servers must rate limit tool invocations |
 | LIM-C7 | `web_fetch` calls accepted | 30 per minute | 1–6000 per minute | Same |
 | LIM-C8 | `engine_status` calls accepted | 30 per minute | 1–6000 per minute | Same |
-| LIM-C9 | Requests to one engine | per engine, from its admission record | operator, never above the provider's limit | REQ-CMP-002 |
+| LIM-C9 | Requests to one engine | per engine, from its admission record | fixed (the provider's limit) | REQ-CMP-002 |
 
 ## HTTP listener (M4)
 
@@ -109,8 +111,8 @@ it.
 
 | ID | Parameter | Default | Range | Basis |
 |---|---|---:|---|---|
-| LIM-O1 | Time to exit after end of file on stdin or `SIGTERM` | 3000 ms | 500–10000 | REQ-OPS-002 |
-| LIM-O2 | Time until a cancelled call has aborted its outbound requests | 500 ms | 100–2000 | REQ-MCP-007 |
+| LIM-O1 | Time to exit after end of file on stdin or `SIGTERM` (`service.shutdown_ms`) | 3000 ms | 500–10000 | REQ-OPS-002 |
+| LIM-O2 | Time until a cancelled call has aborted its outbound requests | 500 ms | fixed | REQ-MCP-007 |
 
 ## Privacy and logging
 
