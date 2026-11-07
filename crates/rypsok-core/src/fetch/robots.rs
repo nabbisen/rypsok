@@ -113,18 +113,7 @@ impl Robots {
                 Err(Unreachable) => return Decision::Unreachable,
             },
         };
-        match verdict {
-            Verdict::AllowAll => Decision::Allowed,
-            Verdict::DisallowAll => Decision::Disallowed,
-            Verdict::Rules(body) => {
-                let mut matcher = robotstxt::DefaultMatcher::default();
-                if matcher.one_agent_allowed_by_robots(&body, PRODUCT_TOKEN, target.url.as_str()) {
-                    Decision::Allowed
-                } else {
-                    Decision::Disallowed
-                }
-            }
-        }
+        decide(&verdict, &target.url)
     }
 
     /// How many origins are cached.
@@ -173,6 +162,81 @@ impl Robots {
             },
         );
     }
+}
+
+/// What a verdict means for one URL: the rules are matched for the product
+/// token and `*`.
+fn decide(verdict: &Verdict, url: &Url) -> Decision {
+    match verdict {
+        Verdict::AllowAll => Decision::Allowed,
+        Verdict::DisallowAll => Decision::Disallowed,
+        Verdict::Rules(body) => {
+            let mut matcher = robotstxt::DefaultMatcher::default();
+            if matcher.one_agent_allowed_by_robots(body, PRODUCT_TOKEN, url.as_str()) {
+                Decision::Allowed
+            } else {
+                Decision::Disallowed
+            }
+        }
+    }
+}
+
+/// What a final (not redirecting) answer to the robots.txt request says,
+/// before its body is read.
+enum Answer {
+    /// The verdict does not depend on the body.
+    Verdict(Verdict),
+    /// A text answer: the body is read, up to the bound, and is the rules.
+    ReadBody,
+}
+
+/// The status and the media type of a final answer as RFC 9309 asks:
+/// 4xx allows everything, anything else that is not a success disallows
+/// everything, a success that is not text allows everything.
+fn answer_for(status: reqwest::StatusCode, content_type: Option<&str>) -> Answer {
+    if status.is_client_error() {
+        return Answer::Verdict(Verdict::AllowAll);
+    }
+    if !status.is_success() {
+        return Answer::Verdict(Verdict::DisallowAll);
+    }
+    let is_text =
+        content_type.is_none_or(|t| t.trim_start().to_ascii_lowercase().starts_with("text/"));
+    if is_text {
+        Answer::ReadBody
+    } else {
+        Answer::Verdict(Verdict::AllowAll)
+    }
+}
+
+/// The rules a body says, read up to `max_bytes` (a longer body is cut
+/// there, as RFC 9309 allows a crawler to parse only a prefix).
+fn rules_of(body: &[u8], max_bytes: u64) -> Verdict {
+    let room = usize::try_from(max_bytes).unwrap_or(usize::MAX);
+    Verdict::Rules(String::from_utf8_lossy(&body[..body.len().min(room)]).into_owned())
+}
+
+/// The decision for `url` from a final answer: the status, the media type
+/// and the body of a robots.txt, with the body read to `max_bytes`. `None`
+/// for a redirection, which the reader follows and never decides on. Public
+/// for the fuzz targets; not part of the stable surface.
+#[doc(hidden)]
+pub fn decision_for_answer(
+    status: u16,
+    content_type: Option<&str>,
+    body: &[u8],
+    max_bytes: u64,
+    url: &Url,
+) -> Option<Decision> {
+    let status = reqwest::StatusCode::from_u16(status).ok()?;
+    if status.is_redirection() {
+        return None;
+    }
+    let verdict = match answer_for(status, content_type) {
+        Answer::Verdict(verdict) => verdict,
+        Answer::ReadBody => rules_of(body, max_bytes),
+    };
+    Some(decide(&verdict, url))
 }
 
 /// `scheme://host[:port]` of a URL, with the host in its canonical form
@@ -236,26 +300,22 @@ async fn read(
             url = location;
             continue;
         }
-        if status.is_client_error() {
-            return Ok(Verdict::AllowAll);
-        }
-        if !status.is_success() {
-            return Ok(Verdict::DisallowAll);
-        }
-        let is_text = response
+        let content_type = response
             .headers()
             .get(reqwest::header::CONTENT_TYPE)
             .and_then(|v| v.to_str().ok())
-            .is_none_or(|t| t.trim_start().to_ascii_lowercase().starts_with("text/"));
-        if !is_text {
-            return Ok(Verdict::AllowAll);
+            .map(str::to_owned);
+        match answer_for(status, content_type.as_deref()) {
+            Answer::Verdict(verdict) => return Ok(verdict),
+            // A connection that fails while the body is read is a transport
+            // failure like any other (RFC 019 D2).
+            Answer::ReadBody => {
+                return match read_prefix(response, limits.max_bytes).await {
+                    Some(body) => Ok(rules_of(&body, limits.max_bytes)),
+                    None => Err(Unreachable),
+                };
+            }
         }
-        // A connection that fails while the body is read is a transport
-        // failure like any other (RFC 019 D2).
-        return match read_prefix(response, limits.max_bytes).await {
-            Some(body) => Ok(Verdict::Rules(String::from_utf8_lossy(&body).into_owned())),
-            None => Err(Unreachable),
-        };
     }
 }
 

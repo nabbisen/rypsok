@@ -82,19 +82,52 @@ impl Wikipedia {
         base.join("w/api.php")
             .map_err(|_| EngineError::new(EngineErrorClass::RequestFailure))
     }
+}
 
-    fn page_url(&self, language: &str, title: &str) -> Option<String> {
-        let base = match &self.base_override {
-            Some(base) => base.clone(),
-            None => url::Url::parse(&format!("https://{language}.wikipedia.org/")).ok()?,
-        };
-        let mut url = base.join("wiki/").ok()?;
-        url.path_segments_mut()
-            .ok()?
-            .pop_if_empty()
-            .push(&title.replace(' ', "_"));
-        Some(url.to_string())
+/// The page URL of a hit: under the base of a mirror, or under the language
+/// edition's own host.
+fn page_url(base_override: Option<&url::Url>, language: &str, title: &str) -> Option<String> {
+    let base = match base_override {
+        Some(base) => base.clone(),
+        None => url::Url::parse(&format!("https://{language}.wikipedia.org/")).ok()?,
+    };
+    let mut url = base.join("wiki/").ok()?;
+    url.path_segments_mut()
+        .ok()?
+        .pop_if_empty()
+        .push(&title.replace(' ', "_"));
+    Some(url.to_string())
+}
+
+/// The results a Wikipedia API answer carries, in its order: a body that is
+/// not the expected JSON is a parse failure, an `error` member a request
+/// failure. Public for the fuzz targets; not part of the stable surface.
+#[doc(hidden)]
+pub fn read_results(
+    body: &[u8],
+    base_override: Option<&url::Url>,
+    language: &str,
+) -> Result<Vec<RawResult>, EngineErrorClass> {
+    let parsed: ApiResponse =
+        serde_json::from_slice(body).map_err(|_| EngineErrorClass::ParseFailure)?;
+    if parsed.error.is_some() {
+        return Err(EngineErrorClass::RequestFailure);
     }
+    let hits = parsed.query.map(|q| q.search).unwrap_or_default();
+    Ok(hits
+        .into_iter()
+        .filter_map(|hit| {
+            let url = page_url(base_override, language, &hit.title)?;
+            let date = hit
+                .timestamp
+                .as_deref()
+                .and_then(|t| Date::new(t.get(..10)?).ok());
+            Some(RawResult {
+                date,
+                ..RawResult::new(hit.title, url, hit.snippet)
+            })
+        })
+        .collect())
 }
 
 #[derive(Debug, Deserialize)]
@@ -176,29 +209,11 @@ impl Driver for Wikipedia {
                 return Err(EngineError::new(EngineErrorClass::RequestFailure));
             }
         }
-        let parsed: ApiResponse = serde_json::from_slice(&body).map_err(|_| {
-            debug_provider_text(KIND, status, &body);
-            EngineError::new(EngineErrorClass::ParseFailure)
-        })?;
-        if parsed.error.is_some() {
-            debug_provider_text(KIND, status, &body);
-            return Err(EngineError::new(EngineErrorClass::RequestFailure));
-        }
-        let hits = parsed.query.map(|q| q.search).unwrap_or_default();
-        let results = hits
-            .into_iter()
-            .filter_map(|hit| {
-                let url = self.page_url(&language, &hit.title)?;
-                let date = hit
-                    .timestamp
-                    .as_deref()
-                    .and_then(|t| Date::new(t.get(..10)?).ok());
-                Some(RawResult {
-                    date,
-                    ..RawResult::new(hit.title, url, hit.snippet)
-                })
-            })
-            .collect();
+        let results =
+            read_results(&body, self.base_override.as_ref(), &language).map_err(|class| {
+                debug_provider_text(KIND, status, &body);
+                EngineError::new(class)
+            })?;
         Ok(EngineResponse { results })
     }
 }

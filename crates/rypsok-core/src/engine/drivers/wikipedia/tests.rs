@@ -304,3 +304,34 @@ async fn req_eng_005_format_drift_is_confined_to_the_driver() {
         .unwrap_err();
     assert_eq!(error, EngineError::new(EngineErrorClass::ParseFailure));
 }
+
+/// REQ-SEC-023 (RFC 020, TST-14): the results of an API answer, as the
+/// `engine_json` fuzz target reads them: hits in order under the language
+/// edition's host or a mirror's base, a date from the timestamp's first ten
+/// characters, an `error` member a request failure, anything else a parse
+/// failure.
+#[test]
+fn req_sec_023_wikipedia_answers_are_read_into_results() {
+    let body = br#"{"query":{"search":[{"title":"Rust (programming language)","snippet":"A <span>language</span>","timestamp":"2026-10-01T12:00:00Z"},{"title":"Ferris"}]}}"#;
+    let results = read_results(body, None, "en").unwrap();
+    assert_eq!(results.len(), 2);
+    assert_eq!(
+        results[0].url,
+        "https://en.wikipedia.org/wiki/Rust_(programming_language)"
+    );
+    assert!(results[0].date.is_some() && results[1].date.is_none());
+    let mirror = url::Url::parse("http://127.0.0.1:9/").unwrap();
+    assert_eq!(
+        read_results(body, Some(&mirror), "en").unwrap()[1].url,
+        "http://127.0.0.1:9/wiki/Ferris"
+    );
+    assert_eq!(
+        read_results(br#"{"error":{"code":"x"}}"#, None, "en").unwrap_err(),
+        EngineErrorClass::RequestFailure
+    );
+    assert_eq!(
+        read_results(b"not json", None, "en").unwrap_err(),
+        EngineErrorClass::ParseFailure
+    );
+    assert!(read_results(b"{}", None, "en").unwrap().is_empty());
+}

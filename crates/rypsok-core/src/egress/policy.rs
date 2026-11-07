@@ -65,6 +65,27 @@ pub enum Rule {
     Host(HostPattern),
 }
 
+impl std::fmt::Display for HostPattern {
+    /// The text `parse_rule` reads this pattern from.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.subdomains {
+            f.write_str("*.")?;
+        }
+        f.write_str(&self.name)
+    }
+}
+
+impl std::fmt::Display for Rule {
+    /// The text `parse_rule` reads this rule from (public for the fuzz
+    /// targets, which check the round trip; not part of the stable surface).
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Rule::Network(net) => net.fmt(f),
+            Rule::Host(pattern) => pattern.fmt(f),
+        }
+    }
+}
+
 /// Whether an `allow` rule is a network wider than `/16` (IPv4) or `/32`
 /// (IPv6), `0.0.0.0/0` and `::/0` included: `rypsok check` warns about it
 /// (RFC 020 D-6). A host name, a single address or a text that is no rule

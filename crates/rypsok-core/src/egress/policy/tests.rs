@@ -645,3 +645,26 @@ fn req_sec_006_wide_allow_rules_are_those_wider_than_16_and_32() {
         assert!(!is_wide_network_rule(narrow), "{narrow}");
     }
 }
+
+/// REQ-SEC-023 (RFC 020, TST-14): a rule written back as text is read as the
+/// same rule, for a network, an address, a name and a subdomain pattern (the
+/// round trip the `parse_rule` fuzz target checks on any text).
+#[test]
+fn req_sec_023_a_parsed_rule_round_trips_through_its_text() {
+    for text in [
+        "10.0.0.0/8",
+        "fd00::/8",
+        "203.0.113.7",
+        "2001:db8::1",
+        "wiki.corp.example",
+        "*.corp.example",
+        "  Mixed.Case.Example  ",
+    ] {
+        let rule = parse_rule(text).unwrap();
+        assert_eq!(parse_rule(&rule.to_string()), Ok(rule.clone()), "{text}");
+    }
+    assert_eq!(
+        parse_rule("*.Corp.Example").unwrap().to_string(),
+        "*.corp.example"
+    );
+}

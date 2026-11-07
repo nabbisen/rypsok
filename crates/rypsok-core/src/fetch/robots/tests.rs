@@ -268,3 +268,48 @@ fn req_cmp_005_cache_key_uses_the_canonical_host_name() {
         "https://[::1]:8443"
     );
 }
+
+/// REQ-SEC-023 (RFC 020, TST-14): the decision for a final answer from its
+/// status, media type and body, as the `robots_txt` fuzz target asks it: 4xx
+/// allows, other failures disallow, a redirection is no answer, a text body
+/// is matched, a body that is not text allows, and a body longer than the
+/// bound is judged on its prefix only.
+#[test]
+fn req_sec_023_a_final_answer_decides_as_rfc_9309_asks() {
+    let url = Url::parse("https://example.org/private/page").unwrap();
+    let decide = |status, content_type, body: &[u8], max| {
+        decision_for_answer(status, content_type, body, max, &url)
+    };
+    assert_eq!(decide(404, None, b"", 1024), Some(Decision::Allowed));
+    assert_eq!(decide(403, None, b"", 1024), Some(Decision::Allowed));
+    assert_eq!(decide(503, None, b"", 1024), Some(Decision::Disallowed));
+    assert_eq!(decide(301, None, b"", 1024), None);
+    assert_eq!(decide(99, None, b"", 1024), None, "no such status");
+    let rules = b"User-agent: *\nDisallow: /private/\n";
+    assert_eq!(
+        decide(200, Some("text/plain"), rules, 1024),
+        Some(Decision::Disallowed)
+    );
+    assert_eq!(
+        decide(200, Some("image/png"), rules, 1024),
+        Some(Decision::Allowed),
+        "a body that is not text says nothing"
+    );
+    assert_eq!(
+        decide(200, None, rules, 1024),
+        Some(Decision::Disallowed),
+        "no media type is read as text"
+    );
+    // The rule is past the bound: the prefix alone is judged.
+    let mut long = b"# ".to_vec();
+    long.extend(std::iter::repeat_n(b'x', 200));
+    long.extend_from_slice(b"\nUser-agent: *\nDisallow: /private/\n");
+    assert_eq!(
+        decide(200, Some("text/plain"), &long, 100),
+        Some(Decision::Allowed)
+    );
+    assert_eq!(
+        decide(200, Some("text/plain"), &long, 1024),
+        Some(Decision::Disallowed)
+    );
+}

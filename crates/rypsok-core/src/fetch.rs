@@ -633,8 +633,10 @@ const RETRY_AFTER_MAX_S: u64 = 3_600;
 
 /// A `Retry-After` header in delta-seconds (an integer, at most an hour) as
 /// milliseconds. The date form and anything else is ignored, so that a
-/// site cannot make the answer say anything but a bounded number.
-fn retry_after_ms(value: &str) -> Option<u64> {
+/// site cannot make the answer say anything but a bounded number. Public
+/// for the fuzz targets; not part of the stable surface.
+#[doc(hidden)]
+pub fn retry_after_ms(value: &str) -> Option<u64> {
     let seconds = value.trim();
     if seconds.is_empty() || !seconds.bytes().all(|b| b.is_ascii_digit()) {
         return None;

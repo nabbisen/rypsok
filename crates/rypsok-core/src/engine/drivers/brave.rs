@@ -132,6 +132,29 @@ struct Item {
     page_age: Option<String>,
 }
 
+/// The results a Brave answer carries, in its order, for the endpoint that
+/// was asked: a body that is not the expected JSON is a parse failure.
+/// Public for the fuzz targets; not part of the stable surface.
+#[doc(hidden)]
+pub fn read_results(body: &[u8], endpoint: Endpoint) -> Result<Vec<RawResult>, EngineErrorClass> {
+    let items = match endpoint {
+        Endpoint::Web => serde_json::from_slice::<WebResponse>(body)
+            .map(|r| r.web.map(|w| w.results).unwrap_or_default()),
+        Endpoint::News => serde_json::from_slice::<NewsResponse>(body).map(|r| r.results),
+    }
+    .map_err(|_| EngineErrorClass::ParseFailure)?;
+    Ok(items
+        .into_iter()
+        .map(|item| RawResult {
+            date: item
+                .page_age
+                .as_deref()
+                .and_then(|t| Date::new(t.get(..10)?).ok()),
+            ..RawResult::new(item.title, item.url, item.description)
+        })
+        .collect())
+}
+
 fn freshness(range: TimeRange) -> &'static str {
     match range {
         TimeRange::Day => "pd",
@@ -208,25 +231,10 @@ impl Driver for Brave {
                 return Err(EngineError::new(EngineErrorClass::RequestFailure));
             }
         }
-        let items = match self.endpoint {
-            Endpoint::Web => serde_json::from_slice::<WebResponse>(&body)
-                .map(|r| r.web.map(|w| w.results).unwrap_or_default()),
-            Endpoint::News => serde_json::from_slice::<NewsResponse>(&body).map(|r| r.results),
-        }
-        .map_err(|_| {
+        let results = read_results(&body, self.endpoint).map_err(|class| {
             debug_provider_text(KIND, status, &body);
-            EngineError::new(EngineErrorClass::ParseFailure)
+            EngineError::new(class)
         })?;
-        let results = items
-            .into_iter()
-            .map(|item| RawResult {
-                date: item
-                    .page_age
-                    .as_deref()
-                    .and_then(|t| Date::new(t.get(..10)?).ok()),
-                ..RawResult::new(item.title, item.url, item.description)
-            })
-            .collect();
         Ok(EngineResponse { results })
     }
 }

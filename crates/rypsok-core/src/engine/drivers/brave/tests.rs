@@ -217,3 +217,27 @@ async fn req_eng_006_brave_errors_are_classified() {
         EngineErrorClass::RequestFailure
     );
 }
+
+/// REQ-SEC-023 (RFC 020, TST-14): the results of an answer for each
+/// endpoint, as the `engine_json` fuzz target reads them: web results under
+/// `web.results`, news under `results`, the provider's URL kept as it came
+/// (the pipeline judges it), anything else a parse failure.
+#[test]
+fn req_sec_023_brave_answers_are_read_into_results() {
+    let web = br#"{"web":{"results":[{"title":"T","url":"https://example.org/a","description":"D","page_age":"2026-10-01T00:00:00"}]}}"#;
+    let results = read_results(web, Endpoint::Web).unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].url, "https://example.org/a");
+    assert!(results[0].date.is_some());
+    assert!(read_results(br#"{}"#, Endpoint::Web).unwrap().is_empty());
+    let news = br#"{"results":[{"title":"N","url":"javascript:alert(1)"}]}"#;
+    assert_eq!(read_results(news, Endpoint::News).unwrap().len(), 1);
+    assert!(
+        read_results(news, Endpoint::Web).unwrap().is_empty(),
+        "the web endpoint reads `web.results` only"
+    );
+    assert_eq!(
+        read_results(b"[1]", Endpoint::News).unwrap_err(),
+        EngineErrorClass::ParseFailure
+    );
+}

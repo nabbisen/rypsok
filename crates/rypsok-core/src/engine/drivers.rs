@@ -162,10 +162,14 @@ pub fn is_loopback(url: &url::Url) -> bool {
 
 /// Reads a `Retry-After` header in seconds, when present and sane.
 pub(crate) fn retry_after(headers: &HeaderMap, name: &str) -> Option<Duration> {
-    headers
-        .get(name)?
-        .to_str()
-        .ok()?
+    parse_retry_after(headers.get(name)?.to_str().ok()?)
+}
+
+/// A `Retry-After` value in delta-seconds, positive and at most a day.
+/// Public for the fuzz targets; not part of the stable surface.
+#[doc(hidden)]
+pub fn parse_retry_after(value: &str) -> Option<Duration> {
+    value
         .trim()
         .parse::<u64>()
         .ok()
