@@ -181,3 +181,121 @@ fn req_sec_011_engine_client_settings_carry_both_timeouts() {
     assert_eq!(s.timeout, Duration::from_millis(2000));
     assert!(engine_client(&s).is_ok());
 }
+
+// --- Mutants the per-change run of 020s found alive (RFC 020, TST-7) --------
+
+/// A one-shot raw server: reads the request head, writes `head` and then
+/// `body` (the connection is kept open afterwards when `hold` is set), and
+/// returns its address.
+async fn raw_server(head: &'static str, body: Vec<u8>, hold: bool) -> std::net::SocketAddr {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut buffer = [0u8; 2048];
+        let _ = stream.read(&mut buffer).await;
+        stream.write_all(head.as_bytes()).await.unwrap();
+        stream.write_all(&body).await.unwrap();
+        if hold {
+            std::future::pending::<()>().await;
+        }
+        let _ = stream.shutdown().await;
+    });
+    address
+}
+
+/// REQ-SEC-010: a body of exactly the bound is read, one byte more is
+/// refused, declared or streamed; a declared length over the bound is
+/// refused at once, before any byte of the body (the early refusal is what a
+/// server that announces a gigabyte and then stalls meets; mutants of both
+/// comparisons were missed).
+#[tokio::test]
+async fn req_sec_010_the_bound_is_inclusive_and_a_declared_excess_is_refused_at_once() {
+    let client = engine_client(&settings(false)).unwrap();
+
+    // Declared and delivered: exactly the bound.
+    let at = raw_server(
+        "HTTP/1.1 200 OK\r\nContent-Length: 1024\r\nConnection: close\r\n\r\n",
+        vec![b'x'; 1024],
+        false,
+    )
+    .await;
+    let mut response = client.get(format!("http://{at}/")).send().await.unwrap();
+    assert_eq!(read_body(&mut response, 1024).await.unwrap().len(), 1024);
+
+    // Streamed (no length): exactly the bound, then one more.
+    let streamed = |extra: usize| async move {
+        let chunk = |n: usize| format!("{n:x}\r\n{}\r\n", "x".repeat(n)).into_bytes();
+        let mut body = chunk(1024);
+        if extra > 0 {
+            body.extend(chunk(extra));
+        }
+        body.extend_from_slice(b"0\r\n\r\n");
+        raw_server(
+            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n",
+            body,
+            false,
+        )
+        .await
+    };
+    let at = streamed(0).await;
+    let mut response = client.get(format!("http://{at}/")).send().await.unwrap();
+    assert_eq!(read_body(&mut response, 1024).await.unwrap().len(), 1024);
+    let over = streamed(1).await;
+    let mut response = client.get(format!("http://{over}/")).send().await.unwrap();
+    assert_eq!(
+        read_body(&mut response, 1024).await.unwrap_err(),
+        BodyError::TooLarge
+    );
+
+    // A declared length over the bound, and no body at all: refused at once.
+    let stalled = raw_server(
+        "HTTP/1.1 200 OK\r\nContent-Length: 1000000000\r\nConnection: close\r\n\r\n",
+        Vec::new(),
+        true,
+    )
+    .await;
+    let mut response = client
+        .get(format!("http://{stalled}/"))
+        .send()
+        .await
+        .unwrap();
+    let refused = tokio::time::timeout(Duration::from_secs(1), read_body(&mut response, 1024))
+        .await
+        .expect("a declared excess is refused before the body is waited for");
+    assert_eq!(refused.unwrap_err(), BodyError::TooLarge);
+}
+
+/// REQ-RES-008 and REQ-SEC-017: `[egress].proxy` is the only proxy path: an
+/// empty value means none (it is not parsed as a proxy), and a value is used
+/// for every request of the engine (mutants of the guard were missed).
+#[tokio::test]
+async fn req_res_008_the_configured_proxy_is_used_and_an_empty_one_is_none() {
+    let mut empty = settings(false);
+    empty.proxy = Some(String::new());
+    assert!(engine_client(&empty).is_ok(), "an empty proxy is no proxy");
+
+    let proxy = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("via the proxy"))
+        .mount(&proxy)
+        .await;
+    let mut configured = settings(false);
+    configured.proxy = Some(proxy.uri());
+    let client = engine_client(&configured).unwrap();
+    // A name nothing resolves: only the proxy can answer.
+    let response = client
+        .get("http://engine.invalid/search?q=x")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.text().await.unwrap(), "via the proxy");
+    let seen = proxy.received_requests().await.unwrap();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].url.host_str(), Some("engine.invalid"));
+
+    // No proxy configured: the request goes to the name itself and fails.
+    let direct = engine_client(&settings(false)).unwrap();
+    assert!(direct.get("http://engine.invalid/").send().await.is_err());
+}
