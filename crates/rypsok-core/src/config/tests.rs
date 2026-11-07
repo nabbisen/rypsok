@@ -123,6 +123,22 @@ fn req_cfg_004_inline_secret_is_refused() {
     );
 }
 
+/// A directory of its own for one test: the test's name, the process id and
+/// a counter in its name, so that no other test, and no other process that
+/// reuses the id, shares it. A failure says what the operating system said.
+fn scratch_dir(test: &str) -> std::path::PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "rypsok-{test}-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&dir)
+        .unwrap_or_else(|e| panic!("cannot create {}: {e}", dir.display()));
+    dir
+}
+
 /// REQ-CFG-004 and REQ-OPS-003: a secret is read from the environment or a
 /// file; an unset source is an error that names the source, not a value.
 #[test]
@@ -132,13 +148,14 @@ fn req_cfg_004_secret_sources_resolve_by_reference() {
         SecretSource::Env(name.into()).resolve().unwrap_err(),
         SecretError::EnvUnset(name.into())
     );
-    let dir = std::env::temp_dir().join(format!("rypsok-secret-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = scratch_dir("req_cfg_004");
     let path = dir.join("brave");
-    std::fs::write(&path, " the-key \n").unwrap();
+    std::fs::write(&path, " the-key \n")
+        .unwrap_or_else(|e| panic!("cannot write {}: {e}", path.display()));
     let (secret, _warning) = SecretSource::File(path.clone()).resolve().unwrap();
     assert_eq!(secret.expose_secret(), "the-key");
-    std::fs::remove_dir_all(&dir).unwrap();
+    std::fs::remove_dir_all(&dir)
+        .unwrap_or_else(|e| panic!("cannot remove {}: {e}", dir.display()));
     assert!(matches!(
         SecretSource::File(path).resolve().unwrap_err(),
         SecretError::FileUnreadable(_)
@@ -174,17 +191,19 @@ fn req_eng_003_engines_toggle_by_configuration() {
 /// REQ-CFG-001: precedence is `--config`, then `RYPSOK_CONFIG`, then defaults.
 #[test]
 fn req_cfg_001_precedence_flag_env_defaults() {
-    let dir = std::env::temp_dir().join(format!("rypsok-config-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = scratch_dir("req_cfg_001");
     let flag = dir.join("flag.toml");
-    std::fs::write(&flag, "config_version = 1\n[search]\nmax_results = 7\n").unwrap();
-    let (config, source) = Config::locate(Some(&flag)).unwrap();
+    std::fs::write(&flag, "config_version = 1\n[search]\nmax_results = 7\n")
+        .unwrap_or_else(|e| panic!("cannot write {}: {e}", flag.display()));
+    let (config, source) = Config::locate(Some(&flag))
+        .unwrap_or_else(|e| panic!("cannot locate {}: {:?}", flag.display(), e.problems));
     assert_eq!(config.search.max_results, 7);
     assert_eq!(source, ConfigSource::Flag(flag.clone()));
     let missing = dir.join("missing.toml");
     let err = Config::locate(Some(&missing)).unwrap_err();
     assert!(err.problems[0].starts_with("cannot read configuration file"));
-    std::fs::remove_dir_all(&dir).unwrap();
+    std::fs::remove_dir_all(&dir)
+        .unwrap_or_else(|e| panic!("cannot remove {}: {e}", dir.display()));
 }
 
 /// REQ-CFG-001 and REQ-CFG-003: the configuration page documents every

@@ -1045,7 +1045,7 @@ enum Watched {
 }
 
 /// Reads from `stream` until the server closes it or `limit` has passed.
-async fn watch(stream: &mut tokio::net::TcpStream, limit: Duration) -> Watched {
+async fn watch(stream: &mut (impl tokio::io::AsyncRead + Unpin), limit: Duration) -> Watched {
     use tokio::io::AsyncReadExt;
     let started = std::time::Instant::now();
     let mut received = Vec::new();
@@ -1619,8 +1619,15 @@ fn req_sec_018_the_bearer_scheme_is_case_insensitive() {
 }
 
 /// Sends one raw HTTP/1.1 request to `/mcp` with the extra header lines and
-/// returns the status line of the answer (or what was read before the
-/// server closed the connection).
+/// returns the status line of the answer: an empty string when the
+/// connection ended before the server's first byte reached the test (a reset
+/// discards what the stack had not delivered yet), and `still open` when
+/// nothing ended it within five seconds.
+///
+/// The request is written by a task of its own while this one reads, so that
+/// an answer the server sends early (a 431 after 16 KiB, while the rest of
+/// the header is still on its way) is read as it arrives and not after the
+/// write has finished.
 async fn raw_status(s: &Server, extra_headers: &str) -> String {
     use tokio::io::AsyncWriteExt;
     let body = json!({
@@ -1628,34 +1635,53 @@ async fn raw_status(s: &Server, extra_headers: &str) -> String {
         "params": { META: meta() }
     })
     .to_string();
-    let mut stream = tokio::net::TcpStream::connect(address(s)).await.unwrap();
+    let stream = tokio::net::TcpStream::connect(address(s)).await.unwrap();
+    let (mut reader, mut writer) = stream.into_split();
     let request = format!(
         "POST {PATH} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nAccept: application/json, text/event-stream\r\nMCP-Protocol-Version: 2026-07-28\r\nMcp-Method: server/discover\r\nConnection: close\r\n{extra_headers}Content-Length: {}\r\n\r\n{body}",
         body.len()
     );
-    // The server may answer 431 and close before everything is written.
-    let _ = stream.write_all(request.as_bytes()).await;
-    match watch(&mut stream, Duration::from_secs(5)).await {
+    // The server may answer 431 and close before everything is written; the
+    // write then fails, which is not the test's business.
+    let write = tokio::spawn(async move {
+        let _ = writer.write_all(request.as_bytes()).await;
+        writer
+    });
+    let status = match watch(&mut reader, Duration::from_secs(5)).await {
         Watched::Closed(_, bytes) => String::from_utf8_lossy(&bytes)
             .lines()
             .next()
             .unwrap_or("")
             .to_owned(),
         Watched::Open => "still open".to_owned(),
-    }
+    };
+    let _ = write.await;
+    status
 }
 
 /// REQ-SEC-018 (handoff 020g, NET-12; LIM-H7): the header block of an HTTP/1
-/// request is bounded at 16 KiB: a single 400,000-byte header, which was
-/// accepted before, and one of 20,000 bytes are answered 431 by hyper; headers
-/// below the bound still succeed.
+/// request is bounded at 16 KiB: a header of 20,000 bytes is answered 431 by
+/// hyper, and so is a single one of 400,000 bytes, which was accepted before;
+/// headers below the bound still succeed.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn req_sec_018_an_oversized_header_block_is_431() {
     let s = Server::start(LOOPBACK).await;
-    for size in [400_000usize, 20_000] {
-        let status = raw_status(&s, &format!("X-Pad: {}\r\n", "a".repeat(size))).await;
-        assert!(status.starts_with("HTTP/1.1 431"), "{size} bytes: {status}");
-    }
+    // Just above the bound: the 431 is sent after 16 KiB and the few KiB
+    // that follow are still unread when the server closes. It must arrive.
+    let status = raw_status(&s, &format!("X-Pad: {}\r\n", "a".repeat(20_000))).await;
+    assert!(status.starts_with("HTTP/1.1 431"), "20,000 bytes: {status}");
+    // Far above it: hyper answers 431 after 16 KiB and closes while the
+    // client is still writing hundreds of KiB. On Windows a close with
+    // unread data in the server's receive buffer sends a TCP reset, and a
+    // reset makes the client's stack discard the 431 it had not read yet, so
+    // the connection can end before the first byte reaches the test. That is
+    // the platform's TCP, not the product: the product sends the 431, and
+    // what must never happen is a served request or a connection left open.
+    let status = raw_status(&s, &format!("X-Pad: {}\r\n", "a".repeat(400_000))).await;
+    assert!(
+        status.starts_with("HTTP/1.1 431") || status.is_empty(),
+        "400,000 bytes: 431, or a reset before any byte: {status:?}"
+    );
     // Ten kilobytes of headers in all are well below the bound.
     let status = raw_status(&s, &format!("X-Pad: {}\r\n", "a".repeat(10_000))).await;
     assert!(status.starts_with("HTTP/1.1 200"), "{status}");
