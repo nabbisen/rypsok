@@ -61,7 +61,7 @@ jobs:
         run: |
           set -euo pipefail
           for file in rypsok-*.tar.gz rypsok-*.zip; do
-            [ -f "$file" ] && shasum -a 256 "$file"
+            if [ -f "$file" ]; then shasum -a 256 "$file"; fi
           done > "sha256-$TARGET.txt"
           cat "sha256-$TARGET.txt"
           {
