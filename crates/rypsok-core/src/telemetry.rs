@@ -5,6 +5,7 @@
 pub mod counters;
 pub mod health;
 mod line;
+mod panic;
 
 use tracing_subscriber::filter::{LevelFilter, Targets};
 use tracing_subscriber::prelude::*;
@@ -14,6 +15,7 @@ use crate::config::LogLevel;
 pub use counters::Counters;
 pub use health::HealthTable;
 pub use line::{LineFormat, layer};
+pub use panic::{install_panic_hook, panic_line};
 
 /// The crates whose events follow the configured level. Every other
 /// target is capped at [`FOREIGN_CAP`] whatever the level, because a
@@ -72,96 +74,5 @@ pub fn call_span(tool: &'static str, caller: &crate::model::CallerId) -> tracing
     tracing::error_span!("call", request_id = %request_id(), caller = %caller, tool = tool)
 }
 
-/// How a library test reads the log without a subscriber of its own: the
-/// process has **one** global subscriber, installed once, whose writer hands
-/// each line to the sink of the thread that wrote it. A thread-scoped
-/// subscriber per test can miss an event (the callsite's interest is cached
-/// for the process); one dispatcher cannot. A test that uses it runs on one
-/// thread (a plain `#[test]`, or a current-thread runtime).
 #[cfg(test)]
-pub(crate) mod routed {
-    use std::cell::RefCell;
-    use std::io::Write;
-    use std::sync::{Arc, Mutex, Once, PoisonError};
-
-    use serde_json::Value;
-    use tracing_subscriber::fmt::MakeWriter;
-    use tracing_subscriber::prelude::*;
-
-    type Sink = Arc<Mutex<Vec<u8>>>;
-
-    thread_local! {
-        static SINK: RefCell<Option<Sink>> = const { RefCell::new(None) };
-    }
-
-    struct Routed;
-
-    struct RoutedWriter(Option<Sink>);
-
-    impl Write for RoutedWriter {
-        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            if let Some(sink) = &self.0 {
-                sink.lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .extend_from_slice(bytes);
-            }
-            Ok(bytes.len())
-        }
-
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
-    impl<'a> MakeWriter<'a> for Routed {
-        type Writer = RoutedWriter;
-
-        fn make_writer(&'a self) -> RoutedWriter {
-            RoutedWriter(SINK.with(|sink| sink.borrow().clone()))
-        }
-    }
-
-    /// The lines this thread has written since the capture began.
-    pub struct Capture(Sink);
-
-    impl Capture {
-        pub fn lines(&self) -> Vec<Value> {
-            let text = String::from_utf8(
-                self.0
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .clone(),
-            )
-            .unwrap();
-            text.lines()
-                .map(|line| {
-                    serde_json::from_str::<Value>(line)
-                        .unwrap_or_else(|e| panic!("not a JSON line ({e}): {line}"))
-                })
-                .collect()
-        }
-    }
-
-    impl Drop for Capture {
-        fn drop(&mut self) {
-            SINK.with(|sink| *sink.borrow_mut() = None);
-        }
-    }
-
-    /// Begins capturing this thread's log at `warn` and above.
-    pub fn capture() -> Capture {
-        static INSTALL: Once = Once::new();
-        INSTALL.call_once(|| {
-            tracing::subscriber::set_global_default(tracing_subscriber::registry().with(
-                super::layer(Routed).with_filter(super::filter(crate::config::LogLevel::Warn)),
-            ))
-            .expect("no other test of this process installs a global subscriber");
-        });
-        let sink = Arc::new(Mutex::new(Vec::new()));
-        SINK.with(|slot| *slot.borrow_mut() = Some(Arc::clone(&sink)));
-        Capture(sink)
-    }
-}
-
-#[cfg(test)]
-mod tests;
+pub(crate) mod tests;

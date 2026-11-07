@@ -1,16 +1,18 @@
 //! The per-engine limiter: a token bucket at the admission record's rate
 //! and a semaphore of in-flight requests (REQ-CMP-002, REQ-ENG-010), with
-//! `Retry-After` honored (LIM-B4).
+//! `Retry-After` honored (LIM-B4). Time is tokio's, which is the standard
+//! clock in a running service and a clock a test can pause.
 
 use std::num::NonZeroU32;
 use std::sync::Mutex;
 
 use crate::sync;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use governor::clock::DefaultClock;
 use governor::{Quota, RateLimiter};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::time::Instant;
 
 /// Why the limiter did not admit a request before the deadline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -222,17 +222,6 @@ pub enum TimeRangeSupport {
     None,
 }
 
-/// The User-Agent a driver sends (REQ-CMP-004).
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum UserAgentFormat {
-    /// The standard rypsok User-Agent.
-    Standard,
-    /// A provider-mandated format, with `{standard}` replaced by the
-    /// standard User-Agent.
-    Custom(&'static str),
-}
-
 /// What the admission record allows and what the driver can honor
 /// (REQ-ENG-010, REQ-CMP-001).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -254,8 +243,6 @@ pub struct EngineProperties {
     pub cacheable: bool,
     /// Whether results must carry the engine identifier (REQ-CMP-003).
     pub attribution_required: bool,
-    /// The User-Agent format.
-    pub user_agent: UserAgentFormat,
     /// Most bytes read from one response.
     pub max_response_bytes: u64,
     /// Whether the driver reads a human-facing interface (RFC 015): such
@@ -296,24 +283,9 @@ impl EngineProperties {
             max_in_flight,
             cacheable: false,
             attribution_required: false,
-            user_agent: UserAgentFormat::Standard,
             max_response_bytes: 1_048_576,
             scraping: false,
         }
-    }
-
-    /// Most words the provider accepts.
-    #[must_use]
-    pub fn with_max_query_words(mut self, words: u32) -> Self {
-        self.max_query_words = Some(words);
-        self
-    }
-
-    /// The languages honored.
-    #[must_use]
-    pub fn with_languages(mut self, languages: LanguageSupport) -> Self {
-        self.languages = languages;
-        self
     }
 
     /// The periods honored.
@@ -327,34 +299,6 @@ impl EngineProperties {
     #[must_use]
     pub fn with_cacheable(mut self, cacheable: bool) -> Self {
         self.cacheable = cacheable;
-        self
-    }
-
-    /// Whether results must name the engine (REQ-CMP-003).
-    #[must_use]
-    pub fn with_attribution_required(mut self, required: bool) -> Self {
-        self.attribution_required = required;
-        self
-    }
-
-    /// The User-Agent format the provider requires.
-    #[must_use]
-    pub fn with_user_agent(mut self, format: UserAgentFormat) -> Self {
-        self.user_agent = format;
-        self
-    }
-
-    /// Most bytes read from one response.
-    #[must_use]
-    pub fn with_max_response_bytes(mut self, bytes: u64) -> Self {
-        self.max_response_bytes = bytes;
-        self
-    }
-
-    /// Whether the driver reads a human-facing interface (RFC 015).
-    #[must_use]
-    pub fn with_scraping(mut self, scraping: bool) -> Self {
-        self.scraping = scraping;
         self
     }
 

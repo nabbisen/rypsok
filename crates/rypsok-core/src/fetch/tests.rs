@@ -1023,6 +1023,7 @@ async fn req_fetch_003_max_chars_default_ceiling_and_cut() {
         "<html><head><title>Long</title></head><body><main><p>{}</p></main></body></html>",
         "日本語の文章です。".repeat(200)
     );
+    let first_600: String = "日本語の文章です。".repeat(200).chars().take(600).collect();
     Mock::given(method("GET"))
         .and(path("/long"))
         .respond_with(page(&long))
@@ -1032,7 +1033,10 @@ async fn req_fetch_003_max_chars_default_ceiling_and_cut() {
     assert_eq!(default.content.chars().count(), 600, "LIM-F1 as configured");
     assert!(default.truncated);
     assert_eq!(default.next_start_char, Some(600));
-    assert!(default.content.is_char_boundary(default.content.len()));
+    assert_eq!(
+        default.content, first_600,
+        "the window is the first 600 characters of the text, multi-byte characters whole"
+    );
     let error = h
         .fetch_req(FetchRequest {
             url: h.url("/long"),
@@ -1642,7 +1646,7 @@ async fn req_sec_003_decoded_titles_keep_their_angle_brackets() {
 #[tokio::test]
 async fn req_sec_014_a_panic_in_extraction_is_contained_and_logged() {
     use tracing::Instrument;
-    let log = crate::telemetry::routed::capture();
+    let log = crate::telemetry::tests::routed::capture();
     let far = Instant::now() + Duration::from_secs(30);
 
     let error = contained(far, || -> u32 { panic!("the-panic-message-7f3a") })

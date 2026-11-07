@@ -65,3 +65,142 @@ fn req_obs_007_http_refusals_are_counted() {
     assert_eq!(counters.refusals_of("http", "unauthorized"), 1);
     assert_eq!(counters.refusals_of("http", "session_limit"), 0);
 }
+
+/// How a library test reads the log without a subscriber of its own: the
+/// process has **one** global subscriber, installed once, whose writer hands
+/// each line to the sink of the thread that wrote it. A thread-scoped
+/// subscriber per test can miss an event (the callsite's interest is cached
+/// for the process); one dispatcher cannot. A test that uses it runs on one
+/// thread (a plain `#[test]`, or a current-thread runtime).
+pub(crate) mod routed {
+    use std::cell::RefCell;
+    use std::io::Write;
+    use std::sync::{Arc, Mutex, Once, PoisonError};
+
+    use serde_json::Value;
+    use tracing_subscriber::fmt::MakeWriter;
+    use tracing_subscriber::prelude::*;
+
+    type Sink = Arc<Mutex<Vec<u8>>>;
+
+    thread_local! {
+        static SINK: RefCell<Option<Sink>> = const { RefCell::new(None) };
+    }
+
+    struct Routed;
+
+    struct RoutedWriter(Option<Sink>);
+
+    impl Write for RoutedWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            if let Some(sink) = &self.0 {
+                sink.lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .extend_from_slice(bytes);
+            }
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> MakeWriter<'a> for Routed {
+        type Writer = RoutedWriter;
+
+        fn make_writer(&'a self) -> RoutedWriter {
+            RoutedWriter(SINK.with(|sink| sink.borrow().clone()))
+        }
+    }
+
+    /// The lines this thread has written since the capture began.
+    pub struct Capture(Sink);
+
+    impl Capture {
+        pub fn lines(&self) -> Vec<Value> {
+            let text = String::from_utf8(
+                self.0
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .clone(),
+            )
+            .unwrap();
+            text.lines()
+                .map(|line| {
+                    serde_json::from_str::<Value>(line)
+                        .unwrap_or_else(|e| panic!("not a JSON line ({e}): {line}"))
+                })
+                .collect()
+        }
+    }
+
+    impl Drop for Capture {
+        fn drop(&mut self) {
+            SINK.with(|sink| *sink.borrow_mut() = None);
+        }
+    }
+
+    /// Begins capturing this thread's log at `warn` and above.
+    pub fn capture() -> Capture {
+        static INSTALL: Once = Once::new();
+        INSTALL.call_once(|| {
+            tracing::subscriber::set_global_default(
+                tracing_subscriber::registry().with(
+                    crate::telemetry::layer(Routed)
+                        .with_filter(crate::telemetry::filter(crate::config::LogLevel::Warn)),
+                ),
+            )
+            .expect("no other test of this process installs a global subscriber");
+        });
+        let sink = Arc::new(Mutex::new(Vec::new()));
+        SINK.with(|slot| *slot.borrow_mut() = Some(Arc::clone(&sink)));
+        Capture(sink)
+    }
+}
+
+/// REQ-OBS-005 and REQ-PRIV-004 (RFC 020, F-1 of the 020q review): the line a
+/// panic leaves is one JSON object with the keys of every log line, the
+/// location and the thread; it is a function of those and of the time only,
+/// so the panic's message cannot be in it; awkward names stay one line.
+#[test]
+fn req_obs_005_the_panic_line_is_one_object_of_its_inputs_only() {
+    let line = panic_line(
+        "2026-11-07T10:00:00.000000Z",
+        "worker-3",
+        "src/fetch.rs",
+        420,
+    );
+    assert!(!line.contains('\n'));
+    let value: serde_json::Value = serde_json::from_str(&line).unwrap();
+    let mut keys: Vec<&str> = value
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "event",
+            "level",
+            "location",
+            "message",
+            "thread",
+            "timestamp"
+        ]
+    );
+    assert_eq!(value["level"], "ERROR");
+    assert_eq!(value["event"], "panic");
+    assert_eq!(value["location"], "src/fetch.rs:420");
+    assert_eq!(value["thread"], "worker-3");
+    assert_eq!(value["timestamp"], "2026-11-07T10:00:00.000000Z");
+    // A thread name or path with quotes and line breaks is still one line.
+    let awkward = panic_line("t", "a\"b\nc", "dir\\x\n.rs", 1);
+    assert!(!awkward.contains('\n'), "{awkward}");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&awkward).unwrap()["thread"],
+        "a\"b\nc"
+    );
+}

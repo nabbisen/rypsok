@@ -12,7 +12,6 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use rypsok_core::config::{Config, ConfigError, ConfigSource};
-use rypsok_core::limits::defaults::SHUTDOWN_MAX_MS;
 use rypsok_core::{CancellationToken, Rypsok, telemetry};
 
 use crate::mcp::{Adapter, http, stdio};
@@ -165,6 +164,7 @@ fn serve(flag: Option<&std::path::Path>, transport: Transport) -> ExitCode {
         },
         Transport::Stdio => None,
     };
+    let shutdown_ms = service.config().service.shutdown_ms;
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -196,7 +196,7 @@ fn serve(flag: Option<&std::path::Path>, transport: Transport) -> ExitCode {
     // Everything still running was cancelled through its token; the runtime
     // is dropped without waiting for the blocking stdin reader, so that the
     // process exits well within LIM-O1.
-    runtime.shutdown_timeout(Duration::from_millis(u64::from(SHUTDOWN_MAX_MS) / 10));
+    runtime.shutdown_timeout(Duration::from_millis(u64::from(shutdown_ms) / 10));
     match outcome {
         Ok(()) => ExitCode::from(EXIT_SUCCESS),
         Err(error) => {

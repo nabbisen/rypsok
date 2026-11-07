@@ -13,6 +13,12 @@ use super::*;
 
 type Local = BoundedSessions<LocalSessionManager>;
 
+/// The number of sessions counted: live ones plus creations in flight.
+pub(crate) fn live<M>(sessions: &BoundedSessions<M>) -> usize {
+    let count = sessions.lock();
+    count.live.len() + count.pending
+}
+
 fn bounded(max: usize) -> Arc<Local> {
     Arc::new(BoundedSessions::new(LocalSessionManager::default(), max))
 }
@@ -41,7 +47,7 @@ async fn req_sec_024_a_session_closed_twice_is_counted_once() {
         first.await.unwrap().unwrap();
         second.await.unwrap().unwrap();
         assert_eq!(
-            sessions.live(),
+            live(&sessions),
             2,
             "round {round}: closed twice, counted once"
         );
@@ -52,7 +58,7 @@ async fn req_sec_024_a_session_closed_twice_is_counted_once() {
                 .unwrap_or_else(|_| panic!("round {round}: one slot is free"))
                 .0,
         );
-        assert_eq!(sessions.live(), 3, "round {round}");
+        assert_eq!(live(&sessions), 3, "round {round}");
         assert!(
             matches!(
                 sessions.create_session().await,
@@ -66,7 +72,7 @@ async fn req_sec_024_a_session_closed_twice_is_counted_once() {
         .close_session(&SessionId::from("no-such-session"))
         .await
         .unwrap();
-    assert_eq!(sessions.live(), 3);
+    assert_eq!(live(&sessions), 3);
 }
 
 /// REQ-SEC-024: the refusal's text is a fixed sentence, because the SDK
@@ -173,7 +179,7 @@ async fn req_sec_024_a_cancelled_creation_gives_the_slot_back() {
         let waited =
             tokio::time::timeout(Duration::from_millis(5), sessions.create_session()).await;
         assert!(waited.is_err(), "round {round}: the creation stalls");
-        assert_eq!(sessions.live(), 0, "round {round}: the slot is back");
+        assert_eq!(live(&sessions), 0, "round {round}: the slot is back");
     }
     // Two creations in flight fill the bound; a third is refused at once;
     // dropping them frees both.
@@ -181,15 +187,15 @@ async fn req_sec_024_a_cancelled_creation_gives_the_slot_back() {
     let mut second = Box::pin(sessions.create_session());
     assert!(poll_once(first.as_mut()).is_pending());
     assert!(poll_once(second.as_mut()).is_pending());
-    assert_eq!(sessions.live(), 2);
+    assert_eq!(live(&sessions), 2);
     assert!(matches!(
         sessions.create_session().await,
         Err(BoundedError::LimitReached)
     ));
     drop(first);
-    assert_eq!(sessions.live(), 1, "dropping one frees one");
+    assert_eq!(live(&sessions), 1, "dropping one frees one");
     drop(second);
-    assert_eq!(sessions.live(), 0);
+    assert_eq!(live(&sessions), 0);
 }
 
 /// Polls a future once with a waker that does nothing.
@@ -207,7 +213,7 @@ async fn req_sec_024_restore_never_creates_a_session() {
         .await
         .unwrap();
     assert!(matches!(outcome, RestoreOutcome::NotSupported));
-    assert_eq!(sessions.live(), 0);
+    assert_eq!(live(&sessions), 0);
     assert!(
         !sessions
             .has_session(&SessionId::from("restored"))

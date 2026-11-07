@@ -6,6 +6,11 @@ use super::*;
 
 const MAX: u32 = 2048;
 
+/// A key as text.
+fn text(key: &ComparisonKey) -> &str {
+    &key.0
+}
+
 /// REQ-RANK-003: the returned URL keeps everything but tracking
 /// parameters and writes the host in ASCII form; invalid URLs are rejected.
 #[test]
@@ -202,7 +207,7 @@ fn req_rank_002_comparison_key_table() {
         assert_ne!(comparison_key(a), comparison_key(b), "{a} vs {b}");
     }
     assert_eq!(
-        comparison_key("https://www.Example.org:443/a/?b=2&a=1#f").as_str(),
+        text(&comparison_key("https://www.Example.org:443/a/?b=2&a=1#f")),
         "https://example.org/a?a=1&b=2#f"
     );
 }
@@ -325,7 +330,7 @@ fn req_rank_002_the_key_text_pins_the_port_the_root_and_the_fragment() {
             "https://x.example/p?a=2&a=1&b=1",
         ),
     ] {
-        assert_eq!(comparison_key(url).as_str(), key, "{url}");
+        assert_eq!(text(&comparison_key(url)), key, "{url}");
     }
 }
 
@@ -359,12 +364,12 @@ proptest! {
             prop_assert_eq!(&twice, &once);
             prop_assert_eq!(comparison_key(&twice), comparison_key(&once));
             let key = comparison_key(&once);
-            prop_assert!(key.as_str().starts_with("https://"));
-            prop_assert!(!key.as_str().contains("utm_"));
+            prop_assert!(text(&key).starts_with("https://"));
+            prop_assert!(!text(&key).contains("utm_"));
             // The `www.` label is removed; a host that merely contains the
             // letters (`awww.org`) keeps them (CI found the broader assertion
             // on 2026-10-29).
-            let key_host = Url::parse(key.as_str()).unwrap().host_str().unwrap().to_owned();
+            let key_host = Url::parse(text(&key)).unwrap().host_str().unwrap().to_owned();
             prop_assert!(!key_host.starts_with("www."));
             prop_assert!(Url::parse(&once).unwrap().host_str().unwrap().ends_with(&host));
         }

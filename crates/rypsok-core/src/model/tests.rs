@@ -329,6 +329,10 @@ fn req_err_004_every_error_constructor_has_a_bounded_message_without_external_te
             message.chars().count()
         );
         assert!(!message.contains("://"), "{name}: a URL in {message:?}");
+        assert!(
+            !message.contains('{') && !message.contains('}'),
+            "{name}: a placeholder left in {message:?}"
+        );
         for external in [
             "evil",
             "example.org",

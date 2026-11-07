@@ -414,10 +414,7 @@ fn req_sec_024_max_sessions_has_its_range() {
         ))
         .unwrap();
         assert!(config.validate().is_ok(), "{ok}: {:?}", config.validate());
-        assert_eq!(
-            config.limits().http_max_sessions,
-            ok.parse::<u32>().unwrap()
-        );
+        assert_eq!(config.service.http.max_sessions, ok.parse::<u32>().unwrap());
     }
     // The ceiling is 2048 (RFC 020 D-21): about 60 KiB per session, 120 MiB.
     for bad in ["0", "2049", "65536"] {
@@ -462,4 +459,38 @@ fn req_cfg_005_max_bytes_has_its_range() {
             error.problems
         );
     }
+}
+
+/// REQ-CFG-005 and REQ-CFG-003 (RFC 020, D-9): LIM-S12 and LIM-O1 are keys:
+/// `search.connect_timeout_ms` (200 to 5000, default 1000) and
+/// `service.shutdown_ms` (500 to 10000, default 3000). The edges are accepted,
+/// one step outside is refused with the key and the range, and the effective
+/// limit follows the key.
+#[test]
+fn req_cfg_005_the_connect_timeout_and_the_shutdown_time_are_keys() {
+    let defaults = Config::default();
+    assert_eq!(defaults.search.connect_timeout_ms, 1000);
+    assert_eq!(defaults.service.shutdown_ms, 3000);
+    assert_eq!(defaults.limits().engine_connect_timeout_ms, 1000);
+    for (table, key, low, high) in [
+        ("search", "connect_timeout_ms", 200u32, 5000u32),
+        ("service", "shutdown_ms", 500, 10000),
+    ] {
+        for ok in [low, 1000.clamp(low, high), high] {
+            let config =
+                Config::parse(&format!("config_version = 1\n[{table}]\n{key} = {ok}\n")).unwrap();
+            assert!(config.validate().is_ok(), "{table}.{key} = {ok}");
+        }
+        for bad in [low - 1, high + 1] {
+            let config =
+                Config::parse(&format!("config_version = 1\n[{table}]\n{key} = {bad}\n")).unwrap();
+            let error = config.validate().unwrap_err();
+            assert_eq!(
+                error.problems,
+                vec![format!("{table}.{key}: must be between {low} and {high}")]
+            );
+        }
+    }
+    let config = Config::parse("config_version = 1\n[search]\nconnect_timeout_ms = 250\n").unwrap();
+    assert_eq!(config.limits().engine_connect_timeout_ms, 250);
 }

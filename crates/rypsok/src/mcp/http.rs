@@ -28,7 +28,7 @@ use rmcp::transport::streamable_http_server::session::local::LocalSessionManager
 use rmcp::transport::streamable_http_server::session::never::NeverSessionManager;
 use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
 use rypsok_core::config::{Config, ConfigError, Secret};
-use rypsok_core::limits::defaults::{HTTP_MAX_HEADER_BYTES, SHUTDOWN_MAX_MS};
+use rypsok_core::limits::defaults::HTTP_MAX_HEADER_BYTES;
 use rypsok_core::telemetry::Counters;
 use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
@@ -130,6 +130,9 @@ pub struct HttpSettings {
     pub request_timeout: Duration,
     /// LIM-H6.
     pub max_sessions: u32,
+    /// LIM-O1: how long the listener waits for its connections to finish
+    /// once it is told to stop.
+    pub shutdown: Duration,
 }
 
 impl HttpSettings {
@@ -201,6 +204,7 @@ impl HttpSettings {
             max_streams: http.max_streams,
             request_timeout: Duration::from_secs(u64::from(http.request_timeout_s)),
             max_sessions: http.max_sessions,
+            shutdown: Duration::from_millis(u64::from(config.service.shutdown_ms)),
         })
     }
 }
@@ -416,11 +420,7 @@ pub async fn run_with(
         });
     }
     drop(listener);
-    let _ = tokio::time::timeout(
-        Duration::from_millis(u64::from(SHUTDOWN_MAX_MS)),
-        graceful.shutdown(),
-    )
-    .await;
+    let _ = tokio::time::timeout(settings.shutdown, graceful.shutdown()).await;
     tracing::info!(event = "listener_closed", "listener closed");
     Ok(())
 }

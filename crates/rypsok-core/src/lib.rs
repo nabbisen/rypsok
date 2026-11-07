@@ -223,12 +223,6 @@ impl Rypsok {
         &self.egress
     }
 
-    /// The URLs `web_search` returned in this process, for strict mode
-    /// (REQ-SEC-021).
-    pub fn returned_urls(&self) -> &ReturnedUrls {
-        &self.returned
-    }
-
     /// `web_search`: search several engines at once and return deduplicated,
     /// ranked results. Results are external data.
     ///

@@ -45,12 +45,13 @@ pub(super) fn build(config: &Config, source: &ConfigSource) -> Result<Report, Co
         describe(source)
     ));
     lines.push(format!(
-        "rypsok: search: query_max_chars={} max_results={} (1..={}) deadline_ms={} engine_timeout_ms={} reserve_ms={} engines_per_request={} languages={} region={}",
+        "rypsok: search: query_max_chars={} max_results={} (1..={}) deadline_ms={} engine_timeout_ms={} connect_timeout_ms={} reserve_ms={} engines_per_request={} languages={} region={}",
         limits.query_max_chars,
         limits.max_results,
         limits.max_results_ceiling,
         limits.search_deadline_ms,
         limits.engine_timeout_ms,
+        limits.engine_connect_timeout_ms,
         limits.search_reserve_ms,
         limits.engines_per_request,
         config
@@ -69,6 +70,10 @@ pub(super) fn build(config: &Config, source: &ConfigSource) -> Result<Report, Co
         limits.engine_status_per_minute,
         config.status.enabled,
         config.service.structured_content,
+    ));
+    lines.push(format!(
+        "rypsok: service: shutdown_ms={}",
+        config.service.shutdown_ms
     ));
     for (id, table) in &config.engines {
         let credential = match table.secret_source() {

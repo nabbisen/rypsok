@@ -111,7 +111,8 @@ pub const FETCH_ACCEPT: &str =
 /// REQ-SEC-009): the judging resolver decides every connection; no
 /// redirect is followed by the client; environment proxies are ignored and
 /// no proxy is used; no cookie store; `User-Agent` and `Accept` are the
-/// only default headers; idle connections are dropped after 30 s.
+/// only default headers; a pooled connection is probed every 60 s
+/// (`tcp_keepalive`) and an idle one is dropped after 30 s.
 pub fn agent_client<L: resolver::Lookup>(
     settings: &AgentClientSettings,
     resolver: Arc<JudgingResolver<L>>,
@@ -135,6 +136,7 @@ pub fn agent_client<L: resolver::Lookup>(
         .gzip(true)
         .no_proxy()
         .dns_resolver(resolver)
+        .tcp_keepalive(Some(Duration::from_secs(60)))
         .pool_idle_timeout(Some(Duration::from_secs(30)))
         .build()
         .map_err(|e| ClientError::Build(e.to_string()))

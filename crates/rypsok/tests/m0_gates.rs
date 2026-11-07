@@ -329,6 +329,55 @@ fn req_sec_023_every_fuzz_target_runs_240_s_within_a_matching_limit() {
     );
 }
 
+/// REQ-OBS-005 (RFC 020, F-1 of the 020q review): the panic hook is the first
+/// thing `main` does, before the command line is read, so that no panic
+/// reaches standard error as plain text. The install is looked for in the
+/// source (the hook is process-wide and no test can undo it).
+#[test]
+fn req_obs_005_main_installs_the_panic_hook_first() {
+    let main = read("crates/rypsok/src/main.rs");
+    let body = main
+        .split("fn main()")
+        .nth(1)
+        .expect("main")
+        .split_once('{')
+        .expect("a body")
+        .1;
+    let first = body
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with("//"))
+        .expect("a statement");
+    assert_eq!(
+        first, "rypsok_core::telemetry::install_panic_hook();",
+        "the first statement of main"
+    );
+}
+
+/// REQ-SEC-007 (RFC 020, TST-15; RFC 011): the agent client probes a pooled
+/// connection every 60 s and drops an idle one after 30 s, so that a
+/// connection made to a judged address is not kept for long once the peer is
+/// gone. The settings are not readable from a built client; the source of
+/// `agent_client` is.
+#[test]
+fn req_sec_007_the_agent_client_sets_tcp_keepalive_and_the_idle_timeout() {
+    let source = read("crates/rypsok-core/src/egress.rs");
+    let start = source.find("pub fn agent_client").expect("agent_client");
+    let body = &source[start
+        ..source[start..]
+            .find("\n}\n")
+            .map_or(source.len(), |n| start + n)];
+    let compact: String = body.split_whitespace().collect();
+    assert!(
+        compact.contains(".tcp_keepalive(Some(Duration::from_secs(60)))"),
+        "agent_client does not set tcp_keepalive to 60 s"
+    );
+    assert!(
+        compact.contains(".pool_idle_timeout(Some(Duration::from_secs(30)))"),
+        "agent_client does not set pool_idle_timeout to 30 s"
+    );
+}
+
 /// REQ-SEC-005 (RFC 020, TST-7): every request `rypsok-core` makes is sent on
 /// a client that `egress.rs` built. In non-test code, no HTTP client is built
 /// anywhere else (`Client::builder`, `ClientBuilder`, `Client::new`,
@@ -453,6 +502,41 @@ fn req_sec_020_tools_and_the_release_compiler_are_pinned() {
             is_version(text),
             "release.yml builds with `{text}`, not a named compiler"
         );
+    }
+}
+
+/// RFC 020 (TST-9): the crate builds without a warning with no engine
+/// feature and with each one alone: CI checks (all targets, locked) the
+/// combination of no features and each feature of `rypsok-core` by itself.
+/// The list of features is read from the manifest, so a new feature needs a
+/// step.
+#[test]
+fn req_test_012_ci_checks_every_feature_alone_and_none() {
+    let manifest = read("crates/rypsok-core/Cargo.toml");
+    let features: Vec<String> = manifest
+        .split("[features]")
+        .nth(1)
+        .unwrap()
+        .lines()
+        .skip(1)
+        .take_while(|line| !line.starts_with('['))
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .filter_map(|line| line.split_once(" = "))
+        .map(|(name, _)| name.trim().to_owned())
+        .filter(|name| name != "default")
+        .collect();
+    assert!(features.len() >= 3, "{features:?}");
+    let runs = run_lines(&workflow("ci.yml"));
+    let none = "cargo check -p rypsok-core --no-default-features --all-targets --locked";
+    assert!(
+        runs.iter().any(|line| line == none),
+        "no step runs `{none}`"
+    );
+    for feature in features {
+        let line = format!(
+            "cargo check -p rypsok-core --no-default-features --features {feature} --all-targets --locked"
+        );
+        assert!(runs.contains(&line), "no step runs `{line}`");
     }
 }
 

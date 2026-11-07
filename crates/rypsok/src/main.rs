@@ -9,5 +9,7 @@ mod cli;
 mod mcp;
 
 fn main() -> std::process::ExitCode {
+    // First of all: a panic is one JSON line without its message (F-1).
+    rypsok_core::telemetry::install_panic_hook();
     cli::run(std::env::args_os())
 }

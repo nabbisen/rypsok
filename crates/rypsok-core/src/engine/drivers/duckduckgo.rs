@@ -20,7 +20,7 @@ use crate::egress::{self, BodyError};
 use crate::engine::scrape::{self, Marker, Page, Selector, Shape};
 use crate::engine::{
     Driver, EngineError, EngineErrorClass, EngineProperties, EngineRequest, EngineResponse,
-    LanguageSupport, TimeRangeSupport, UserAgentFormat,
+    LanguageSupport, TimeRangeSupport,
 };
 use crate::html::{charset, dom};
 use crate::model::TimeRange;
@@ -42,7 +42,6 @@ pub const PROPERTIES: EngineProperties = EngineProperties {
     max_in_flight: 1,
     cacheable: false,
     attribution_required: false,
-    user_agent: UserAgentFormat::Standard,
     max_response_bytes: 262_144,
     scraping: true,
 };

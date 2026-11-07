@@ -1,5 +1,10 @@
 //! Tests of the drivers module. Every test names the requirement it verifies.
 
+#[cfg(any(
+    feature = "engine-wikipedia",
+    feature = "engine-brave",
+    feature = "engine-duckduckgo"
+))]
 use std::time::Duration;
 
 use super::*;
@@ -23,6 +28,11 @@ fn req_eng_002_drivers_declare_their_keys() {
 }
 
 /// REQ-RES-002: `Retry-After` is read in seconds and bounded.
+#[cfg(any(
+    feature = "engine-wikipedia",
+    feature = "engine-brave",
+    feature = "engine-duckduckgo"
+))]
 #[test]
 fn req_res_002_retry_after_header_is_parsed_and_bounded() {
     let mut headers = HeaderMap::new();
@@ -44,6 +54,11 @@ fn req_res_002_retry_after_header_is_parsed_and_bounded() {
 /// REQ-SEC-016 and external design §16 I5 (RFC 018): a provider's error
 /// body reaches a `debug` line only, cut to `PROVIDER_TEXT_MAX_CHARS`
 /// characters and never a byte more.
+#[cfg(any(
+    feature = "engine-wikipedia",
+    feature = "engine-brave",
+    feature = "engine-duckduckgo"
+))]
 #[test]
 fn req_sec_016_provider_text_in_logs_is_bounded_and_debug_only() {
     let body = "x".repeat(PROVIDER_TEXT_MAX_CHARS * 3);

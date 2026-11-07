@@ -194,8 +194,6 @@ pub struct Limits {
     pub fetch_connect_timeout_ms: u32,
     /// LIM-F7.
     pub fetch_max_redirects: u8,
-    /// LIM-F8.
-    pub fetch_ports: Vec<u16>,
     /// LIM-F9.
     pub url_max_chars: u32,
     /// LIM-F10.
@@ -210,18 +208,6 @@ pub struct Limits {
     pub strict_mode_urls: u32,
     /// LIM-F15.
     pub robots_cache_entries: u32,
-    /// LIM-H1.
-    pub http_max_connections: u32,
-    /// LIM-H2.
-    pub http_max_request_bytes: u64,
-    /// LIM-H3.
-    pub http_idle_timeout_s: u32,
-    /// LIM-H4.
-    pub http_max_streams: u32,
-    /// LIM-H5.
-    pub http_request_timeout_s: u32,
-    /// LIM-H6.
-    pub http_max_sessions: u32,
     /// LIM-C1.
     pub outbound_in_flight: u32,
     /// LIM-C2.
@@ -287,8 +273,9 @@ impl MemoryEstimate {
 impl Limits {
     /// The worst-case memory: `13 MiB + fetches x max_bytes + parses x
     /// (4.5 x max_bytes + 13 MiB) + sessions x 60 KiB`, and `cache_bytes`
-    /// (LIM-K3 times LIM-K4 when the cache is on, else 0).
-    pub fn worst_case_memory(&self, cache_bytes: u64) -> MemoryEstimate {
+    /// (LIM-K3 times LIM-K4 when the cache is on, else 0); `sessions` is
+    /// `[service.http] max_sessions`, which the configuration owns.
+    pub fn worst_case_memory(&self, sessions: u32, cache_bytes: u64) -> MemoryEstimate {
         let page = self.fetch_max_bytes;
         let one_parse = page * defaults::MEASURED_PARSE_TENTHS_PER_BYTE / 10
             + defaults::MEASURED_PARSE_FIXED_BYTES;
@@ -296,7 +283,7 @@ impl Limits {
             base: defaults::MEASURED_BASE_BYTES,
             bodies: u64::from(self.fetches_in_flight) * page,
             parses: u64::from(self.parsing_in_flight) * one_parse,
-            sessions: u64::from(self.http_max_sessions) * defaults::MEASURED_SESSION_BYTES,
+            sessions: u64::from(sessions) * defaults::MEASURED_SESSION_BYTES,
             cache: cache_bytes,
         }
     }
@@ -321,7 +308,6 @@ impl Limits {
         fetch_deadline_ms: defaults::FETCH_DEADLINE_MS,
         fetch_connect_timeout_ms: defaults::FETCH_CONNECT_TIMEOUT_MS,
         fetch_max_redirects: defaults::FETCH_MAX_REDIRECTS,
-        fetch_ports: Vec::new(),
         url_max_chars: defaults::URL_MAX_CHARS,
         html_max_nodes: defaults::HTML_MAX_NODES,
         html_max_depth: defaults::HTML_MAX_DEPTH,
@@ -329,12 +315,6 @@ impl Limits {
         robots_max_bytes: defaults::ROBOTS_MAX_BYTES,
         strict_mode_urls: defaults::STRICT_MODE_URLS,
         robots_cache_entries: defaults::ROBOTS_CACHE_ENTRIES,
-        http_max_connections: defaults::HTTP_MAX_CONNECTIONS,
-        http_max_request_bytes: defaults::HTTP_MAX_REQUEST_BYTES,
-        http_idle_timeout_s: defaults::HTTP_IDLE_TIMEOUT_S,
-        http_max_streams: defaults::HTTP_MAX_STREAMS,
-        http_request_timeout_s: defaults::HTTP_REQUEST_TIMEOUT_S,
-        http_max_sessions: defaults::HTTP_MAX_SESSIONS,
         outbound_in_flight: defaults::OUTBOUND_IN_FLIGHT,
         per_engine_in_flight: defaults::PER_ENGINE_IN_FLIGHT,
         fetches_in_flight: defaults::FETCHES_IN_FLIGHT,
@@ -360,10 +340,7 @@ impl Limits {
 
 impl Default for Limits {
     fn default() -> Self {
-        Limits {
-            fetch_ports: defaults::FETCH_PORTS.to_vec(),
-            ..Limits::DEFAULT
-        }
+        Limits::DEFAULT
     }
 }
 

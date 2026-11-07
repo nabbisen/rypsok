@@ -3,14 +3,15 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use tokio::time::Instant;
 
 use super::*;
 use crate::cache::ResultCache;
 use crate::egress::ReturnedUrls;
 use crate::engine::{
     Driver, EngineError, EngineProperties, LanguageSupport, RawResult, TimeRangeSupport,
-    UserAgentFormat,
 };
 use crate::model::{Category, EngineState, ErrorKind, Language, SearchRequest};
 use crate::telemetry::HealthTable;
@@ -24,6 +25,9 @@ enum Script {
     Fail(EngineErrorClass, Option<Duration>),
     Slow(Duration, Vec<(&'static str, &'static str, &'static str)>),
     Hang,
+    /// Never answers and never looks at the cancellation: only dropping the
+    /// future ends it, and the moment is recorded (LIM-O2).
+    HangUntilDropped(Arc<std::sync::Mutex<Option<Instant>>>),
     Panic,
     /// Fails with the class while the call count is at most `n`, then answers.
     FailFirst(
@@ -56,7 +60,6 @@ fn properties() -> EngineProperties {
         max_in_flight: 2,
         cacheable: false,
         attribution_required: false,
-        user_agent: UserAgentFormat::Standard,
         max_response_bytes: 1024,
         scraping: false,
     }
@@ -105,6 +108,17 @@ impl Driver for Scripted {
             Script::Hang => {
                 cancel.cancelled().await;
                 Err(EngineError::new(EngineErrorClass::RequestFailure))
+            }
+            Script::HangUntilDropped(slot) => {
+                struct DropAt(Arc<std::sync::Mutex<Option<Instant>>>);
+                impl Drop for DropAt {
+                    fn drop(&mut self) {
+                        *crate::sync::lock(&self.0) = Some(Instant::now());
+                    }
+                }
+                let _guard = DropAt(Arc::clone(slot));
+                std::future::pending::<()>().await;
+                unreachable!("pending never completes")
             }
             Script::Panic => panic!("scripted panic"),
             Script::FailFirst(n, class, items) => {
@@ -368,7 +382,7 @@ async fn req_rank_007_cut_to_max_results_after_the_boundary() {
 /// REQ-ERR-005: when no engine answered the error is `unavailable`, with
 /// reason `deadline` when every failure was a timeout and `all_failed`
 /// otherwise, carrying the smallest `Retry-After`.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn req_err_005_all_failed_and_deadline() {
     let h = harness(vec![
         (
@@ -412,9 +426,10 @@ async fn req_err_005_all_failed_and_deadline() {
         error.message, "no engine answered before the deadline; retry later",
         "a search says that no engine answered"
     );
-    assert!(
-        started.elapsed() < Duration::from_millis(600),
-        "the fan-out deadline bounds the call (LIM-S4)"
+    assert_eq!(
+        started.elapsed(),
+        Duration::from_millis(400),
+        "every engine ends at LIM-S5 (400 ms in the harness), inside LIM-S4 (600 ms)"
     );
 }
 
@@ -437,7 +452,7 @@ async fn req_err_005_no_engine_is_unavailable() {
 /// REQ-AGG-009 and REQ-TEST-004: the call completes as soon as every
 /// engine answered, well before the deadline, and one slow engine never
 /// removes another's results.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn req_agg_009_early_completion_and_partial_isolation() {
     let h = harness(vec![
         ("a", Script::Answer(A.to_vec())),
@@ -445,10 +460,10 @@ async fn req_agg_009_early_completion_and_partial_isolation() {
     ]);
     let started = Instant::now();
     h.search(req(), CancellationToken::new()).await.unwrap();
-    assert!(
-        started.elapsed() < Duration::from_millis(200),
-        "completed in {:?}",
-        started.elapsed()
+    assert_eq!(
+        started.elapsed(),
+        Duration::ZERO,
+        "completed as soon as both answered"
     );
     let h = harness(vec![
         ("a", Script::Answer(A.to_vec())),
@@ -459,12 +474,12 @@ async fn req_agg_009_early_completion_and_partial_isolation() {
     assert_eq!(response.outcome, Outcome::Partial);
     assert_eq!(response.results.len(), 2);
     assert_eq!(response.notices[0].reason, Some(Reason::Timeout));
-    assert!(started.elapsed() < Duration::from_millis(600));
+    assert_eq!(started.elapsed(), Duration::from_millis(400));
 }
 
 /// REQ-AGG-006 and REQ-MCP-007: cancellation ends the call without a
 /// response; no new request starts.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn req_agg_006_cancellation_aborts_the_call() {
     let h = harness(vec![("a", Script::Hang)]);
     let cancel = CancellationToken::new();
@@ -479,10 +494,45 @@ async fn req_agg_006_cancellation_aborts_the_call() {
         CallError::Cancelled,
         "a cancelled call is reported as cancelled, not as a deadline"
     );
-    assert!(started.elapsed() < Duration::from_millis(300));
+    assert_eq!(
+        started.elapsed(),
+        Duration::from_millis(30),
+        "the call ended at the cancellation"
+    );
     assert_eq!(h.counters.calls_of("web_search", "cancelled"), 1);
     tokio::time::sleep(Duration::from_millis(50)).await;
     assert_eq!(h.calls[0].load(Ordering::SeqCst), 1);
+}
+
+/// REQ-MCP-007 and LIM-O2: when a call is cancelled the engine's request is
+/// aborted: its future is dropped, not left running, within the time the
+/// limits table allows (500 ms). The mock never answers and ignores the
+/// cancellation token, so only the drop can end it; it records when.
+#[tokio::test(start_paused = true)]
+async fn req_mcp_007_a_cancelled_call_drops_its_engine_task_within_lim_o2() {
+    let dropped = Arc::new(std::sync::Mutex::new(None));
+    let h = harness(vec![("a", Script::HangUntilDropped(Arc::clone(&dropped)))]);
+    let cancel = CancellationToken::new();
+    let soon = cancel.clone();
+    let started = Instant::now();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        soon.cancel();
+    });
+    assert_eq!(
+        h.search(req(), cancel).await.unwrap_err(),
+        CallError::Cancelled
+    );
+    for _ in 0..4 {
+        tokio::task::yield_now().await;
+    }
+    let at = (*crate::sync::lock(&dropped)).expect("the engine's future was dropped");
+    let after_cancel = at - (started + Duration::from_millis(30));
+    assert!(
+        after_cancel <= Duration::from_millis(crate::limits::defaults::CANCEL_MAX_MS.into()),
+        "dropped {after_cancel:?} after the cancellation"
+    );
+    assert_eq!(after_cancel, Duration::ZERO, "in fact at once");
 }
 
 /// REQ-SEC-014 and REQ-AGG-007: a driver that panics is isolated and
@@ -825,7 +875,7 @@ async fn req_eng_012_raw_snippets_are_cleaned_by_the_pipeline() {
 }
 
 /// REQ-AGG-001: engine requests of one search run concurrently.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn req_agg_001_engines_run_concurrently() {
     let h = harness(vec![
         ("a", Script::Slow(Duration::from_millis(120), A.to_vec())),
@@ -840,30 +890,27 @@ async fn req_agg_001_engines_run_concurrently() {
             .outcome,
         Outcome::Ok
     );
-    assert!(
-        started.elapsed() < Duration::from_millis(300),
-        "{:?}",
-        started.elapsed()
+    assert_eq!(
+        started.elapsed(),
+        Duration::from_millis(120),
+        "three engines of 120 ms take 120 ms, not 360"
     );
 }
 
 /// REQ-AGG-002: an engine slower than LIM-S5 is cancelled at LIM-S5, not
 /// at the overall deadline.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn req_agg_002_per_engine_timeout_applies() {
     let h = harness(vec![("a", Script::Answer(A.to_vec())), ("b", Script::Hang)]);
     let started = Instant::now();
     let response = h.search(req(), CancellationToken::new()).await.unwrap();
     let elapsed = started.elapsed();
     assert_eq!(response.outcome, Outcome::Partial);
-    assert!(
-        elapsed >= Duration::from_millis(380) && elapsed < Duration::from_millis(500),
-        "{elapsed:?}"
-    );
+    assert_eq!(elapsed, Duration::from_millis(400), "LIM-S5, not LIM-S4");
 }
 
 /// REQ-AGG-003: a search returns within LIM-S4 from the start of the call.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn req_agg_003_overall_deadline_holds() {
     let h = harness(vec![
         ("a", Script::Hang),
@@ -872,15 +919,15 @@ async fn req_agg_003_overall_deadline_holds() {
     ]);
     let started = Instant::now();
     let _ = h.search(req(), CancellationToken::new()).await;
+    assert_eq!(started.elapsed(), Duration::from_millis(400));
     assert!(
-        started.elapsed() < Duration::from_millis(600),
-        "{:?}",
-        started.elapsed()
+        started.elapsed() < Duration::from_millis(h.limits.search_deadline_ms.into()),
+        "inside LIM-S4"
     );
 }
 
 /// REQ-AGG-005: outbound requests never exceed LIM-C1 for the process.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn req_agg_005_process_wide_outbound_cap_is_enforced() {
     let h = harness(vec![
         ("a", Script::Slow(Duration::from_millis(100), A.to_vec())),
@@ -909,10 +956,10 @@ async fn req_agg_005_process_wide_outbound_cap_is_enforced() {
         .await
         .unwrap();
     assert_eq!(response.outcome, Outcome::Ok);
-    assert!(
-        started.elapsed() >= Duration::from_millis(200),
-        "one at a time: {:?}",
-        started.elapsed()
+    assert_eq!(
+        started.elapsed(),
+        Duration::from_millis(200),
+        "one at a time"
     );
 }
 
@@ -1004,7 +1051,7 @@ async fn req_cmp_003_required_attribution_is_carried() {
 
 /// REQ-PRIV-003 and REQ-LIFE-002: nothing of a call is kept: the service
 /// holds no query text afterwards, and no task keeps an engine alive.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn req_priv_003_nothing_is_retained_after_the_call() {
     let h = harness(vec![("a", Script::Answer(A.to_vec()))]);
     h.search(
@@ -1023,7 +1070,7 @@ async fn req_priv_003_nothing_is_retained_after_the_call() {
 }
 
 /// REQ-LIFE-002: a cancelled call releases its tasks.
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn req_life_002_cancelled_call_releases_its_tasks() {
     let h = harness(vec![("a", Script::Hang)]);
     let cancel = CancellationToken::new();
@@ -1370,8 +1417,7 @@ async fn req_cache_005_a_hit_before_the_lifetime_and_a_miss_after() {
 async fn req_cache_006_a_disabled_cache_degrades_nothing_but_latency() {
     let h = harness_cached(vec![("a", Script::Answer(A.to_vec()))], 10, 4096, |_| {});
     h.search(req(), CancellationToken::new()).await.unwrap();
-    let poisoner = Arc::clone(h.cache.as_ref().unwrap());
-    let _ = std::thread::spawn(move || poisoner.poison_for_test()).join();
+    crate::cache::tests::poison(h.cache.as_ref().unwrap());
     // The failure is seen at the next use: the lookup misses, the cache
     // disables itself, and the call goes to the engine.
     let response = h.search(req(), CancellationToken::new()).await.unwrap();

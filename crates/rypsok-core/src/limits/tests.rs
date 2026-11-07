@@ -14,7 +14,6 @@ fn req_cfg_003_defaults_are_the_table() {
     assert_eq!(limits.search_reserve_ms, 200);
     assert_eq!(limits.search_call_max_ms(), 2800);
     assert_eq!(limits.fetch_call_max_ms(), 11000);
-    assert_eq!(limits.fetch_ports, vec![80, 443]);
     assert!(limits.engine_timeout_ms + limits.search_reserve_ms <= limits.search_deadline_ms);
 }
 
@@ -32,7 +31,7 @@ fn limits_with(f: impl FnOnce(&mut Limits)) -> Limits {
 /// sessions `max_sessions x 60 KiB`, plus the cache bound when it is on.
 #[test]
 fn req_perf_003_the_memory_formula_of_the_audit() {
-    let estimate = Limits::default().worst_case_memory(0);
+    let estimate = Limits::default().worst_case_memory(defaults::HTTP_MAX_SESSIONS, 0);
     assert_eq!(estimate.base, 13 * MIB);
     assert_eq!(estimate.bodies, 4 * 5 * MIB);
     // 4.5 x 5 MiB = 22.5 MiB, plus 13 MiB, twice.
@@ -53,10 +52,12 @@ fn req_perf_003_the_memory_formula_of_the_audit() {
 /// the defaults is under the unit's 256 MiB; the old ceiling was not.
 #[test]
 fn req_perf_003_the_new_ceiling_fits_the_unit_and_the_old_one_did_not() {
-    let at_ceiling = limits_with(|l| l.fetch_max_bytes = 10 * MIB).worst_case_memory(0);
+    let at_ceiling = limits_with(|l| l.fetch_max_bytes = 10 * MIB)
+        .worst_case_memory(defaults::HTTP_MAX_SESSIONS, 0);
     assert_eq!(at_ceiling.total_mib(), 184, "{at_ceiling:?}");
     assert!(!at_ceiling.exceeds_unit());
-    let old_ceiling = limits_with(|l| l.fetch_max_bytes = 20 * MIB).worst_case_memory(0);
+    let old_ceiling = limits_with(|l| l.fetch_max_bytes = 20 * MIB)
+        .worst_case_memory(defaults::HTTP_MAX_SESSIONS, 0);
     assert!(old_ceiling.exceeds_unit(), "{old_ceiling:?}");
     // The audit measured 265 to 282 MiB at that setting; the formula says
     // about 325 MiB, on the safe side of the measurement.
@@ -67,12 +68,13 @@ fn req_perf_003_the_new_ceiling_fits_the_unit_and_the_old_one_did_not() {
 /// sessions; and the cache bound counts when the cache is on.
 #[test]
 fn req_perf_003_the_formula_follows_each_setting() {
-    let sixteen = limits_with(|l| l.parsing_in_flight = 16).worst_case_memory(0);
+    let sixteen =
+        limits_with(|l| l.parsing_in_flight = 16).worst_case_memory(defaults::HTTP_MAX_SESSIONS, 0);
     assert!(sixteen.exceeds_unit(), "{sixteen:?}");
-    let sessions = limits_with(|l| l.http_max_sessions = 2048).worst_case_memory(0);
+    let sessions = Limits::default().worst_case_memory(2048, 0);
     assert_eq!(sessions.sessions, 2048 * 60 * 1024);
     assert_eq!(sessions.total_mib(), 119 - 15 + 120);
-    let cache = Limits::default().worst_case_memory(1000 * 32768);
+    let cache = Limits::default().worst_case_memory(defaults::HTTP_MAX_SESSIONS, 1000 * 32768);
     assert_eq!(cache.cache, 1000 * 32768);
     assert_eq!(cache.total_bytes(), 119 * MIB + 1000 * 32768);
     // The estimate rounds up to a whole MiB.

@@ -12,7 +12,6 @@ fn properties() -> EngineProperties {
         max_in_flight: 1,
         cacheable: true,
         attribution_required: false,
-        user_agent: UserAgentFormat::Standard,
         max_response_bytes: 1024,
         scraping: false,
     }

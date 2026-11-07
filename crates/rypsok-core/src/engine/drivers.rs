@@ -138,6 +138,9 @@ pub fn build(
     context: &DriverContext,
 ) -> Result<Box<dyn Driver>, DriverBuildError> {
     let _ = egress::ensure_crypto_provider;
+    // Only some drivers read the credential or the context; with fewer
+    // drivers compiled in, none may.
+    let _ = (secret, context);
     match table.kind.as_str() {
         #[cfg(feature = "engine-wikipedia")]
         "wikipedia" => Ok(Box::new(wikipedia::Wikipedia::new(table, context)?)),
@@ -161,6 +164,11 @@ pub fn is_loopback(url: &url::Url) -> bool {
 }
 
 /// Reads a `Retry-After` header in seconds, when present and sane.
+#[cfg(any(
+    feature = "engine-wikipedia",
+    feature = "engine-brave",
+    feature = "engine-duckduckgo"
+))]
 pub(crate) fn retry_after(headers: &HeaderMap, name: &str) -> Option<Duration> {
     parse_retry_after(headers.get(name)?.to_str().ok()?)
 }
@@ -182,6 +190,11 @@ pub fn parse_retry_after(value: &str) -> Option<Duration> {
 pub const PROVIDER_TEXT_MAX_CHARS: usize = 200;
 
 /// The provider's error body cut to [`PROVIDER_TEXT_MAX_CHARS`].
+#[cfg(any(
+    feature = "engine-wikipedia",
+    feature = "engine-brave",
+    feature = "engine-duckduckgo"
+))]
 pub(crate) fn bounded_provider_text(body: &[u8]) -> String {
     String::from_utf8_lossy(body)
         .chars()
@@ -191,6 +204,11 @@ pub(crate) fn bounded_provider_text(body: &[u8]) -> String {
 
 /// Logs provider error text at `debug`, bounded, and nothing else
 /// (REQ-PRIV-004, REQ-SEC-016; external design §16 I5).
+#[cfg(any(
+    feature = "engine-wikipedia",
+    feature = "engine-brave",
+    feature = "engine-duckduckgo"
+))]
 pub(crate) fn debug_provider_text(kind: &'static str, status: u16, body: &[u8]) {
     let text = bounded_provider_text(body);
     tracing::debug!(event = "provider_error", driver = kind, status, provider_text = %text, "provider answered an error");

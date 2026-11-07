@@ -8,6 +8,16 @@ use super::*;
 use crate::engine::RawResult;
 use crate::privacy::Sensitive;
 
+/// Poisons the lock of `cache` from a thread of its own (REQ-CACHE-006).
+pub(crate) fn poison(cache: &Arc<ResultCache>) {
+    let poisoner = Arc::clone(cache);
+    let _ = std::thread::spawn(move || {
+        let _guard = poisoner.state.lock().unwrap();
+        panic!("poison the cache lock");
+    })
+    .join();
+}
+
 fn settings() -> CacheSettings {
     CacheSettings {
         ttl: Duration::from_secs(300),
@@ -129,12 +139,7 @@ fn req_cache_005_an_answer_above_the_entry_bound_is_not_stored() {
 fn req_cache_006_a_poisoned_lock_disables_the_cache() {
     let cache = Arc::new(ResultCache::new(settings()));
     cache.store(key("local", "rust"), &answer("one")).unwrap();
-    let poisoner = Arc::clone(&cache);
-    let _ = std::thread::spawn(move || {
-        let _guard = poisoner.state.lock().unwrap();
-        panic!("poison the cache lock");
-    })
-    .join();
+    poison(&cache);
     assert_eq!(cache.lookup(&key("local", "rust")), None);
     assert!(cache.is_disabled());
     assert_eq!(
@@ -182,14 +187,9 @@ fn req_cache_005_an_entry_of_exactly_the_bound_is_stored() {
 /// said it was missed).
 #[test]
 fn req_cache_006_the_failure_is_logged_once() {
-    let log = crate::telemetry::routed::capture();
+    let log = crate::telemetry::tests::routed::capture();
     let cache = Arc::new(ResultCache::new(settings()));
-    let poisoner = Arc::clone(&cache);
-    let _ = std::thread::spawn(move || {
-        let _guard = poisoner.state.lock().unwrap();
-        panic!("poison the cache lock");
-    })
-    .join();
+    poison(&cache);
     assert!(
         log.lines().is_empty(),
         "nothing is said before the cache is used"
@@ -237,12 +237,7 @@ async fn req_cache_005_every_lookup_renews_the_entry() {
 fn req_cache_006_a_cache_is_enabled_until_it_fails_and_its_key_hides_the_query() {
     let cache = Arc::new(ResultCache::new(settings()));
     assert!(!cache.is_disabled());
-    let poisoner = Arc::clone(&cache);
-    let _ = std::thread::spawn(move || {
-        let _guard = poisoner.state.lock().unwrap();
-        panic!("poison the cache lock");
-    })
-    .join();
+    poison(&cache);
     assert_eq!(cache.lookup(&key("local", "rust")), None);
     assert!(cache.is_disabled());
 

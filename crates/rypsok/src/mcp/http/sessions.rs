@@ -105,14 +105,6 @@ impl<M> BoundedSessions<M> {
         }
     }
 
-    /// The number of sessions counted: live ones plus creations in flight.
-    /// Read-only, for tests.
-    #[cfg(test)]
-    pub fn live(&self) -> usize {
-        let count = self.lock();
-        count.live.len() + count.pending
-    }
-
     /// The lock, recovered if a thread panicked while holding it: both
     /// fields stay consistent after a panic in these few lines.
     fn lock(&self) -> MutexGuard<'_, Count> {
@@ -257,4 +249,4 @@ impl<M: SessionManager> SessionManager for BoundedSessions<M> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Rust ownership, in short</title>
+<style>nav { display: none }</style>
+</head>
+<body>
+<nav><a href="/">Home</a> <a href="/docs">Docs</a></nav>
+<main>
+<h1>Rust ownership, in short</h1>
+<p>Every value in Rust has one owner. When the owner goes out of scope, the value is dropped. A value can be moved to a new owner, or borrowed for a while by a reference.</p>
+<h2>Borrowing</h2>
+<p>A shared reference lets many readers look at a value at once. A mutable reference lets one writer change it, and nobody else may look while it exists. The compiler checks these rules before the program runs.</p>
+<h2>Why it matters</h2>
+<p>Ownership replaces a garbage collector with rules the compiler enforces, so memory is freed exactly once and data races are impossible in safe code. The rules take time to learn, and the compiler's messages name the conflicting borrow.</p>
+<ul>
+<li>One owner at a time.</li>
+<li>Many readers or one writer.</li>
+<li>Checked at compile time.</li>
+</ul>
+</main>
+<footer><p>Example page for the book. Not a real site.</p></footer>
+</body>
+</html>

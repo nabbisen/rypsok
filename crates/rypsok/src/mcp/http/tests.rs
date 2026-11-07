@@ -11,6 +11,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::*;
+use rypsok_core::limits::defaults::SHUTDOWN_MAX_MS;
 
 const META: &str = "_meta";
 
@@ -660,14 +661,18 @@ async fn req_sec_024_sessions_are_bounded() {
         let (status, session, _, body) = handshake(&s).await;
         assert_eq!(status, 200, "handshake {round}: {body}");
         ids.push(session.expect("a session id"));
-        assert_eq!(s.sessions.live(), round);
+        assert_eq!(sessions::tests::live(&s.sessions), round);
     }
     let (status, session, retry, body) = handshake(&s).await;
     assert_eq!(status, 503, "{body}");
     assert_eq!(session, None, "no session is opened");
     assert_eq!(retry.as_deref(), Some("30"));
     assert_eq!(body, "", "the SDK's own text is not passed on");
-    assert_eq!(s.sessions.live(), 3, "a refusal changes no count");
+    assert_eq!(
+        sessions::tests::live(&s.sessions),
+        3,
+        "a refusal changes no count"
+    );
 
     // The stateless revision keeps no session and is not counted.
     let discover = s
@@ -676,7 +681,7 @@ async fn req_sec_024_sessions_are_bounded() {
         .await
         .unwrap();
     assert_eq!(discover.status(), 200);
-    assert_eq!(s.sessions.live(), 3);
+    assert_eq!(sessions::tests::live(&s.sessions), 3);
 
     // Closing a session frees its slot.
     let closed = s
@@ -688,7 +693,7 @@ async fn req_sec_024_sessions_are_bounded() {
         .unwrap();
     assert!(closed.status().is_success(), "{}", closed.status());
     let waited = std::time::Instant::now();
-    while s.sessions.live() != 2 {
+    while sessions::tests::live(&s.sessions) != 2 {
         assert!(
             waited.elapsed() < Duration::from_secs(5),
             "the slot is freed"
@@ -698,7 +703,7 @@ async fn req_sec_024_sessions_are_bounded() {
     let (status, session, _, body) = handshake(&s).await;
     assert_eq!(status, 200, "{body}");
     assert!(session.is_some());
-    assert_eq!(s.sessions.live(), 3);
+    assert_eq!(sessions::tests::live(&s.sessions), 3);
     s.stop().await;
 }
 
@@ -1959,4 +1964,45 @@ async fn req_obs_005_a_gate_event_names_the_family_of_the_connection() {
     assert_eq!(refused.len(), 1, "{refused:?}");
     assert_eq!(refused[0]["family"], "ipv6");
     s.stop().await;
+}
+
+/// REQ-OPS-002 and REQ-CFG-005 (RFC 020, D-9): the time the listener waits
+/// for its connections to finish at shutdown is `service.shutdown_ms`
+/// (LIM-O1): it is in the settings, and a connection that is still open
+/// when the listener is told to stop does not keep it longer than that.
+#[tokio::test]
+async fn req_ops_002_the_listener_stops_within_the_configured_shutdown_time() {
+    let config = Config::parse(
+        "config_version = 1\n[service]\nshutdown_ms = 600\n[service.http]\nbind = \"127.0.0.1:0\"\n[engines.w]\ntype = \"wikipedia\"\ncategories = [\"general\"]\n",
+    )
+    .unwrap();
+    assert_eq!(
+        HttpSettings::from_config(&config).unwrap().shutdown,
+        Duration::from_millis(600)
+    );
+    let s = Server::start_tuned(
+        "config_version = 1\n[service.http]\nbind = \"127.0.0.1:0\"\n[engines.w]\ntype = \"wikipedia\"\ncategories = [\"general\"]\n",
+        None,
+        |settings| settings.shutdown = Duration::from_millis(600),
+    )
+    .await;
+    // A connection in the middle of a request: the first line and no more.
+    use tokio::io::AsyncWriteExt;
+    let mut open = tokio::net::TcpStream::connect(address(&s)).await.unwrap();
+    open.write_all(b"POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\n")
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let started = std::time::Instant::now();
+    s.shutdown.cancel();
+    let ended = tokio::time::timeout(Duration::from_secs(5), s.task)
+        .await
+        .expect("the listener stops");
+    assert!(ended.unwrap().is_ok());
+    let took = started.elapsed();
+    assert!(
+        took >= Duration::from_millis(500) && took < Duration::from_millis(2500),
+        "stopped after {took:?}, the shutdown time was 600 ms"
+    );
+    drop(open);
 }

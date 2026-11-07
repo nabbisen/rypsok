@@ -100,12 +100,6 @@ impl ComparisonKey {
             None => self.clone(),
         }
     }
-
-    /// The key as text, for tests only.
-    #[cfg(test)]
-    pub(crate) fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
 /// Derives the comparison key (RFC 008, amended by RFC 020 D-8): `https`

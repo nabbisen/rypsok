@@ -69,6 +69,15 @@ jobs:
           mdbook-version: 0.5.4
       - name: Book
         run: mdbook build docs
+      # No engine feature, and each one alone, builds without a warning
+      # (RFC 020, TST-9; RUSTFLAGS has -D warnings). A gate test reads the
+      # manifest and requires a line for every feature.
+      - name: Features alone (RFC 020, TST-9)
+        run: |
+          cargo check -p rypsok-core --no-default-features --all-targets --locked
+          cargo check -p rypsok-core --no-default-features --features engine-wikipedia --all-targets --locked
+          cargo check -p rypsok-core --no-default-features --features engine-brave --all-targets --locked
+          cargo check -p rypsok-core --no-default-features --features engine-duckduckgo --all-targets --locked
 
   semver:
     # The stable contract (RFC 016): from 1.0.0 a breaking change of the

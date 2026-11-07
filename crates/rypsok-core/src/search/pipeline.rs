@@ -240,42 +240,41 @@ async fn run_call(
         // The task runs on another thread of the runtime: it carries the
         // span of the call with it.
         let call = tracing::Span::current();
-        let handle = tasks.spawn(
-            async move {
-                let Ok(_global) =
-                    tokio::time::timeout_at(fan_out_deadline, outbound.acquire_owned()).await
-                else {
-                    return (index, Ended::Skipped(Reason::RateLimited));
-                };
-                let Ok(_permit) = engine.limiter.acquire(fan_out_deadline.into_std()).await else {
-                    return (index, Ended::Skipped(Reason::RateLimited));
-                };
-                let Some(driver) = engine.driver.as_deref() else {
-                    return (index, Ended::Skipped(Reason::Cooldown));
-                };
-                let started = Instant::now();
-                let ended = match tokio::time::timeout(
-                    engine_timeout,
-                    driver.search(&request, child),
-                )
-                .await
-                {
-                    Ok(Ok(response)) => Ended::Answered(response, started.elapsed()),
-                    Ok(Err(error)) => Ended::Failed {
-                        class: error.class,
-                        retry_after: error.retry_after,
-                        latency: Some(started.elapsed()),
-                    },
-                    Err(_) => Ended::Failed {
-                        class: EngineErrorClass::Timeout,
-                        retry_after: None,
-                        latency: None,
-                    },
-                };
-                (index, ended)
-            }
-            .instrument(call),
-        );
+        let handle =
+            tasks.spawn(
+                async move {
+                    let Ok(_global) =
+                        tokio::time::timeout_at(fan_out_deadline, outbound.acquire_owned()).await
+                    else {
+                        return (index, Ended::Skipped(Reason::RateLimited));
+                    };
+                    let Ok(_permit) = engine.limiter.acquire(fan_out_deadline).await else {
+                        return (index, Ended::Skipped(Reason::RateLimited));
+                    };
+                    let Some(driver) = engine.driver.as_deref() else {
+                        return (index, Ended::Skipped(Reason::Cooldown));
+                    };
+                    let started = Instant::now();
+                    let ended =
+                        match tokio::time::timeout(engine_timeout, driver.search(&request, child))
+                            .await
+                        {
+                            Ok(Ok(response)) => Ended::Answered(response, started.elapsed()),
+                            Ok(Err(error)) => Ended::Failed {
+                                class: error.class,
+                                retry_after: error.retry_after,
+                                latency: Some(started.elapsed()),
+                            },
+                            Err(_) => Ended::Failed {
+                                class: EngineErrorClass::Timeout,
+                                retry_after: None,
+                                latency: None,
+                            },
+                        };
+                    (index, ended)
+                }
+                .instrument(call),
+            );
         task_engines.insert(handle.id(), index);
     }
 

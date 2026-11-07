@@ -216,5 +216,6 @@ fn lazy_text(dom: &Dom) -> String {
     }
 }
 
-#[cfg(test)]
+// The fixtures are the DuckDuckGo page; the scraping reader's only driver.
+#[cfg(all(test, feature = "engine-duckduckgo"))]
 mod tests;

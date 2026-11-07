@@ -482,3 +482,19 @@ fn req_perf_003_sessions_count_only_with_legacy_revisions() {
         line(&without)
     );
 }
+
+/// REQ-OPS-001 (RFC 020, D-9): `check` prints the two keys that LIM-S12 and
+/// LIM-O1 became: the connect timeout of an engine request in the `search`
+/// line and the shutdown time in the `service` line, with the effective
+/// values.
+#[test]
+fn req_ops_001_check_prints_the_connect_timeout_and_the_shutdown_time() {
+    let report = all_lines(
+        &report_of(
+            "config_version = 1\n[search]\nconnect_timeout_ms = 250\n[service]\nshutdown_ms = 700\n",
+        )
+        .unwrap(),
+    );
+    assert!(report.contains("connect_timeout_ms=250"), "{report}");
+    assert!(report.contains("shutdown_ms=700"), "{report}");
+}

@@ -11,7 +11,7 @@ use crate::config::{EngineTable, SafeSearch, Secret};
 use crate::egress::{self, BodyError};
 use crate::engine::{
     Driver, EngineError, EngineErrorClass, EngineProperties, EngineRequest, EngineResponse,
-    LanguageSupport, RawResult, TimeRangeSupport, UserAgentFormat,
+    LanguageSupport, RawResult, TimeRangeSupport,
 };
 use crate::model::{Date, TimeRange};
 
@@ -28,7 +28,6 @@ pub const PROPERTIES: EngineProperties = EngineProperties {
     max_in_flight: 2,
     cacheable: false,
     attribution_required: false,
-    user_agent: UserAgentFormat::Standard,
     max_response_bytes: 1_048_576,
     scraping: false,
 };

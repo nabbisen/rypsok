@@ -198,14 +198,6 @@ impl ResultCache {
         Ok(())
     }
 
-    /// Poisons the lock from the calling thread, for tests of
-    /// REQ-CACHE-006: call it on a spawned thread and join.
-    #[cfg(test)]
-    pub(crate) fn poison_for_test(&self) {
-        let _guard = self.state.lock().expect("not yet poisoned");
-        panic!("poisoning the cache lock for a test");
-    }
-
     /// Removes everything (a future configuration reload; external design
     /// §16 I11).
     pub fn clear(&self) {
@@ -246,4 +238,4 @@ pub fn raw_bytes(response: &EngineResponse) -> usize {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

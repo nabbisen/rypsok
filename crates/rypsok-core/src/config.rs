@@ -81,6 +81,8 @@ pub struct ServiceConfig {
     pub structured_content: bool,
     /// Appended to the User-Agent: a URL or an address (REQ-CMP-004).
     pub user_agent_contact: String,
+    /// LIM-O1: the time to exit after the end of input or `SIGTERM`.
+    pub shutdown_ms: u32,
     /// `[service.http]`.
     pub http: HttpConfig,
 }
@@ -90,6 +92,7 @@ impl Default for ServiceConfig {
         ServiceConfig {
             structured_content: true,
             user_agent_contact: String::new(),
+            shutdown_ms: defaults::SHUTDOWN_MAX_MS,
             http: HttpConfig::default(),
         }
     }
@@ -222,6 +225,8 @@ pub struct SearchConfig {
     pub deadline_ms: u32,
     /// LIM-S5.
     pub engine_timeout_ms: u32,
+    /// LIM-S12.
+    pub connect_timeout_ms: u32,
     /// LIM-S6.
     pub reserve_ms: u32,
     /// LIM-S8.
@@ -249,6 +254,7 @@ impl Default for SearchConfig {
             query_max_chars: defaults::QUERY_MAX_CHARS,
             deadline_ms: defaults::SEARCH_DEADLINE_MS,
             engine_timeout_ms: defaults::ENGINE_TIMEOUT_MS,
+            connect_timeout_ms: defaults::ENGINE_CONNECT_TIMEOUT_MS,
             reserve_ms: defaults::SEARCH_RESERVE_MS,
             engines_per_request: defaults::ENGINES_PER_REQUEST,
             results_per_engine: defaults::RESULTS_PER_ENGINE,
@@ -685,6 +691,11 @@ impl Config {
                 "config_version: only {CONFIG_VERSION} is supported"
             ));
         }
+        check(
+            &mut problems,
+            "service.shutdown_ms",
+            self.service.shutdown_ms,
+        );
         let h = &self.service.http;
         match h.bind_address() {
             None => problems.push(
@@ -821,6 +832,11 @@ impl Config {
         );
         check(&mut problems, "search.deadline_ms", s.deadline_ms);
         check(&mut problems, "search.reserve_ms", s.reserve_ms);
+        check(
+            &mut problems,
+            "search.connect_timeout_ms",
+            s.connect_timeout_ms,
+        );
         // One engine request must end before the deadline less the reserve
         // (LIM-S5, LIM-S6); the message names the keys that make the limit
         // (RFC 020, DAT-12).
@@ -1016,14 +1032,13 @@ impl Config {
             snippet_max_chars: self.search.snippet_max_chars,
             title_max_chars: self.search.title_max_chars,
             latency_window: defaults::LATENCY_WINDOW,
-            engine_connect_timeout_ms: defaults::ENGINE_CONNECT_TIMEOUT_MS,
+            engine_connect_timeout_ms: self.search.connect_timeout_ms,
             fetch_max_chars: self.fetch.max_chars,
             fetch_max_chars_ceiling: self.fetch.max_chars_ceiling,
             fetch_max_bytes: self.fetch.max_bytes,
             fetch_deadline_ms: self.fetch.deadline_ms,
             fetch_connect_timeout_ms: self.fetch.connect_timeout_ms,
             fetch_max_redirects: self.fetch.max_redirects,
-            fetch_ports: self.fetch.ports.clone(),
             url_max_chars: defaults::URL_MAX_CHARS,
             html_max_nodes: defaults::HTML_MAX_NODES,
             html_max_depth: defaults::HTML_MAX_DEPTH,
@@ -1038,12 +1053,6 @@ impl Config {
             engine_status_per_minute: self.limits.engine_status_per_minute,
             strict_mode_urls: self.limits.strict_mode_urls,
             robots_cache_entries: self.limits.robots_cache_entries,
-            http_max_connections: self.service.http.max_connections,
-            http_max_request_bytes: self.service.http.max_request_bytes,
-            http_idle_timeout_s: self.service.http.idle_timeout_s,
-            http_max_streams: self.service.http.max_streams,
-            http_request_timeout_s: self.service.http.request_timeout_s,
-            http_max_sessions: self.service.http.max_sessions,
             failures_to_open: self.resilience.failures_to_open,
             first_cooldown_s: self.resilience.first_cooldown_s,
             max_cooldown_s: self.resilience.max_cooldown_s,
@@ -1059,7 +1068,9 @@ impl Config {
         } else {
             0
         };
-        let mut estimate = self.limits().worst_case_memory(cache_bytes);
+        let mut estimate = self
+            .limits()
+            .worst_case_memory(self.service.http.max_sessions, cache_bytes);
         // Sessions exist only for the handshake-based revisions: a
         // configuration is not warned about memory it cannot use (RFC 020,
         // L2 of the 020l review).
@@ -1099,6 +1110,7 @@ impl Config {
 /// the dependent part is checked in `validate`, with a message that names the
 /// other key (DAT-12). Lists are written `key[]`.
 const INTEGER_RANGES: &[(&str, u64, u64)] = &[
+    ("service.shutdown_ms", 500, 10000),
     ("service.http.max_connections", 1, 4096),
     ("service.http.max_request_bytes", 4096, 1_048_576),
     ("service.http.idle_timeout_s", 5, 600),
@@ -1112,6 +1124,7 @@ const INTEGER_RANGES: &[(&str, u64, u64)] = &[
     ("search.deadline_ms", 500, 10000),
     ("search.reserve_ms", 50, 1000),
     ("search.engine_timeout_ms", 100, 10000),
+    ("search.connect_timeout_ms", 200, 5000),
     ("search.engines_per_request", 1, 16),
     ("search.snippet_max_chars", 50, 1000),
     ("search.title_max_chars", 50, 300),

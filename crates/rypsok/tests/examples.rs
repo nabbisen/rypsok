@@ -524,3 +524,31 @@ async fn req_doc_002_documented_curl_gets_200() {
         );
     }
 }
+
+/// REQ-DOC-002 (RFC 020, TST-13): the page behind the fetched answers is in
+/// the repository, the README names it and the script that regenerates the
+/// answers from it, and every file of `pages/` is named in the README.
+#[test]
+fn req_doc_002_the_page_behind_the_fetched_answers_is_kept_and_described() {
+    let readme = std::fs::read_to_string(examples().join("README.md")).unwrap();
+    let pages: Vec<String> = std::fs::read_dir(examples().join("pages"))
+        .expect("examples/pages exists")
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(!pages.is_empty());
+    for page in &pages {
+        assert!(
+            readme.contains(&format!("pages/{page}")),
+            "the README does not name pages/{page}"
+        );
+    }
+    assert!(readme.contains("tools/regenerate-example-answers"));
+    let root = examples().parent().unwrap().to_path_buf();
+    assert!(root.join("tools/regenerate-example-answers").exists());
+    // The page says what the answers say.
+    let html = std::fs::read_to_string(examples().join("pages/rust-ownership.html")).unwrap();
+    let answer = std::fs::read_to_string(examples().join("calls/web-fetch-ok.json")).unwrap();
+    assert!(html.contains("<title>Rust ownership, in short</title>"));
+    assert!(answer.contains("Every value in Rust has one owner."));
+    assert!(html.contains("Every value in Rust has one owner."));
+}
