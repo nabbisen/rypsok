@@ -7,7 +7,9 @@ consume our time and stop all the following work. However, security and
 release stability are very important."
 
 **RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md), section D5.
-**Rules.** As 020q. Evidence goes to `.git-exclude/evidence/020w/`.
+**Rules.** As 020q, plus the per-change check rule of D-23
+(`.git-exclude/rules/rypsok-checks-per-change.md`), which applies to every
+handoff from now on. Evidence goes to `.git-exclude/evidence/020w/`.
 **Depends on.** 020q item 8 (`mutants.toml` and the pinned `cargo-mutants`
 version) and 020s. Do this before 020p: 020p changes the release build, and
 after this handoff that build lives in one place.
