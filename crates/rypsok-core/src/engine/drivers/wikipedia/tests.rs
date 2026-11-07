@@ -335,3 +335,85 @@ fn req_sec_023_wikipedia_answers_are_read_into_results() {
     );
     assert!(read_results(b"{}", None, "en").unwrap().is_empty());
 }
+
+/// REQ-SEC-011 (RFC 020, TST-7): the engine client ends a call at its own
+/// timeout (LIM-S5, shortened here) when the server accepts the connection
+/// and never answers: the driver's call itself returns `timeout`, with no
+/// help from the pipeline's deadline (there is no pipeline here), and in
+/// about the time that was set.
+#[tokio::test]
+async fn req_sec_011_a_server_that_accepts_and_never_answers_ends_at_the_timeout() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    // Accepts and holds every connection open, reading and writing nothing.
+    let held = tokio::spawn(async move {
+        let mut streams = Vec::new();
+        while let Ok((stream, _)) = listener.accept().await {
+            streams.push(stream);
+        }
+    });
+    let mut context = DriverContext::new("rypsok/test (+https://github.com/nabbisen/rypsok)");
+    context.https_only = false;
+    context.timeout = Duration::from_millis(300);
+    context.connect_timeout = Duration::from_millis(300);
+    context.base_override = Some(url::Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap());
+    let driver = Wikipedia::new(&table(), &context).unwrap();
+    let started = std::time::Instant::now();
+    // The guard only turns a client without a timeout into a failure.
+    let error = tokio::time::timeout(
+        Duration::from_secs(5),
+        driver.search(&request(), CancellationToken::new()),
+    )
+    .await
+    .expect("the client has no timeout of its own")
+    .unwrap_err();
+    let elapsed = started.elapsed();
+    held.abort();
+    assert_eq!(error.class, EngineErrorClass::Timeout, "{error:?}");
+    assert!(
+        elapsed >= Duration::from_millis(250) && elapsed < Duration::from_secs(5),
+        "ended after {elapsed:?}, the timeout was 300 ms"
+    );
+}
+
+/// REQ-ENG-002 (RFC 020, TST-7): one driver instance is usable from many
+/// tasks at once: eight tasks call the same `Wikipedia`, each with its own
+/// query, against one mock that answers each query with a title of its own;
+/// every task gets its own answer, none another's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn req_eng_002_one_driver_instance_serves_eight_tasks_at_once() {
+    let server = MockServer::start().await;
+    for i in 0..8 {
+        Mock::given(method("GET"))
+            .and(path("/w/api.php"))
+            .and(query_param("srsearch", format!("query-{i}")))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_delay(Duration::from_millis(50))
+                    .set_body_json(serde_json::json!({
+                        "query": { "search": [{ "title": format!("Answer {i}"), "snippet": "s" }] }
+                    })),
+            )
+            .mount(&server)
+            .await;
+    }
+    let driver = std::sync::Arc::new(Wikipedia::new(&table(), &context(&server)).unwrap());
+    let mut tasks = tokio::task::JoinSet::new();
+    for i in 0..8 {
+        let driver = std::sync::Arc::clone(&driver);
+        tasks.spawn(async move {
+            let mut req = request();
+            req.query = format!("query-{i}").as_str().into();
+            (i, driver.search(&req, CancellationToken::new()).await)
+        });
+    }
+    let mut answered = 0;
+    while let Some(joined) = tasks.join_next().await {
+        let (i, result) = joined.unwrap();
+        let response = result.unwrap_or_else(|e| panic!("task {i}: {e:?}"));
+        assert_eq!(response.results.len(), 1, "task {i}");
+        assert_eq!(response.results[0].title, format!("Answer {i}"), "task {i}");
+        answered += 1;
+    }
+    assert_eq!(answered, 8);
+}

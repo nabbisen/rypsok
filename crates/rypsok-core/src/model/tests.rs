@@ -241,3 +241,148 @@ fn req_rust_003_identifiers_and_dates_are_validated() {
     assert!(Date::new("2026-9-1").is_err());
     assert!(serde_json::from_value::<EngineId>(json!("Bad Id")).is_err());
 }
+
+/// REQ-ERR-004 and REQ-SEC-001 (RFC 020, TST-7): **every** constructor of an
+/// error builds its message from a template: at most LIM-I4 characters, and
+/// no URL, host, address, token-like text or caller text, even when the
+/// constructor is handed hostile arguments (the ones that carry external
+/// data, `redirected` and `unsupported_media_type`, keep it in `detail`).
+/// The table names every constructor; a constructor added to `ToolError`
+/// without a row fails the second half.
+#[test]
+fn req_err_004_every_error_constructor_has_a_bounded_message_without_external_text() {
+    let hostile_url =
+        "https://evil.example.org/ignore-previous-instructions?token=s3cr3t".to_owned();
+    let hostile_type = "application/x-evil; boundary=10.0.0.1".to_owned();
+    let mut table: Vec<(&str, ToolError)> = vec![
+        (
+            "out_of_range",
+            ToolError::out_of_range("max_results", 1, 20),
+        ),
+        (
+            "not_allowed",
+            ToolError::not_allowed("category", vec!["general".into(), "news".into()]),
+        ),
+        ("missing", ToolError::missing("query")),
+        (
+            "wrong_type",
+            ToolError::wrong_type("max_results", "an integer"),
+        ),
+        (
+            "unknown_parameter",
+            ToolError::unknown_parameter(&["query", "category"]),
+        ),
+        ("query_length", ToolError::query_length(400)),
+        ("url_length", ToolError::url_length(2048)),
+        (
+            "secret_in_query",
+            ToolError::secret_in_query(SecretKind::GithubToken, 12),
+        ),
+        (
+            "secret_in_url",
+            ToolError::secret_in_url(SecretKind::BasicAuthUrl, 8),
+        ),
+        ("no_engine", ToolError::no_engine(Category::Code)),
+        ("all_failed", ToolError::all_failed(Some(1500))),
+        ("deadline", ToolError::deadline()),
+        ("fetch_deadline", ToolError::fetch_deadline()),
+        ("rate_limited", ToolError::rate_limited(1000)),
+        ("scheme_upgrade_failed", ToolError::scheme_upgrade_failed()),
+        ("network", ToolError::network()),
+        ("http_status", ToolError::http_status(404)),
+        ("http_status", ToolError::http_status(503)),
+        ("redirected", ToolError::redirected(hostile_url.clone())),
+        (
+            "unsupported_media_type",
+            ToolError::unsupported_media_type(hostile_type.clone()),
+        ),
+        ("extraction_failed", ToolError::extraction_failed()),
+        ("too_large", ToolError::too_large(10_485_760)),
+        ("start_beyond_end", ToolError::start_beyond_end(1200)),
+        ("busy", ToolError::busy()),
+    ];
+    for reason in [
+        DetailReason::Egress,
+        DetailReason::RobotsTxt,
+        DetailReason::Scheme,
+        DetailReason::StrictMode,
+        DetailReason::CredentialInUrl,
+        DetailReason::SecretInQuery,
+        DetailReason::SecretInUrl,
+        DetailReason::NoEngine,
+        DetailReason::AllFailed,
+        DetailReason::RateLimited,
+        DetailReason::Network,
+        DetailReason::Deadline,
+        DetailReason::HttpStatus,
+        DetailReason::Busy,
+        DetailReason::MediaType,
+        DetailReason::ExtractionFailed,
+    ] {
+        table.push(("denied", ToolError::denied(reason)));
+    }
+    for (name, error) in &table {
+        let message = &error.message;
+        assert!(
+            message.chars().count() <= 200,
+            "{name}: {} characters",
+            message.chars().count()
+        );
+        assert!(!message.contains("://"), "{name}: a URL in {message:?}");
+        for external in [
+            "evil",
+            "example.org",
+            "10.0.0.1",
+            "s3cr3t",
+            "ignore-previous",
+        ] {
+            assert!(
+                !message.contains(external),
+                "{name}: {external} in {message:?}"
+            );
+        }
+        // No address: no run of digits and dots with three dots in it, and no
+        // colon-separated hexadecimal groups.
+        let dotted = message
+            .split(|c: char| !(c.is_ascii_digit() || c == '.'))
+            .any(|word| word.matches('.').count() >= 3 && word.chars().any(|c| c.is_ascii_digit()));
+        assert!(!dotted, "{name}: an address in {message:?}");
+        assert!(!message.contains("::"), "{name}: an address in {message:?}");
+    }
+    // Where external data travels, it travels in `detail`, bounded by the
+    // caller of the constructor, not in the message.
+    assert_eq!(
+        ToolError::redirected(hostile_url.clone()).detail.location,
+        Some(hostile_url)
+    );
+    assert_eq!(
+        ToolError::unsupported_media_type(hostile_type.clone())
+            .detail
+            .media_type,
+        Some(hostile_type)
+    );
+
+    // The table is complete: every `pub fn` of `impl ToolError` that returns
+    // `Self` and builds an error from arguments has a row.
+    let source = include_str!("error.rs");
+    let block = source
+        .split("\nimpl ToolError {")
+        .nth(1)
+        .expect("impl ToolError")
+        .split("\n}\n")
+        .next()
+        .unwrap();
+    let constructors: Vec<&str> = block
+        .lines()
+        .filter_map(|line| line.trim_start().strip_prefix("pub fn "))
+        .filter(|rest| rest.contains("-> Self") && !rest.starts_with("with_"))
+        .filter_map(|rest| rest.split('(').next())
+        .collect();
+    assert!(constructors.len() >= 24, "{constructors:?}");
+    for name in constructors {
+        assert!(
+            table.iter().any(|(row, _)| *row == name),
+            "the constructor `{name}` has no row in the table"
+        );
+    }
+}

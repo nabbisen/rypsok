@@ -563,6 +563,82 @@ async fn req_fetch_008_media_types() {
     assert_eq!(text.title, "");
 }
 
+/// REQ-PAGE-005 (RFC 020, TST-7): the media type is taken from the response
+/// header, and sniffing only tells HTML from text when there is no type:
+/// a declared `text/plain` stays text although the body is HTML; a declared
+/// type that cannot be extracted is refused although the body looks like
+/// HTML; an undeclared body is HTML if it opens like a page and text
+/// otherwise, never a third type.
+#[tokio::test]
+async fn req_page_005_the_header_decides_and_sniffing_only_tells_html_from_text() {
+    let h = harness().await;
+    let mount = |name: &'static str, template: ResponseTemplate| {
+        let server = &h.server;
+        async move {
+            Mock::given(method("GET"))
+                .and(path(name))
+                .respond_with(template)
+                .mount(server)
+                .await;
+        }
+    };
+    // Declared text, body HTML: it is text, the markup is content.
+    mount(
+        "/declared-text",
+        ResponseTemplate::new(200).set_body_raw(ARTICLE.as_bytes().to_vec(), "text/plain"),
+    )
+    .await;
+    let text = h.fetch(&h.url("/declared-text")).await.unwrap();
+    assert_eq!(text.title, "", "no title is extracted from text");
+    assert!(
+        text.content.contains("<main>"),
+        "the markup is returned as text"
+    );
+
+    // Declared PDF, body HTML: the header decides.
+    mount(
+        "/declared-pdf",
+        ResponseTemplate::new(200).set_body_raw(ARTICLE.as_bytes().to_vec(), "application/pdf"),
+    )
+    .await;
+    let error = h.fetch(&h.url("/declared-pdf")).await.unwrap_err();
+    assert_eq!(error.kind, ErrorKind::UnsupportedContent);
+    assert_eq!(error.detail.media_type.as_deref(), Some("application/pdf"));
+
+    // Declared XHTML is HTML.
+    mount(
+        "/xhtml",
+        ResponseTemplate::new(200)
+            .set_body_raw(ARTICLE.as_bytes().to_vec(), "application/xhtml+xml"),
+    )
+    .await;
+    assert_eq!(h.fetch(&h.url("/xhtml")).await.unwrap().title, "Hello");
+
+    // Undeclared: HTML if it opens like a page, text otherwise; a body that
+    // opens like a PDF is text, not an unsupported type.
+    mount(
+        "/untyped-html",
+        ResponseTemplate::new(200).set_body_bytes(ARTICLE.as_bytes().to_vec()),
+    )
+    .await;
+    assert_eq!(
+        h.fetch(&h.url("/untyped-html")).await.unwrap().title,
+        "Hello"
+    );
+    mount(
+        "/untyped-pdf",
+        ResponseTemplate::new(200).set_body_bytes(b"%PDF-1.4 plain words after the magic".to_vec()),
+    )
+    .await;
+    let sniffed = h.fetch(&h.url("/untyped-pdf")).await.unwrap();
+    assert_eq!(sniffed.title, "");
+    assert!(
+        sniffed.content.starts_with("%PDF-1.4"),
+        "{}",
+        sniffed.content
+    );
+}
+
 /// REQ-PAGE-003, REQ-PAGE-004 and REQ-SEC-013: a body larger than LIM-F3
 /// after decompression ends the call with `too_large` at the bound, whether
 /// declared or streamed.

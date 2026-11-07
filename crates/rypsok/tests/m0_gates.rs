@@ -329,6 +329,92 @@ fn req_sec_023_every_fuzz_target_runs_240_s_within_a_matching_limit() {
     );
 }
 
+/// REQ-SEC-005 (RFC 020, TST-7): every request `rypsok-core` makes is sent on
+/// a client that `egress.rs` built. In non-test code, no HTTP client is built
+/// anywhere else (`Client::builder`, `ClientBuilder`, `Client::new`,
+/// `reqwest::get`, the blocking client), and `.send()` appears in the five
+/// places that use `engine_client` or `agent_client`, once each; a new send
+/// site is a change to this list, which is a change a reviewer reads.
+#[test]
+fn req_sec_005_every_request_is_sent_on_a_client_egress_built() {
+    let root = repository_root();
+    let src = root.join("crates/rypsok-core/src");
+    let mut files = Vec::new();
+    let mut stack = vec![src.clone()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                files.push(path);
+            }
+        }
+    }
+    assert!(files.len() > 40, "{} source files found", files.len());
+
+    // File -> (the egress constructor the file uses or is handed a client
+    // from, the number of `.send()` it holds).
+    let allowed: [(&str, &str, usize); 5] = [
+        ("engine/drivers/wikipedia.rs", "egress::engine_client(", 1),
+        ("engine/drivers/brave.rs", "egress::engine_client(", 1),
+        ("engine/drivers/duckduckgo.rs", "egress::engine_client(", 1),
+        ("fetch.rs", "agent_client", 1),
+        // The robots.txt read is handed the agent client of the fetch
+        // service, which `fetch.rs` builds with `agent_client`.
+        ("fetch/robots.rs", "client: &reqwest::Client", 1),
+    ];
+    let builders = [
+        "Client::builder",
+        "ClientBuilder",
+        "Client::new",
+        "reqwest::get(",
+        "reqwest::blocking",
+    ];
+    let mut problems = Vec::new();
+    let mut sends = 0;
+    for path in files {
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        if name == "tests.rs" || name.starts_with("tests_") {
+            continue;
+        }
+        let relative = path
+            .strip_prefix(&src)
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        let text = std::fs::read_to_string(&path).unwrap();
+        let code = without_test_module(&text);
+        if relative != "egress.rs" {
+            for builder in builders {
+                if code.contains(builder) {
+                    problems.push(format!("{relative}: builds a client with `{builder}`"));
+                }
+            }
+        }
+        let count = code.matches(".send()").count();
+        sends += count;
+        match allowed.iter().find(|(file, _, _)| *file == relative) {
+            Some((_, constructor, expected)) => {
+                if count != *expected {
+                    problems.push(format!(
+                        "{relative}: {count} `.send()`, expected {expected}"
+                    ));
+                }
+                if !code.contains(constructor) {
+                    problems.push(format!("{relative}: does not use `{constructor}`"));
+                }
+            }
+            None if count > 0 => {
+                problems.push(format!("{relative}: {count} `.send()` in an unlisted file"))
+            }
+            None => {}
+        }
+    }
+    assert_eq!(sends, 5, "the number of send sites");
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
+}
+
 /// RFC 020 (DEP-3, DEP-5, DEP-13): no tool is installed at a moving version
 /// and the release compiler is a named one.
 #[test]
