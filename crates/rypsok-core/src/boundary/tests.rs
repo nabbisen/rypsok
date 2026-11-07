@@ -670,3 +670,57 @@ fn req_sec_015_the_emoji_range_table_equals_the_unicode_property() {
         &differences[..differences.len().min(10)]
     );
 }
+
+// --- Mutants the audit run left alive (RFC 020, TST-7) ----------------------
+
+/// REQ-FETCH-005: a start at or beyond the end of the content is an error
+/// that states the length, also for an empty page (start 0 of nothing is
+/// fine, start 5 of nothing is not); mutants of the empty-page exception
+/// were missed.
+#[test]
+fn req_fetch_005_a_start_beyond_an_empty_page_is_an_error() {
+    let empty = clean_content("", 0, 100).unwrap();
+    assert_eq!(empty.total_chars, 0);
+    assert!(empty.text.is_empty() && !empty.truncated);
+    let blank = clean_content("  \n \n", 0, 100).unwrap();
+    assert_eq!(blank.total_chars, 0);
+    assert_eq!(
+        clean_content("", 5, 100).unwrap_err(),
+        StartBeyondEnd { total_chars: 0 }
+    );
+    assert_eq!(
+        clean_content("abc", 3, 100).unwrap_err(),
+        StartBeyondEnd { total_chars: 3 }
+    );
+    assert!(clean_content("abc", 2, 100).is_ok());
+}
+
+/// REQ-SEC-015 and REQ-OBS-005: the count of characters removed from a
+/// result is the title's and the snippet's together (a mutant that
+/// subtracted them was missed).
+#[test]
+fn req_sec_015_removed_characters_of_a_result_add_up() {
+    let (_, effects) = make_result(
+        "a\u{200B}b\u{200B}c",
+        "d\u{200B}e",
+        "https://example.org/".to_owned(),
+        None,
+        None,
+        150,
+        300,
+    );
+    assert_eq!(
+        effects.characters_removed, 3,
+        "two in the title, one in the snippet"
+    );
+    let (_, none) = make_result(
+        "title",
+        "snippet",
+        "https://example.org/".to_owned(),
+        None,
+        None,
+        150,
+        300,
+    );
+    assert_eq!(none.characters_removed, 0);
+}

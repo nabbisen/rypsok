@@ -54,3 +54,70 @@ async fn req_sec_022_writes_pass_through_the_replay() {
     client.read_exact(&mut got).await.unwrap();
     assert_eq!(&got, b"answer");
 }
+
+/// What the wrapped stream was asked to do.
+#[derive(Default)]
+struct Recorder {
+    flushed: usize,
+    shut_down: usize,
+    vectored: bool,
+}
+
+impl AsyncRead for Recorder {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        _: &mut Context<'_>,
+        _: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+}
+
+impl AsyncWrite for Recorder {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        _: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Poll::Ready(Ok(buf.len()))
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.flushed += 1;
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.shut_down += 1;
+        Poll::Ready(Ok(()))
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.vectored
+    }
+}
+
+/// REQ-SEC-022 (G1, RFC 020 TST-7): the replay passes writes, flushes,
+/// shutdowns and the vectored-write capability on to the wrapped stream; a
+/// wrapper that answered for itself would leave a buffered TLS or proxy
+/// stream unflushed (mutants of the three were missed: the TCP stream the
+/// product wraps has nothing to flush).
+#[tokio::test]
+async fn req_sec_022_the_replay_passes_flush_shutdown_and_vectoring_to_the_stream() {
+    for vectored in [true, false] {
+        let mut replay = Replay::new(
+            Vec::new(),
+            Recorder {
+                vectored,
+                ..Default::default()
+            },
+        );
+        assert_eq!(replay.is_write_vectored(), vectored);
+        replay.write_all(b"x").await.unwrap();
+        replay.flush().await.unwrap();
+        replay.flush().await.unwrap();
+        replay.shutdown().await.unwrap();
+        assert_eq!(replay.inner.flushed, 2, "every flush reaches the stream");
+        assert_eq!(replay.inner.shut_down, 1, "the shutdown reaches the stream");
+    }
+}

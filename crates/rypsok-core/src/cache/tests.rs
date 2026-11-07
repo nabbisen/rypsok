@@ -206,3 +206,51 @@ fn req_cache_006_the_failure_is_logged_once() {
     assert_eq!(lines[0]["level"], "WARN");
     assert_eq!(lines[0]["reason"], "poisoned");
 }
+
+/// REQ-CACHE-005 (LIM-K3, RFC 020 TST-7): a lookup moves the entry to the
+/// most recent place, and does it every time: after `a` is used the order of
+/// the others is `b`, `c`, and after `d` and `e` arrive the oldest two are
+/// gone in that order (a mutant that left the use counter where it was
+/// survived the one-eviction test).
+#[tokio::test(start_paused = true)]
+async fn req_cache_005_every_lookup_renews_the_entry() {
+    let cache = ResultCache::new(settings());
+    for q in ["a", "b", "c"] {
+        cache.store(key("local", q), &answer(q)).unwrap();
+    }
+    assert!(cache.lookup(&key("local", "a")).is_some());
+    cache.store(key("local", "d"), &answer("d")).unwrap();
+    cache.store(key("local", "e"), &answer("e")).unwrap();
+    assert_eq!(cache.len(), 3);
+    // `b` went first, `c` second; `a`, used after both arrived, is still here.
+    assert!(cache.lookup(&key("local", "b")).is_none());
+    assert!(cache.lookup(&key("local", "c")).is_none());
+    assert!(cache.lookup(&key("local", "a")).is_some());
+    assert!(cache.lookup(&key("local", "d")).is_some());
+    assert!(cache.lookup(&key("local", "e")).is_some());
+}
+
+/// REQ-CACHE-006 and REQ-PRIV-004: a healthy cache is not disabled, a failed
+/// one is; a key prints its type, its caller and its engine and hides the
+/// query (mutants of `is_disabled` and of the key's `Debug` were missed).
+#[test]
+fn req_cache_006_a_cache_is_enabled_until_it_fails_and_its_key_hides_the_query() {
+    let cache = Arc::new(ResultCache::new(settings()));
+    assert!(!cache.is_disabled());
+    let poisoner = Arc::clone(&cache);
+    let _ = std::thread::spawn(move || {
+        let _guard = poisoner.state.lock().unwrap();
+        panic!("poison the cache lock");
+    })
+    .join();
+    assert_eq!(cache.lookup(&key("local", "rust")), None);
+    assert!(cache.is_disabled());
+
+    let printed = format!("{:?}", key("alpha", "a-private-query"));
+    assert!(printed.starts_with("CacheKey"), "{printed}");
+    assert!(
+        printed.contains("alpha") && printed.contains("[redacted]"),
+        "{printed}"
+    );
+    assert!(!printed.contains("a-private-query"), "{printed}");
+}

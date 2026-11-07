@@ -26,6 +26,13 @@ exclude_re = [
     # `bytes.get(i + 2)` is `None` and the escape is not read either way.
     'normalize\.rs:164:52: replace < with <= in normalize_percent',
 
+    # `contains(&c) || c == '\u{00AD}'`: the tag characters (U+E0000 to
+    # U+E007F) and the soft hyphen are format characters or unassigned, and
+    # the general-category test on the next lines removes those anyway; the
+    # explicit test names them for the reader. `&&` is never true, and the
+    # category test gives the same answer.
+    'boundary\.rs:529:49: replace \|\| with && in is_removed',
+
     # Two observations with the same standing (rank, preference and engine
     # index) would be one engine's result at one rank twice; ranks within an
     # engine are unique, so a tie in `merge` cannot happen.

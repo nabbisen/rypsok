@@ -558,9 +558,16 @@ proptest! {
         host in "[a-z0-9]{1,8}(\\.[a-z0-9]{1,8}){1,3}",
         deny_it in any::<bool>(),
     ) {
-        // A name whose last label is all digits is not a rule (it is a
-        // malformed address); then nothing is denied by rule.
-        let rule = if deny_it { parse_rule(&host).ok() } else { None };
+        // A name whose last label is all digits is not a host rule: four
+        // all-digit labels are an address (`0.0.0.0`), which is a network
+        // rule and never matches a name; then nothing is denied by rule.
+        let rule = if deny_it {
+            parse_rule(&host)
+                .ok()
+                .filter(|rule| matches!(rule, Rule::Host(_)))
+        } else {
+            None
+        };
         let denied = rule.is_some();
         let deny = rule.into_iter().collect();
         let p = EgressPolicy::new(Vec::new(), deny, false, vec![443]);
@@ -704,5 +711,25 @@ fn req_test_005_only_a_curable_trailing_dot_gets_the_dot_message() {
         problems[1].contains("not a network in CIDR notation"),
         "{}",
         problems[1]
+    );
+}
+
+/// REQ-SEC-006 (RFC 020, TST-7): a deny rule that is an address is a network
+/// rule: it denies that address, and the name `0.0.0.0` is judged as a name,
+/// not denied by it. (The property test above once generated `0.0.0.0` as a
+/// host and expected the rule to deny the name; the audit's mutation runs
+/// saw it fail, and every later mutant in the same scratch tree with it.)
+#[test]
+fn req_sec_006_an_address_deny_rule_is_a_network_rule_not_a_host_rule() {
+    let rule = parse_rule("0.0.0.0").unwrap();
+    assert!(matches!(rule, Rule::Network(_)));
+    let p = EgressPolicy::new(Vec::new(), vec![rule], false, vec![443]);
+    assert!(p.judge_name("0.0.0.0").is_ok(), "judged as a name");
+    assert_eq!(
+        p.judge_address(
+            &Host::Ip("0.0.0.0".parse().unwrap()),
+            "0.0.0.0".parse().unwrap()
+        ),
+        Err(Denial::Address)
     );
 }
