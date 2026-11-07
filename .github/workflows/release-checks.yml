@@ -1,0 +1,211 @@
+name: Release checks
+
+# Everything that is too slow or too deep for every push runs here, once,
+# on the commit that is about to be tagged (RFC 020, D-23; handoff 020w):
+#
+#   reproducible, reproducible-compare  two builds of every release target
+#                                       and the comparison of their binaries
+#   fuzz                                every fuzz target, 300 s each
+#   mutants                             mutation testing of the six security
+#                                       modules against .cargo/mutants.toml
+#   external                            the live driver checks and the
+#                                       advisory check
+#
+# There is no timer: the workflow is dispatched by hand, from `main`, at the
+# release commit (Actions, Release checks, Run workflow), and the release is
+# tagged on the commit the run checked (its head_sha). A job that is red is a
+# No-Go until fixed or explained as docs/src/maintainers/checks.md says.
+#
+# Why the caps: a runner pool is shared. At most 12 jobs of this workflow run
+# at once (reproducible 3 + fuzz 4 + mutants 3 + the 2 of external-checks.yml;
+# the comparison runs after the builds, not beside them), which leaves room
+# for CI's own jobs, so a push during the release checks is not queued behind
+# them.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-checks
+  cancel-in-progress: false
+
+jobs:
+  reproducible:
+    name: Build ${{ matrix.target }} (${{ matrix.build }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        target: [x86_64-unknown-linux-musl, aarch64-apple-darwin, x86_64-pc-windows-msvc]
+        build: [a, b]
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            # As in release.yml: without /Brepro two builds of one commit differ.
+            rustflags: -C link-arg=/Brepro
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: ./.github/actions/build-release
+        with:
+          target: ${{ matrix.target }}
+          rustflags: ${{ matrix.rustflags }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: repro-${{ matrix.target }}-${{ matrix.build }}
+          path: |
+            rypsok-*.tar.gz
+            rypsok-*.zip
+          if-no-files-found: error
+
+  reproducible-compare:
+    name: Compare the two builds
+    needs: reproducible
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: repro-*
+          path: repro
+      - name: SHA-256 of the unpacked binaries
+        run: |
+          set -euo pipefail
+          # The archives differ in their own timestamps: the binaries are compared.
+          failed=0
+          {
+            echo "### Reproducibility of the release builds"
+            echo
+            echo "| Target | Build a | Build b | Same |"
+            echo "|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for first in repro/repro-*-a; do
+            target="${first#repro/repro-}"
+            target="${target%-a}"
+            for build in a b; do
+              unpacked="unpacked/$target-$build"
+              mkdir -p "$unpacked"
+              case "$target" in
+                *windows*)
+                  unzip -q "repro/repro-$target-$build"/rypsok-*.zip -d "$unpacked"
+                  binary=rypsok.exe ;;
+                *)
+                  tar -xzf "repro/repro-$target-$build"/rypsok-*.tar.gz -C "$unpacked"
+                  binary=rypsok ;;
+              esac
+              sum="$(sha256sum "$unpacked"/rypsok-*/"$binary" | cut -d ' ' -f 1)"
+              if [ "$build" = a ]; then hash_a="$sum"; else hash_b="$sum"; fi
+            done
+            if [ "$hash_a" = "$hash_b" ]; then same=yes; else same=NO; failed=1; fi
+            echo "| $target | \`${hash_a:0:16}\` | \`${hash_b:0:16}\` | $same |" >> "$GITHUB_STEP_SUMMARY"
+            echo "$target: $hash_a $hash_b $same"
+          done
+          exit "$failed"
+
+  fuzz:
+    name: Fuzz ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        target: [charset_decode, clean_content, clean_decoded_text, clean_text, config_parse, engine_json, headers, html_document, judge_url, parse_rule, privacy_check, returned_url, robots_txt, scrape_read]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-27
+        with:
+          toolchain: nightly
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: cargo-fuzz@0.13.2
+      - name: Build the target
+        working-directory: fuzz
+        # The runner's default target may be musl, where the sanitizer
+        # cannot link statically; name the host target.
+        run: cargo +nightly fuzz build --target x86_64-unknown-linux-gnu ${{ matrix.target }}
+      - name: Run it for 300 s from its corpus
+        working-directory: fuzz
+        run: cargo +nightly fuzz run --target x86_64-unknown-linux-gnu ${{ matrix.target }} -- -max_total_time=300 -rss_limit_mb=2048 -timeout=30
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: fuzz/artifacts
+          if-no-files-found: ignore
+
+  mutants:
+    name: Mutate ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - name: egress-policy
+            files: --file crates/rypsok-core/src/egress/policy.rs
+          - name: privacy
+            files: --file crates/rypsok-core/src/privacy.rs
+          - name: boundary
+            files: --file crates/rypsok-core/src/boundary.rs
+          - name: robots
+            files: --file crates/rypsok-core/src/fetch/robots.rs
+          - name: http
+            files: --file crates/rypsok/src/mcp/http.rs --file crates/rypsok/src/mcp/http/detect.rs
+          - name: sessions
+            files: --file crates/rypsok/src/mcp/http/sessions.rs
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-27
+        with:
+          toolchain: stable
+      - name: The mutation tool, at the version the exclusion list was made with
+        run: cargo install cargo-mutants --version 27.1.0 --locked
+      - name: Disk before
+        run: df -h . /tmp
+      - name: Mutate
+        env:
+          # A failing case of a property test must not be replayed in every
+          # later mutant of the run (RFC 020, 020q).
+          PROPTEST_DISABLE_FAILURE_PERSISTENCE: "1"
+        run: |
+          set +e
+          cargo mutants --jobs 2 --timeout-multiplier 4 --minimum-test-timeout 60 --no-shuffle ${{ matrix.files }} --output mutants-out
+          code=$?
+          set -e
+          dir=mutants-out/mutants.out
+          count() { if [ -f "$dir/$1.txt" ]; then wc -l < "$dir/$1.txt"; else echo 0; fi; }
+          {
+            echo "### Mutation testing: ${{ matrix.name }}"
+            echo
+            echo "caught $(count caught), missed $(count missed), unviable $(count unviable), timeout $(count timeout)"
+            if [ -s "$dir/missed.txt" ]; then echo; echo "Missed:"; sed 's/^/- /' "$dir/missed.txt"; fi
+            if [ -s "$dir/timeout.txt" ]; then echo; echo "Timed out (counted as caught):"; sed 's/^/- /' "$dir/timeout.txt"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          # cargo-mutants exits 0 when all are caught, 2 when a mutant was
+          # missed, 3 when only timeouts happened (caught), and 1 or 4 for a
+          # usage error or a baseline that fails. Red unless 0 or 3.
+          case "$code" in
+            0|3) exit 0 ;;
+            2) echo "::error::a mutant was missed"; exit 1 ;;
+            *) echo "::error::cargo mutants exited with $code"; exit 1 ;;
+          esac
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: mutants-out-${{ matrix.name }}
+          path: mutants-out
+          if-no-files-found: ignore
+
+  external:
+    name: External checks
+    uses: ./.github/workflows/external-checks.yml
+    secrets: inherit

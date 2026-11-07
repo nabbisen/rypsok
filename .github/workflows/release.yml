@@ -38,55 +38,14 @@ jobs:
             # Without /Brepro the linker writes a timestamp into the PE
             # header and two builds of one commit differ (RFC 020, DEP-4).
             rustflags: -C link-arg=/Brepro
-    env:
-      TARGET: ${{ matrix.target }}
-      # Empty on the other targets: no flags, as before.
-      RUSTFLAGS: ${{ matrix.rustflags }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-27
+      # The build, with the named compiler, is one local action that the
+      # release checks use as well (RFC 020, D-23).
+      - uses: ./.github/actions/build-release
         with:
-          # A named compiler, not `stable`: the binaries of a release are
-          # built by the compiler the notes name (RFC 020, DEP-3). Bump it
-          # as the first step of a release (docs/src/maintainers/releasing.md).
-          toolchain: 1.99.1
-          targets: ${{ matrix.target }}
-      - name: C toolchain for the static Linux build
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - name: Compiler and flags
-        run: |
-          rustc --version
-          echo "RUSTFLAGS=[$RUSTFLAGS]"
-        shell: bash
-      - name: Build
-        run: cargo build --release --locked -p rypsok --target "$TARGET"
-        shell: bash
-      - name: Smoke test
-        run: |
-          binary="target/$TARGET/release/rypsok"
-          [ -f "$binary.exe" ] && binary="$binary.exe"
-          "$binary" --version
-        shell: bash
-      - name: Version
-        run: echo "VERSION=$(sed -n 's/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -n 1)" >> "$GITHUB_ENV"
-        shell: bash
-      - name: Package (Linux, macOS)
-        if: runner.os != 'Windows'
-        run: |
-          name="rypsok-$VERSION-$TARGET"
-          mkdir "$name"
-          cp "target/$TARGET/release/rypsok" LICENSE NOTICE "$name/"
-          tar -czf "$name.tar.gz" "$name"
-        shell: bash
-      - name: Package (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          $name = "rypsok-$env:VERSION-$env:TARGET"
-          New-Item -ItemType Directory $name | Out-Null
-          Copy-Item "target/$env:TARGET/release/rypsok.exe", "LICENSE", "NOTICE" $name
-          Compress-Archive -Path $name -DestinationPath "$name.zip"
-        shell: pwsh
+          target: ${{ matrix.target }}
+          rustflags: ${{ matrix.rustflags }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: archive-${{ matrix.target }}

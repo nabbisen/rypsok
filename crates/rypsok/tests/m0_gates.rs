@@ -256,21 +256,39 @@ fn req_sec_020_every_workflow_declares_least_permissions() {
     }
 }
 
-/// RFC 020 (DEP-7): a failed scheduled run fails (GitHub notifies the owner)
-/// and a Brave check that cannot run says so.
+/// RFC 020 (DEP-7; D-23): the external checks (the live driver checks and
+/// the advisory check) run on dispatch or when another workflow calls them,
+/// never on a timer; a failed run fails (GitHub tells whoever started it) and
+/// a Brave check that cannot run says so.
 #[test]
-fn req_test_003_scheduled_checks_fail_loudly_and_say_when_they_skip() {
-    let scheduled = workflow("scheduled.yml");
-    assert!(
-        scheduled.find_all("continue-on-error").is_empty(),
-        "scheduled.yml: a failed run must fail"
+fn req_test_003_external_checks_run_on_demand_fail_loudly_and_say_when_they_skip() {
+    let external = workflow("external-checks.yml");
+    let triggers: Vec<&str> = external
+        .get("on")
+        .expect("triggers")
+        .entries()
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .collect();
+    assert_eq!(
+        triggers,
+        ["workflow_dispatch", "workflow_call"],
+        "external-checks.yml runs on dispatch and on call, nothing else"
     );
-    let ids: Vec<&str> = jobs(&scheduled).iter().map(|(id, _)| id.as_str()).collect();
-    assert_eq!(ids, ["fuzz", "live-checks"], "two independent jobs");
-    for (id, body) in jobs(&scheduled) {
+    assert!(
+        external.find_all("continue-on-error").is_empty(),
+        "external-checks.yml: a failed run must fail"
+    );
+    let ids: Vec<&str> = jobs(&external).iter().map(|(id, _)| id.as_str()).collect();
+    assert_eq!(ids, ["live-checks", "advisories"], "two independent jobs");
+    for (id, body) in jobs(&external) {
         assert!(body.get("needs").is_none(), "job `{id}` waits for no other");
+        assert!(
+            body.get("timeout-minutes").is_some(),
+            "job `{id}` has a time limit"
+        );
     }
-    let steps = scheduled.at(&["jobs", "live-checks", "steps"]).unwrap();
+    let steps = external.at(&["jobs", "live-checks", "steps"]).unwrap();
     let position = |needle: &str| {
         steps.items().iter().position(|step| {
             step.get("run")
@@ -291,41 +309,438 @@ fn req_test_003_scheduled_checks_fail_loudly_and_say_when_they_skip() {
         run.contains("Brave check skipped: no key") && run.contains("GITHUB_STEP_SUMMARY"),
         "it writes the skip to the step summary"
     );
+    // The advisory check: cargo-deny pinned as in ci.yml, advisories only,
+    // on a fresh database.
+    let advisories = run_lines(&external);
+    assert!(
+        advisories
+            .iter()
+            .any(|line| line == "cargo deny check advisories"),
+        "the advisory job runs `cargo deny check advisories`"
+    );
+    let ci = workflow("ci.yml");
+    let ci_tools: Vec<&str> = ci
+        .find_all("tool")
+        .iter()
+        .filter_map(|t| t.scalar())
+        .collect();
+    let deny = ci_tools
+        .iter()
+        .find(|tool| tool.starts_with("cargo-deny@"))
+        .expect("ci.yml pins cargo-deny");
+    assert!(
+        external
+            .find_all("tool")
+            .iter()
+            .any(|tool| tool.scalar() == Some(deny)),
+        "external-checks.yml pins cargo-deny as ci.yml does ({deny})"
+    );
 }
 
-/// RFC 020 (DEP-8, TST-14): each fuzz target runs 240 s and the job's limit
-/// follows the number of targets (four minutes each and fifteen for the
-/// rest). The job runs every target `cargo fuzz list` names, so a target
-/// added to `fuzz/Cargo.toml` is run without a change to the workflow.
+/// REQ-TEST-019 and REQ-SEC-023 (RFC 020, D-23): no workflow has a timer.
+/// Checks run per change (the handoff's own mutation testing and fuzzing),
+/// before a release (the release checks) and on demand, never on a schedule.
 #[test]
-fn req_sec_023_every_fuzz_target_runs_240_s_within_a_matching_limit() {
-    let manifest = read("fuzz/Cargo.toml");
-    let declared = manifest.matches("[[bin]]").count();
-    let files = std::fs::read_dir(repository_root().join("fuzz/fuzz_targets"))
-        .unwrap()
-        .count();
-    assert_eq!(
-        declared, files,
-        "every target file is a [[bin]] of fuzz/Cargo.toml"
+fn req_test_019_no_workflow_runs_on_a_timer() {
+    for name in workflow_names() {
+        let file = workflow(&name);
+        assert!(
+            file.get("on")
+                .is_some_and(|on| on.get("schedule").is_none()),
+            "{name} has an `on.schedule`"
+        );
+        assert!(
+            file.find_all("schedule").is_empty() && file.find_all("cron").is_empty(),
+            "{name} mentions a schedule or a cron"
+        );
+    }
+    assert!(
+        !repository_root()
+            .join(".github/workflows/scheduled.yml")
+            .exists(),
+        "scheduled.yml is deleted"
     );
-    let scheduled = workflow("scheduled.yml");
-    let fuzz = scheduled.at(&["jobs", "fuzz"]).unwrap();
-    let limit: usize = fuzz
-        .get("timeout-minutes")
-        .and_then(Yaml::scalar)
-        .expect("the fuzz job has a timeout")
-        .parse()
-        .unwrap();
+}
+
+/// The release checks workflow, and what the tests below read from it.
+fn release_checks() -> Yaml {
+    workflow("release-checks.yml")
+}
+
+/// The matrix of a job.
+fn matrix_of<'a>(workflow: &'a Yaml, job: &str) -> &'a Yaml {
+    workflow
+        .at(&["jobs", job, "strategy", "matrix"])
+        .unwrap_or_else(|| panic!("job `{job}` has a matrix"))
+}
+
+/// The scalars of a list under a key.
+fn list_of<'a>(node: &'a Yaml, key: &str) -> Vec<&'a str> {
+    node.get(key)
+        .unwrap_or_else(|| panic!("no `{key}`"))
+        .items()
+        .iter()
+        .filter_map(Yaml::scalar)
+        .collect()
+}
+
+/// The names of the `[[bin]]` targets of `fuzz/Cargo.toml`.
+fn fuzz_targets() -> Vec<String> {
+    let manifest = read("fuzz/Cargo.toml");
+    let mut names = Vec::new();
+    let mut in_bin = false;
+    for line in manifest.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_bin = line == "[[bin]]";
+        } else if in_bin && let Some(rest) = line.strip_prefix("name = ") {
+            names.push(rest.trim_matches('"').to_owned());
+        }
+    }
+    names.sort();
+    names
+}
+
+/// REQ-TEST-019 (RFC 020, D-23): the release checks are one manual workflow
+/// of independent jobs (only the comparison of the two builds waits), none
+/// of which may fail silently or run unbounded, with the least permissions.
+#[test]
+fn req_test_019_the_release_checks_are_manual_independent_and_bounded() {
+    let file = release_checks();
+    let triggers: Vec<&str> = file
+        .get("on")
+        .expect("triggers")
+        .entries()
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .collect();
+    assert_eq!(triggers, ["workflow_dispatch"], "dispatched by hand only");
     assert_eq!(
-        limit,
-        declared * 4 + 15,
-        "timeout-minutes = targets x 4 + 15"
+        file.at(&["concurrency", "group"]).and_then(Yaml::scalar),
+        Some("release-checks")
+    );
+    assert_eq!(
+        file.at(&["concurrency", "cancel-in-progress"])
+            .and_then(Yaml::scalar),
+        Some("false"),
+        "a second dispatch does not cancel the run under way"
     );
     assert!(
-        run_lines(&scheduled)
+        file.find_all("continue-on-error").is_empty(),
+        "no job is allowed to fail"
+    );
+    let ids: Vec<&str> = jobs(&file).iter().map(|(id, _)| id.as_str()).collect();
+    assert_eq!(
+        ids,
+        [
+            "reproducible",
+            "reproducible-compare",
+            "fuzz",
+            "mutants",
+            "external"
+        ]
+    );
+    for (id, body) in jobs(&file) {
+        if id == "reproducible-compare" {
+            assert_eq!(
+                body.get("needs").and_then(Yaml::scalar),
+                Some("reproducible"),
+                "the comparison waits for the builds"
+            );
+        } else {
+            assert!(body.get("needs").is_none(), "job `{id}` waits for no other");
+        }
+        if id == "external" {
+            // A job that calls a workflow cannot carry a time limit of its
+            // own; the called jobs have theirs (checked above).
+            assert_eq!(
+                body.get("uses").and_then(Yaml::scalar),
+                Some("./.github/workflows/external-checks.yml")
+            );
+            assert_eq!(
+                body.get("secrets").and_then(Yaml::scalar),
+                Some("inherit"),
+                "the Brave key reaches the live check"
+            );
+        } else {
+            assert!(
+                body.get("timeout-minutes").is_some(),
+                "job `{id}` has a time limit"
+            );
+        }
+    }
+}
+
+/// REQ-TEST-019: the fuzz job runs every target of `fuzz/Cargo.toml`, from a
+/// static list, one job each, 300 s, from its corpus; a target added without
+/// the workflow fails here.
+#[test]
+fn req_test_019_the_release_checks_fuzz_every_target_for_300_s() {
+    let file = release_checks();
+    let matrix = matrix_of(&file, "fuzz");
+    let mut listed: Vec<String> = list_of(matrix, "target")
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    listed.sort();
+    assert_eq!(
+        listed,
+        fuzz_targets(),
+        "the matrix lists exactly the [[bin]] targets of fuzz/Cargo.toml"
+    );
+    let strategy = file.at(&["jobs", "fuzz", "strategy"]).unwrap();
+    assert_eq!(
+        strategy.get("max-parallel").and_then(Yaml::scalar),
+        Some("4")
+    );
+    assert_eq!(
+        strategy.get("fail-fast").and_then(Yaml::scalar),
+        Some("false")
+    );
+    assert_eq!(
+        file.at(&["jobs", "fuzz", "timeout-minutes"])
+            .and_then(Yaml::scalar),
+        Some("20")
+    );
+    let lines = run_lines(&file);
+    assert!(
+        lines.iter().any(|l| l.contains("-max_total_time=300")),
+        "each target runs 300 s"
+    );
+    assert!(
+        lines
             .iter()
-            .any(|line| line.contains("-max_total_time=240")),
-        "each target runs 240 s"
+            .any(|l| l.contains("cargo +nightly fuzz build") && l.contains("${{ matrix.target }}")),
+        "each job builds only its target"
+    );
+    let uploads = file
+        .at(&["jobs", "fuzz", "steps"])
+        .unwrap()
+        .items()
+        .iter()
+        .any(|step| {
+            step.get("if").and_then(Yaml::scalar) == Some("failure()")
+                && step
+                    .at(&["with", "path"])
+                    .and_then(Yaml::scalar)
+                    .is_some_and(|path| path.contains("fuzz/artifacts"))
+        });
+    assert!(uploads, "the artifacts of a failed fuzz job are uploaded");
+}
+
+/// REQ-TEST-019: the mutation job names the six security modules, runs the
+/// pinned tool with two jobs and the committed exclusion list (read by
+/// default from `.cargo/mutants.toml`), checks the disk first, and is red
+/// only for a missed mutant.
+#[test]
+fn req_test_019_the_release_checks_mutate_the_six_security_modules() {
+    let file = release_checks();
+    let matrix = matrix_of(&file, "mutants");
+    let names: Vec<&str> = matrix
+        .get("include")
+        .unwrap()
+        .items()
+        .iter()
+        .filter_map(|entry| entry.get("name").and_then(Yaml::scalar))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "egress-policy",
+            "privacy",
+            "boundary",
+            "robots",
+            "http",
+            "sessions"
+        ]
+    );
+    let files: String = matrix
+        .get("include")
+        .unwrap()
+        .items()
+        .iter()
+        .filter_map(|entry| entry.get("files").and_then(Yaml::scalar))
+        .collect::<Vec<_>>()
+        .join(" ");
+    for needed in [
+        "crates/rypsok-core/src/egress/policy.rs",
+        "crates/rypsok-core/src/privacy.rs",
+        "crates/rypsok-core/src/boundary.rs",
+        "crates/rypsok-core/src/fetch/robots.rs",
+        "crates/rypsok/src/mcp/http.rs",
+        "crates/rypsok/src/mcp/http/detect.rs",
+        "crates/rypsok/src/mcp/http/sessions.rs",
+    ] {
+        assert!(
+            files.contains(needed),
+            "the matrix does not mutate {needed}"
+        );
+        assert!(repository_root().join(needed).exists(), "{needed}");
+    }
+    let strategy = file.at(&["jobs", "mutants", "strategy"]).unwrap();
+    assert_eq!(
+        strategy.get("max-parallel").and_then(Yaml::scalar),
+        Some("3")
+    );
+    assert_eq!(
+        strategy.get("fail-fast").and_then(Yaml::scalar),
+        Some("false")
+    );
+    assert_eq!(
+        file.at(&["jobs", "mutants", "timeout-minutes"])
+            .and_then(Yaml::scalar),
+        Some("90")
+    );
+    let lines = run_lines(&file).join("\n");
+    assert!(lines.contains("df -h"), "the disk is checked first");
+    assert!(
+        lines.contains("cargo mutants --jobs 2"),
+        "two jobs at a time"
+    );
+    assert!(
+        !lines.contains("--config"),
+        "the exclusion list is read from .cargo/mutants.toml, the tool's default"
+    );
+    assert!(
+        read(".cargo/mutants.toml").contains("exclude_re"),
+        "the committed exclusion list exists"
+    );
+    // Red only for a missed mutant: exit 2 fails, 3 (timeouts) does not.
+    assert!(
+        lines.contains("2)"),
+        "an exit code of 2 (a missed mutant) fails"
+    );
+    let pinned = run_lines(&file)
+        .iter()
+        .any(|line| line == "cargo install cargo-mutants --version 27.1.0 --locked");
+    assert!(
+        pinned,
+        "cargo-mutants is installed at the version the list was made with, locked"
+    );
+}
+
+/// REQ-TEST-019: a runner pool is shared, so at most twelve release-check
+/// jobs run at once (CI's jobs are not queued behind them): the biggest
+/// matrices' `max-parallel` and the jobs of the called workflow add up to
+/// twelve or fewer, and every matrix sets one.
+#[test]
+fn req_test_019_the_release_checks_leave_room_for_ci() {
+    let file = release_checks();
+    let mut total = 0;
+    for job in ["reproducible", "fuzz", "mutants"] {
+        let parallel: usize = file
+            .at(&["jobs", job, "strategy", "max-parallel"])
+            .and_then(Yaml::scalar)
+            .unwrap_or_else(|| panic!("job `{job}` sets max-parallel"))
+            .parse()
+            .unwrap();
+        total += parallel;
+    }
+    // The jobs of external-checks.yml run beside them.
+    total += jobs(&workflow("external-checks.yml")).len();
+    assert!(total <= 12, "{total} release-check jobs at once");
+    // The reason is said at the top of the file.
+    let text = read(".github/workflows/release-checks.yml");
+    let head = text.split("\non:").next().unwrap();
+    assert!(
+        head.contains("12") && head.contains("shared"),
+        "the file says why the jobs are capped"
+    );
+    for (id, body) in jobs(&file) {
+        if let Some(strategy) = body.get("strategy") {
+            assert!(
+                strategy.get("max-parallel").is_some(),
+                "job `{id}` sets max-parallel"
+            );
+        }
+    }
+}
+
+/// REQ-TEST-019: both builds of every release target are built by the same
+/// action as the release itself, uploaded under their own names and compared
+/// by the SHA-256 of the unpacked `rypsok` binary, not of the archive.
+#[test]
+fn req_test_019_the_reproducibility_check_builds_twice_and_compares_the_binaries() {
+    let file = release_checks();
+    let matrix = matrix_of(&file, "reproducible");
+    assert_eq!(list_of(matrix, "build"), ["a", "b"]);
+    let mut targets = list_of(matrix, "target");
+    targets.sort_unstable();
+    let release = workflow("release.yml");
+    let mut released: Vec<&str> = release
+        .at(&["jobs", "build", "strategy", "matrix", "include"])
+        .unwrap()
+        .items()
+        .iter()
+        .filter_map(|entry| entry.get("target").and_then(Yaml::scalar))
+        .collect();
+    released.sort_unstable();
+    assert_eq!(
+        targets, released,
+        "the release targets are the checked ones"
+    );
+    let uses_action = file
+        .at(&["jobs", "reproducible", "steps"])
+        .unwrap()
+        .items()
+        .iter()
+        .any(|step| {
+            step.get("uses").and_then(Yaml::scalar) == Some("./.github/actions/build-release")
+        });
+    assert!(uses_action, "the builds use the release's own action");
+    let uploads = file
+        .at(&["jobs", "reproducible", "steps"])
+        .unwrap()
+        .items()
+        .iter()
+        .any(|step| {
+            step.at(&["with", "name"]).and_then(Yaml::scalar)
+                == Some("repro-${{ matrix.target }}-${{ matrix.build }}")
+        });
+    assert!(uploads, "each build is uploaded as repro-<target>-<build>");
+    let compare = run_lines(&file).join("\n");
+    assert!(compare.contains("sha256sum"), "the binaries are hashed");
+    assert!(
+        compare.contains("GITHUB_STEP_SUMMARY"),
+        "a table is written"
+    );
+}
+
+/// REQ-TEST-019 (RFC 020, D-23): the release compiler is named in one place,
+/// the build action; the release workflow and the release checks both build
+/// through it, and no workflow names that compiler itself.
+#[test]
+fn req_test_019_the_release_compiler_is_named_in_one_place() {
+    let action = read(".github/actions/build-release/action.yml");
+    let parsed = workflow_yaml::parse(&action);
+    let toolchains = parsed.find_all("toolchain");
+    assert_eq!(toolchains.len(), 1, "the action names the compiler once");
+    let compiler = toolchains[0].scalar().unwrap();
+    assert!(is_version(compiler), "`{compiler}` is a named compiler");
+    for name in workflow_names() {
+        assert!(
+            !read(&format!(".github/workflows/{name}")).contains(compiler),
+            "{name} names the release compiler {compiler}"
+        );
+    }
+    let release = workflow("release.yml");
+    let build_steps = release.at(&["jobs", "build", "steps"]).unwrap();
+    assert!(
+        build_steps
+            .items()
+            .iter()
+            .any(|step| step.get("uses").and_then(Yaml::scalar)
+                == Some("./.github/actions/build-release")),
+        "the release builds through the action"
+    );
+    // The inputs the action takes.
+    assert!(parsed.at(&["inputs", "target"]).is_some());
+    assert!(parsed.at(&["inputs", "rustflags"]).is_some());
+    // The procedure names the action's line.
+    assert!(
+        read("docs/src/maintainers/releasing.md")
+            .contains(".github/actions/build-release/action.yml"),
+        "releasing.md names the action's `toolchain:` line"
     );
 }
 
@@ -493,14 +908,17 @@ fn req_sec_020_tools_and_the_release_compiler_are_pinned() {
             }
         }
     }
-    let release = workflow("release.yml");
-    let toolchains = release.find_all("toolchain");
-    assert!(!toolchains.is_empty(), "the release names a toolchain");
+    let action = workflow_yaml::parse(&read(".github/actions/build-release/action.yml"));
+    let toolchains = action.find_all("toolchain");
+    assert!(
+        !toolchains.is_empty(),
+        "the release action names a toolchain"
+    );
     for toolchain in toolchains {
         let text = toolchain.scalar().unwrap();
         assert!(
             is_version(text),
-            "release.yml builds with `{text}`, not a named compiler"
+            "the release action builds with `{text}`, not a named compiler"
         );
     }
 }
@@ -545,8 +963,20 @@ fn req_test_012_ci_checks_every_feature_alone_and_none() {
 #[test]
 fn req_test_012_cargo_commands_of_the_workflows_are_locked() {
     let mut seen = 0;
-    for name in workflow_names() {
-        for line in run_lines(&workflow(&name)) {
+    // The workflows, and the local action that builds the release.
+    let mut files: Vec<(String, Yaml)> = workflow_names()
+        .into_iter()
+        .map(|name| {
+            let parsed = workflow(&name);
+            (name, parsed)
+        })
+        .collect();
+    files.push((
+        "build-release/action.yml".to_owned(),
+        workflow_yaml::parse(&read(".github/actions/build-release/action.yml")),
+    ));
+    for (name, parsed) in files {
+        for line in run_lines(&parsed) {
             let mut words = line.split_whitespace();
             if words.next() != Some("cargo") {
                 continue;
@@ -564,30 +994,58 @@ fn req_test_012_cargo_commands_of_the_workflows_are_locked() {
     assert!(seen >= 5, "{seen} cargo commands found");
 }
 
-/// RFC 020 (DEP-4): the Windows release build links reproducibly.
+/// RFC 020 (DEP-4): the Windows release build links reproducibly, in the
+/// release and in its reproducibility check: the Windows entry carries the
+/// flag and the build passes it to the action.
 #[test]
 fn req_sec_020_the_windows_release_build_links_with_brepro() {
     let release = workflow("release.yml");
-    let build = release.at(&["jobs", "build"]).unwrap();
-    let windows = build
-        .at(&["strategy", "matrix", "include"])
-        .unwrap()
-        .items()
-        .iter()
-        .find(|entry| entry.get("os").and_then(Yaml::scalar) == Some("windows-latest"))
-        .expect("a Windows entry");
-    assert!(
-        windows
-            .get("rustflags")
-            .and_then(Yaml::scalar)
-            .is_some_and(|flags| flags.contains("link-arg=/Brepro")),
-        "the Windows entry sets /Brepro"
-    );
-    assert_eq!(
-        build.at(&["env", "RUSTFLAGS"]).and_then(Yaml::scalar),
-        Some("${{ matrix.rustflags }}"),
-        "the build takes its flags from the matrix entry"
-    );
+    let checks = release_checks();
+    for (name, file, job, entries) in [
+        (
+            "release.yml",
+            &release,
+            "build",
+            release
+                .at(&["jobs", "build", "strategy", "matrix", "include"])
+                .unwrap(),
+        ),
+        (
+            "release-checks.yml",
+            &checks,
+            "reproducible",
+            checks
+                .at(&["jobs", "reproducible", "strategy", "matrix", "include"])
+                .unwrap(),
+        ),
+    ] {
+        let windows = entries
+            .items()
+            .iter()
+            .find(|entry| entry.get("os").and_then(Yaml::scalar) == Some("windows-latest"))
+            .unwrap_or_else(|| panic!("{name}: a Windows entry"));
+        assert!(
+            windows
+                .get("rustflags")
+                .and_then(Yaml::scalar)
+                .is_some_and(|flags| flags.contains("link-arg=/Brepro")),
+            "{name}: the Windows entry sets /Brepro"
+        );
+        let passes = file
+            .at(&["jobs", job, "steps"])
+            .unwrap()
+            .items()
+            .iter()
+            .any(|step| {
+                step.get("uses").and_then(Yaml::scalar) == Some("./.github/actions/build-release")
+                    && step.at(&["with", "rustflags"]).and_then(Yaml::scalar)
+                        == Some("${{ matrix.rustflags }}")
+            });
+        assert!(
+            passes,
+            "{name}: the build takes its flags from the matrix entry"
+        );
+    }
 }
 
 /// RFC 020 (handoff 020o): the reader of the workflow files reads what they
@@ -696,12 +1154,23 @@ fn req_main_005_fixtures_and_loopback_servers_exist() {
 #[test]
 fn req_sec_020_ci_actions_are_pinned() {
     let dir = repository_root().join(".github/workflows");
-    let mut seen = 0;
-    for entry in std::fs::read_dir(&dir).unwrap() {
-        let path = entry.unwrap().path();
-        if path.extension().is_none_or(|e| e != "yml") {
-            continue;
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|e| e == "yml"))
+        .collect();
+    // The local composite actions are workflow code too.
+    let actions = repository_root().join(".github/actions");
+    if actions.exists() {
+        for entry in std::fs::read_dir(&actions).unwrap() {
+            let action = entry.unwrap().path().join("action.yml");
+            if action.exists() {
+                files.push(action);
+            }
         }
+    }
+    let mut seen = 0;
+    for path in files {
         let text = std::fs::read_to_string(&path).unwrap();
         for (number, line) in text.lines().enumerate() {
             let Some(rest) = line
@@ -711,6 +1180,11 @@ fn req_sec_020_ci_actions_are_pinned() {
             else {
                 continue;
             };
+            // A local action or workflow of this repository has no commit to
+            // pin: it is the code of the commit that runs it.
+            if rest.trim_start().starts_with("./") {
+                continue;
+            }
             seen += 1;
             let (reference, comment) = rest.split_once('#').unwrap_or((rest, ""));
             let hash = reference.trim().rsplit('@').next().unwrap_or("");

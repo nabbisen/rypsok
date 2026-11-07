@@ -1,0 +1,53 @@
+name: External checks
+
+# What the world outside can change without a commit of ours: a provider's
+# page or API, and a published advisory against a dependency (RFC 020, D-23).
+# Never a gate (RFC 002), and never on a timer: they run when the release
+# checks call them, and on demand, when a user reports a broken engine or an
+# advisory is published (Actions, External checks, Run workflow).
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  live-checks:
+    name: Live driver checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-27
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Brave key present?
+        env:
+          BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
+        # The Brave test skips itself without a key and then passes; this
+        # step makes the skip visible (RFC 020, DEP-7).
+        run: |
+          if [ -z "$BRAVE_API_KEY" ]; then
+            echo "::warning title=Brave check skipped::BRAVE_API_KEY is not set, so the Brave live check did not run"
+            echo "Brave check skipped: no key" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Live checks (REQ-TEST-003)
+        env:
+          BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
+          RYPSOK_LIVE_CONTACT: ${{ vars.RYPSOK_LIVE_CONTACT }}
+        run: cargo test -p rypsok --test live --locked -- --ignored --nocapture
+
+  advisories:
+    name: Advisories against the dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: cargo-deny@0.20.2
+      # cargo-deny fetches the advisory database on each run: a fresh one.
+      - name: Advisories (REQ-SEC-020)
+        run: cargo deny check advisories

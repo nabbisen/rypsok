@@ -1,0 +1,77 @@
+name: Build the release binary
+description: >
+  Builds, smoke-tests and packages the rypsok binary of one release target.
+  The only place that names the release compiler (RFC 020, D-23): the release
+  workflow and the reproducibility check of the release checks both build
+  through it, so that the binaries a check compares are built as a release is.
+  The caller checks the repository out first and uploads the archives
+  (rypsok-*.tar.gz or rypsok-*.zip in the working directory).
+
+inputs:
+  target:
+    description: The Rust target triple.
+    required: true
+  rustflags:
+    description: Flags for the compiler (the Windows linker flag /Brepro).
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-27
+      with:
+        # A named compiler, not `stable`: the binaries of a release are built
+        # by the compiler the notes name (RFC 020, DEP-3). Bump it as the first
+        # step of a release (docs/src/maintainers/releasing.md).
+        toolchain: 1.99.1
+        targets: ${{ inputs.target }}
+    - name: C toolchain for the static Linux build
+      if: inputs.target == 'x86_64-unknown-linux-musl'
+      run: sudo apt-get update && sudo apt-get install -y musl-tools
+      shell: bash
+    - name: Compiler and flags
+      env:
+        RUSTFLAGS: ${{ inputs.rustflags }}
+      run: |
+        rustc --version
+        echo "RUSTFLAGS=[$RUSTFLAGS]"
+      shell: bash
+    - name: Build
+      env:
+        TARGET: ${{ inputs.target }}
+        # Empty on the other targets: no flags, as before.
+        RUSTFLAGS: ${{ inputs.rustflags }}
+      run: cargo build --release --locked -p rypsok --target "$TARGET"
+      shell: bash
+    - name: Smoke test
+      env:
+        TARGET: ${{ inputs.target }}
+      run: |
+        binary="target/$TARGET/release/rypsok"
+        [ -f "$binary.exe" ] && binary="$binary.exe"
+        "$binary" --version
+      shell: bash
+    - name: Version
+      run: echo "VERSION=$(sed -n 's/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -n 1)" >> "$GITHUB_ENV"
+      shell: bash
+    - name: Package (Linux, macOS)
+      if: runner.os != 'Windows'
+      env:
+        TARGET: ${{ inputs.target }}
+      run: |
+        name="rypsok-$VERSION-$TARGET"
+        mkdir "$name"
+        cp "target/$TARGET/release/rypsok" LICENSE NOTICE "$name/"
+        tar -czf "$name.tar.gz" "$name"
+      shell: bash
+    - name: Package (Windows)
+      if: runner.os == 'Windows'
+      env:
+        TARGET: ${{ inputs.target }}
+      run: |
+        $name = "rypsok-$env:VERSION-$env:TARGET"
+        New-Item -ItemType Directory $name | Out-Null
+        Copy-Item "target/$env:TARGET/release/rypsok.exe", "LICENSE", "NOTICE" $name
+        Compress-Archive -Path $name -DestinationPath "$name.zip"
+      shell: pwsh
