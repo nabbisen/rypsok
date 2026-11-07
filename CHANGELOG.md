@@ -30,6 +30,12 @@ announced here with both values.
   `Rypsok::status_as` take the caller, as `search_as` does; `fetch` and
   `status` are as before and say `local`. The log format is not part of the
   contract.
+- Internal: five more fuzz targets (`judge_url`, `parse_rule`, `robots_txt`,
+  `engine_json`, `headers`) on parsers of untrusted input that had none, with
+  seed inputs in `fuzz/corpus/<target>/seed-*`; the scheduled workflow runs
+  every target for 240 s and its time limit follows their number. Five
+  `#[doc(hidden)]` items of `rypsok-core` were made public for them, and
+  `Display` for the egress rule types; none is part of the stable surface.
 
 ### Fixed
 

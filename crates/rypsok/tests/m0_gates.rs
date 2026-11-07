@@ -293,10 +293,12 @@ fn req_test_003_scheduled_checks_fail_loudly_and_say_when_they_skip() {
     );
 }
 
-/// RFC 020 (DEP-8): each fuzz target runs 300 s and the job's limit follows
-/// the number of targets (five minutes each and fifteen for the rest).
+/// RFC 020 (DEP-8, TST-14): each fuzz target runs 240 s and the job's limit
+/// follows the number of targets (four minutes each and fifteen for the
+/// rest). The job runs every target `cargo fuzz list` names, so a target
+/// added to `fuzz/Cargo.toml` is run without a change to the workflow.
 #[test]
-fn req_sec_023_every_fuzz_target_runs_300_s_within_a_matching_limit() {
+fn req_sec_023_every_fuzz_target_runs_240_s_within_a_matching_limit() {
     let manifest = read("fuzz/Cargo.toml");
     let declared = manifest.matches("[[bin]]").count();
     let files = std::fs::read_dir(repository_root().join("fuzz/fuzz_targets"))
@@ -316,14 +318,14 @@ fn req_sec_023_every_fuzz_target_runs_300_s_within_a_matching_limit() {
         .unwrap();
     assert_eq!(
         limit,
-        declared * 5 + 15,
-        "timeout-minutes = targets x 5 + 15"
+        declared * 4 + 15,
+        "timeout-minutes = targets x 4 + 15"
     );
     assert!(
         run_lines(&scheduled)
             .iter()
-            .any(|line| line.contains("-max_total_time=300")),
-        "each target runs 300 s"
+            .any(|line| line.contains("-max_total_time=240")),
+        "each target runs 240 s"
     );
 }
 

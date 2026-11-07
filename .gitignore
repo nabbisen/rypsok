@@ -34,5 +34,7 @@ target
 /docs/book/
 fuzz/target/
 fuzz/artifacts/
-fuzz/corpus/
+# The corpus the fuzzer grows is local; the seeds (seed-*) are kept (RFC 020, TST-14).
+fuzz/corpus/*/*
+!fuzz/corpus/*/seed-*
 fuzz/coverage/

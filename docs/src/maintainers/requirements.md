@@ -770,9 +770,11 @@ LIM-H4 streams. (THR-26; RFC 018)
 ### REQ-SEC-023 Fuzzing — M7 · D
 Every parser that reads external bytes (the text cleaner, the content
 cleaner, charset decoding, the HTML document pipeline, the scraping
-reader, URL normalization, the secret check, configuration parsing) shall
-have a fuzz target that runs on the schedule of REQ-TEST-003, report only;
-a finding becomes a test. (RFC 018)
+reader, URL normalization, the secret check, configuration parsing, the
+egress policy's judgment of a URL, an egress rule, a robots.txt answer, a
+provider's JSON answer, and the `Retry-After` and charset header values)
+shall have a fuzz target that runs on the schedule of REQ-TEST-003, report
+only; a finding becomes a test. (RFC 018; RFC 020, TST-14)
 
 ### REQ-SEC-024 Session bound — M7 · T
 In HTTP mode the handshake-based revisions shall hold at most LIM-H6 live sessions; a handshake beyond the bound shall be answered 503 with a Retry-After hint and no session, logged and counted; the stateless revision is unaffected. (THR-27; RFC 019)

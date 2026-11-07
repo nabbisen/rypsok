@@ -17,8 +17,10 @@ jobs:
     # fuzz target under fuzz/; each runs for a fixed time, report only.
     name: Fuzz targets (report only)
     runs-on: ubuntu-latest
-    # 9 targets x 300 s + 15 minutes for the build and the setup.
-    timeout-minutes: 60
+    # 14 targets x 240 s + 15 minutes for the build and the setup. The loop
+    # below runs every target `cargo fuzz list` names; a gate test ties this
+    # number to the count of targets (RFC 020, TST-14).
+    timeout-minutes: 71
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master 2026-10-27
@@ -32,12 +34,12 @@ jobs:
         # The runner's default target may be musl, where the sanitizer
         # cannot link statically; name the host target.
         run: cargo +nightly fuzz build --target x86_64-unknown-linux-gnu
-      - name: Run each target for 300 s
+      - name: Run each target for 240 s
         working-directory: fuzz
         run: |
           for target in $(cargo +nightly fuzz list); do
             echo "::group::$target"
-            cargo +nightly fuzz run --target x86_64-unknown-linux-gnu "$target" -- -max_total_time=300 -rss_limit_mb=2048 -timeout=30
+            cargo +nightly fuzz run --target x86_64-unknown-linux-gnu "$target" -- -max_total_time=240 -rss_limit_mb=2048 -timeout=30
             echo "::endgroup::"
           done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

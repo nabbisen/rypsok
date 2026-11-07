@@ -738,7 +738,7 @@ contract. Changing one is a breaking change.
 | REQ-SEC-019 | Per-caller limits | M4 | §8 Egress policy; §9 Content boundary; §2 HTTP listener; §16 Invariants |
 | REQ-SEC-020 | Supply chain and hardening | M0 | §8 Egress policy; §9 Content boundary; §2 HTTP listener; §16 Invariants |
 | REQ-SEC-022 | Request time and stream bounds | M7 | §2 Transports and protocol (the listener's statuses: 408); the stream bound LIM-H4 is in the limits table, not in this document |
-| REQ-SEC-023 | Fuzzing | M7 | Internal: the fuzz targets in `fuzz/` and the scheduled workflow (REQ-TEST-003); no section of this document specifies it |
+| REQ-SEC-023 | Fuzzing | M7 | Internal: the fourteen fuzz targets in `fuzz/` (the eight parsers of RFC 018 and, since RFC 020, the URL policy, the egress rules, robots.txt, the engines' JSON and the header values) and the scheduled workflow (REQ-TEST-003); no section of this document specifies it |
 | REQ-SEC-024 | Session bound | M7 | §2 Transports and protocol (the listener's statuses: 503) |
 | REQ-PRIV-001 | Queries are sensitive | All | §10 Privacy |
 | REQ-PRIV-002 | Secrets in queries and URLs | M1 | §10 Privacy |
