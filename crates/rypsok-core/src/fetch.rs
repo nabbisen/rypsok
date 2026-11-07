@@ -301,6 +301,35 @@ struct Fetched {
     charset: Option<String>,
 }
 
+/// Runs `work` on a blocking thread, inside the span of the current call,
+/// until `deadline`; a panic inside it ends the call, not the process
+/// (REQ-SEC-014): it is logged as `extraction_panic` (the fact of the panic,
+/// never its message) and the call ends as `extraction_failed`. Past the
+/// deadline the call ends as `fetch_deadline`. The work already running on its
+/// thread is not interrupted, only left behind.
+async fn contained<T: Send + 'static>(
+    deadline: Instant,
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, ToolError> {
+    let call = tracing::Span::current();
+    let task = tokio::task::spawn_blocking(move || {
+        let _call = call.enter();
+        work()
+    });
+    match tokio::time::timeout_at(deadline, task).await {
+        Ok(Ok(done)) => Ok(done),
+        Ok(Err(join_error)) => {
+            tracing::error!(
+                event = "extraction_panic",
+                panicked = join_error.is_panic(),
+                "extraction failed; the call ends"
+            );
+            Err(ToolError::extraction_failed())
+        }
+        Err(_) => Err(ToolError::fetch_deadline()),
+    }
+}
+
 async fn run_inner(
     p: &Pipeline<'_>,
     req: FetchRequest,
@@ -412,23 +441,10 @@ async fn run_inner(
     let media = fetched.media;
     let charset = fetched.charset.clone();
     let body = fetched.body;
-    let call = tracing::Span::current();
-    let task = tokio::task::spawn_blocking(move || {
-        let _call = call.enter();
+    let document = contained(call_deadline, move || {
         render_document(&body, media, charset.as_deref(), &limits_for_task)
-    });
-    let document = match tokio::time::timeout_at(call_deadline, task).await {
-        Ok(Ok(document)) => document,
-        Ok(Err(join_error)) => {
-            tracing::error!(
-                event = "extraction_panic",
-                panicked = join_error.is_panic(),
-                "extraction failed; the call ends"
-            );
-            return Err(ToolError::extraction_failed());
-        }
-        Err(_) => return Err(ToolError::fetch_deadline()),
-    };
+    })
+    .await?;
     drop(_parsing);
     if media == Media::Html && document.content.trim().is_empty() {
         return Err(ToolError::extraction_failed());

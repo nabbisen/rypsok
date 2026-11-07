@@ -254,3 +254,55 @@ fn req_cache_006_a_cache_is_enabled_until_it_fails_and_its_key_hides_the_query()
     );
     assert!(!printed.contains("a-private-query"), "{printed}");
 }
+
+/// REQ-CACHE-003 (RFC 020, TST-7): an entry is valid only for the caller, the
+/// engine and the request parameters it was produced for: a difference in any
+/// one of them is a miss, and `clear` (what a reload of the configuration
+/// would do) empties the cache. The configuration and the egress policy are
+/// fixed for the life of the process, so they are not part of the key.
+#[test]
+fn req_cache_003_an_entry_is_valid_only_for_its_caller_engine_and_parameters() {
+    let cache = ResultCache::new(settings());
+    let caller = CallerId::new("a");
+    let engine = EngineId::new("w").unwrap();
+    let base = request("rust");
+    cache
+        .store(CacheKey::new(&caller, &engine, &base), &answer("one"))
+        .unwrap();
+    let hit = |caller: &CallerId, engine: &EngineId, request: &EngineRequest| {
+        cache
+            .lookup(&CacheKey::new(caller, engine, request))
+            .is_some()
+    };
+    assert!(hit(&caller, &engine, &base));
+    assert!(!hit(&CallerId::new("b"), &engine, &base), "caller");
+    assert!(
+        !hit(&caller, &EngineId::new("other").unwrap(), &base),
+        "engine"
+    );
+    let changed = |change: &dyn Fn(&mut EngineRequest)| {
+        let mut other = request("rust");
+        change(&mut other);
+        hit(&caller, &engine, &other)
+    };
+    assert!(
+        !changed(&|r| r.query = Sensitive::new("rusty".to_owned())),
+        "query"
+    );
+    assert!(
+        !changed(&|r| r.language = Language::new("ja").unwrap()),
+        "language"
+    );
+    assert!(!changed(&|r| r.region = "JP".to_owned()), "region");
+    assert!(
+        !changed(&|r| r.safe_search = SafeSearch::Off),
+        "safe search"
+    );
+    assert!(
+        !changed(&|r| r.time_range = Some(TimeRange::Week)),
+        "time range"
+    );
+    assert!(!changed(&|r| r.max_results = 6), "result count");
+    cache.clear();
+    assert!(!hit(&caller, &engine, &base), "cleared");
+}

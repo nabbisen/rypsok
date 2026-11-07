@@ -898,8 +898,11 @@ Only `web_search` results shall be cacheable. Fetched content shall never be
 cached. (C-17)
 
 ### REQ-CACHE-003 Eligibility — M5 · T
-Entries shall respect REQ-CMP-007 and shall carry the engine set,
-configuration version and policy with which they were produced.
+Entries shall respect REQ-CMP-007 and shall be valid only for the caller, the
+engine and the request parameters they were produced for. The configuration
+and the egress policy are fixed for the life of the process, so no entry
+outlives them; a reload of the configuration, if one is ever added, shall
+clear the cache. (RFC 014; RFC 020, TST-7)
 
 ### REQ-CACHE-004 Isolation — M5 · T
 In HTTP mode cache entries shall be keyed by the authenticated caller; in
@@ -1126,7 +1129,7 @@ shall be refused at startup.
 Adding an engine shall require a driver, its admission record and its
 configuration entry, and nothing else.
 
-### REQ-MAIN-005 Testable without the network — All · T
+### REQ-MAIN-005 Testable without the network — All · I
 Every stage shall be testable with fixtures and a local server.
 
 ### REQ-MAIN-006 Contract versioning — M1 · I

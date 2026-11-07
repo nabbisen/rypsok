@@ -1632,3 +1632,56 @@ async fn req_sec_003_decoded_titles_keep_their_angle_brackets() {
         response.notices
     );
 }
+
+/// REQ-SEC-014 (RFC 020, TST-7; review of 020q, C1): a panic inside the
+/// extraction ends the call, not the process: the call ends as
+/// `extraction_failed`, one `extraction_panic` event is logged at `error`
+/// with `panicked = true` and without the panic's message, and the work that
+/// did not panic comes back with the call's span entered. Past the deadline
+/// the call ends as `fetch_deadline`.
+#[tokio::test]
+async fn req_sec_014_a_panic_in_extraction_is_contained_and_logged() {
+    use tracing::Instrument;
+    let log = crate::telemetry::routed::capture();
+    let far = Instant::now() + Duration::from_secs(30);
+
+    let error = contained(far, || -> u32 { panic!("the-panic-message-7f3a") })
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind, ErrorKind::UnsupportedContent);
+    assert_eq!(error.detail.reason, Some(DetailReason::ExtractionFailed));
+    let lines = log.lines();
+    assert_eq!(lines.len(), 1, "{lines:#?}");
+    assert_eq!(lines[0]["event"], "extraction_panic");
+    assert_eq!(lines[0]["level"], "ERROR");
+    assert_eq!(lines[0]["panicked"], true);
+    assert!(
+        !lines[0].to_string().contains("the-panic-message-7f3a"),
+        "the panic's message is not in the log: {}",
+        lines[0]
+    );
+
+    // Work that does not panic is returned, in the span of the call.
+    let span = tracing::error_span!("call");
+    let expected = span.id();
+    assert!(expected.is_some(), "the span exists");
+    let here = std::thread::current().id();
+    let (seen, thread) = contained(far, || {
+        (tracing::Span::current().id(), std::thread::current().id())
+    })
+    .instrument(span)
+    .await
+    .unwrap();
+    assert_eq!(seen, expected);
+    assert_ne!(thread, here, "the work runs off the thread of the call");
+    assert_eq!(log.lines().len(), 1, "nothing more was logged");
+
+    // Past the deadline.
+    let error = contained(Instant::now() + Duration::from_millis(30), || {
+        std::thread::sleep(Duration::from_millis(400));
+    })
+    .await
+    .unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Unavailable);
+    assert_eq!(error.message, ToolError::fetch_deadline().message);
+}

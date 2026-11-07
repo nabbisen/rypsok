@@ -43,7 +43,7 @@ announced here with both values.
   hostile provider text in errors and logs, every error constructor's message,
   and a gate that every request is sent on a client `egress.rs` built;
   a test for 48 of the 54 mutants that `cargo-mutants` found alive on the
-  security paths and `mutants.toml` with the six that cannot change
+  security paths and `.cargo/mutants.toml` with the six that cannot change
   behaviour; `docs/src/maintainers/verification-ledger.md` lists the
   requirements whose tests are still partial. A property test that could
   generate `0.0.0.0` as a host name and fail was corrected. `rcgen` is a

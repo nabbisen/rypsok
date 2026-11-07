@@ -808,7 +808,7 @@ contract. Changing one is a breaking change.
 | REQ-MAIN-002 | Tools depend on the core only | All | Internal: crate structure; §13.2 configuration version; §18 note on contract versioning |
 | REQ-MAIN-003 | Versioned configuration | M1 | Internal: crate structure; §13.2 configuration version; §18 note on contract versioning |
 | REQ-MAIN-004 | Safe extension | All | Internal: crate structure; §13.2 configuration version; §18 note on contract versioning |
-| REQ-MAIN-005 | Testable without the network | All | Internal: crate structure; §13.2 configuration version; §18 note on contract versioning |
+| REQ-MAIN-005 | Testable without the network | All | Internal: inspection; the default test run uses fixtures and loopback servers only, and the network tests are `#[ignore]`d in `tests/live.rs` |
 | REQ-MAIN-006 | Contract versioning | M1 | Internal: crate structure; §13.2 configuration version; §18 note on contract versioning |
 | REQ-RUST-001 | Rust | All | Internal: build configuration; §15 platforms |
 | REQ-RUST-002 | Platforms | M1 | Internal: build configuration; §15 platforms |
