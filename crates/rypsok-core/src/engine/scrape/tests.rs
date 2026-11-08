@@ -166,3 +166,80 @@ fn req_sec_003_scraped_results_are_marked_decoded() {
         Provenance::Raw
     );
 }
+
+/// REQ-ENG-015 (RFC 020, NET-18): the class of a selector matches by whole
+/// token. The marker of DuckDuckGo's no-results page is the class
+/// `no-results` on any element: the `span` of the real page and the `div` of
+/// the earlier fixture match; `no-results__container` and `result--no-result`,
+/// which are other class tokens, do not. (This test passes before the marker
+/// is changed, because it tests the selector; it is worth having because the
+/// marker's correctness rests on exactly this rule.)
+#[test]
+fn req_eng_015_a_class_selector_matches_whole_tokens() {
+    let any = Selector {
+        tag: None,
+        class: Some("no-results"),
+        attr: None,
+    };
+    let dom = parse(
+        "<body>\
+         <span class='no-results'>a</span>\
+         <div class=\"x no-results y\">b</div>\
+         <div class=\"no-results__container\">c</div>\
+         <div class=\"result result--no-result\">d</div>\
+         <div class=\"no-resultsX\">e</div>\
+         </body>",
+        1_000,
+        DEPTH,
+    );
+    let matched: Vec<String> = dom
+        .elements()
+        .into_iter()
+        .filter(|&(h, _)| any.matches(&dom, h))
+        .map(|(h, _)| text_of(&dom, h))
+        .collect();
+    assert_eq!(matched, ["a", "b"]);
+}
+
+/// REQ-ENG-015 (RFC 020, NET-18): the page DuckDuckGo served for a search
+/// with no results (2026-11-08, reduced) is `Page::NoResults`, although the
+/// list holds a `div.result.result--no-result` that has no link.
+#[test]
+fn req_eng_015_the_real_no_results_page_is_no_results() {
+    let dom = parse(&fixture("no-results.html"), 50_000, DEPTH);
+    assert_eq!(
+        read(&dom, &SHAPE, 10, &DuckDuckGo::unwrap_link),
+        Page::NoResults
+    );
+}
+
+/// REQ-ENG-015 (killed mutants of the text and nesting helpers): a text
+/// marker is found in the page's text alone, and a result inside a result is
+/// not a second result.
+#[test]
+fn req_eng_015_text_markers_and_nested_results() {
+    let only_the_sentence = parse(
+        "<html><body><p>Unfortunately, bots use DuckDuckGo too.</p></body></html>",
+        1_000,
+        DEPTH,
+    );
+    assert_eq!(
+        read(&only_the_sentence, &SHAPE, 10, &DuckDuckGo::unwrap_link),
+        Page::Challenge
+    );
+    let nested = parse(
+        "<div class=\"result\">\
+           <a class=\"result__a\" href=\"https://outer.example/\">Outer</a>\
+           <div class=\"result\">\
+             <a class=\"result__a\" href=\"https://inner.example/\">Inner</a>\
+           </div>\
+         </div>",
+        1_000,
+        DEPTH,
+    );
+    let Page::Results(results) = read(&nested, &SHAPE, 10, &DuckDuckGo::unwrap_link) else {
+        panic!("results expected");
+    };
+    assert_eq!(results.len(), 1, "{results:?}");
+    assert_eq!(results[0].url, "https://outer.example/");
+}

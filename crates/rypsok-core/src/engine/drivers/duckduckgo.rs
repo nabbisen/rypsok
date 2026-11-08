@@ -53,7 +53,14 @@ pub const SHAPE: Shape = Shape {
     link: Selector::class("a", "result__a"),
     title: Selector::class("a", "result__a"),
     snippet: Selector::class("a", "result__snippet"),
-    no_results: Marker::Element(Selector::class("div", "no-results")),
+    // The class `no-results` on any element: the real page marks itself with
+    // a `span` (2026-11-08, RFC 020, D-5), an earlier shape with a `div`. The
+    // class is a whole token, so `no-results__container` does not match.
+    no_results: Marker::Element(Selector {
+        tag: None,
+        class: Some("no-results"),
+        attr: None,
+    }),
     challenge: &[
         Marker::Text("bots use DuckDuckGo too"),
         Marker::Element(Selector {

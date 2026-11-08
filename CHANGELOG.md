@@ -283,6 +283,11 @@ Other changes:
   a caller whose token variable is unset, whose token file cannot be read or
   whose token is shorter than 32 bytes. `check` reads the callers' tokens as
   `serve` does, fails with the same message and exits 1 (RFC 020, DAT-1).
+- A DuckDuckGo search with no results answers with no results, instead of
+  counting as a parse failure that could open the engine's circuit (RFC 020,
+  NET-18): the provider's no-results page marks itself with `span.no-results`,
+  and the driver looked for a `div`. Three searches with no results took the
+  engine offline for 60 s and told callers it had failed.
 - A client that cannot be built says why, once: `rypsok: configuration: fetch:
   the HTTP client could not be built: no root certificates could be loaded (the
   system store, or SSL_CERT_FILE / SSL_CERT_DIR when set; ...)`. It used to say

@@ -22,7 +22,7 @@ Acceptable Use Policy; what could not be verified is marked.
 | Query length | `max_query_chars = 500`; not measured against the live endpoint |
 | Categories | `general` |
 | Result | `div.result`; the target in `a.result__a` `href`, a redirect wrapper `//duckduckgo.com/l/?uddg=<target>&rut=…` unwrapped to `uddg` or an absolute `http(s)` link; the title is the text of `a.result__a`; the snippet the text of `a.result__snippet`. Verified by the live check on 2026-10-27 (results parsed and unwrapped) and pinned by the fixtures |
-| No results | `div.no-results`. Not verified at admission |
+| No results | `span.no-results` (the class on any element), seen 2026-11-08 (RFC 020, D-5) |
 | Challenge | The sentence "bots use DuckDuckGo too", an element with class `anomaly-modal__title`, or a form with `action="/html/anomaly"`. The sentence and the `/anomaly/` path were observed on 2026-10-27 |
 | robots.txt | `html.duckduckgo.com/robots.txt` on 2026-10-27: `User-agent: *`, `Allow: /`, a sitemap. Recorded as a fact; not consulted at run time (RFC 015) |
 | Errors | A challenge page or 403 → `blocked`; 429 and 503 → `rate_limited` with `Retry-After`; a redirect (never followed) and other statuses → `request_failure`; a page in another shape or above the bounds → `parse_failure`; a timeout → `timeout` |

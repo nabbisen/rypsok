@@ -267,3 +267,104 @@ fn req_eng_001_oddly_written_links_are_made_canonical_by_the_pipeline() {
         );
     }
 }
+
+/// The DuckDuckGo driver with a rate the test can use: the admission's 10
+/// per minute with a burst of one would make the second search wait.
+#[derive(Debug)]
+struct Quick {
+    inner: DuckDuckGo,
+    properties: EngineProperties,
+}
+
+#[async_trait::async_trait]
+impl Driver for Quick {
+    fn kind(&self) -> &'static str {
+        self.inner.kind()
+    }
+
+    fn properties(&self) -> &EngineProperties {
+        &self.properties
+    }
+
+    async fn search(
+        &self,
+        req: &EngineRequest,
+        cancel: CancellationToken,
+    ) -> Result<EngineResponse, EngineError> {
+        self.inner.search(req, cancel).await
+    }
+}
+
+/// REQ-ENG-015, REQ-RES-004 and REQ-AGG-004 (RFC 020, NET-18): a DuckDuckGo
+/// search on the real no-results page answers with no results and no failure,
+/// so three of them leave the engine's circuit closed. (Before the marker
+/// matched the page, each was a `parse_failure` and the third opened the
+/// circuit.)
+#[tokio::test]
+async fn req_eng_015_searches_with_no_results_do_not_open_the_circuit() {
+    use crate::engine::registry::{Engine, Registry};
+    use crate::model::{Category, EngineId, EngineState, Outcome, SearchRequest};
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/html/"))
+        .respond_with(html(200, &fixture("no-results.html")))
+        .mount(&server)
+        .await;
+    let inner = DuckDuckGo::new(&context(&server, 50_000)).unwrap();
+    let properties = EngineProperties {
+        requests_per_minute: 600,
+        max_in_flight: 2,
+        ..PROPERTIES
+    };
+    let engine = Engine::new(
+        EngineId::new("ddg").unwrap(),
+        vec![Category::General],
+        10,
+        Box::new(Quick { inner, properties }),
+    );
+    let config = crate::config::Config::parse(
+        "config_version = 1\n[engines.w]\ntype = \"wikipedia\"\ncategories = [\"general\"]\n",
+    )
+    .unwrap();
+    let service = crate::Rypsok::from_parts(config, Registry::from_engines(vec![engine])).unwrap();
+    for round in 1..=3 {
+        let response = service
+            .search(
+                SearchRequest::new("zzqxvqplm8f3k2j9d7s"),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.outcome, Outcome::Empty, "round {round}");
+        assert!(response.results.is_empty());
+        assert!(
+            response.notices.is_empty(),
+            "round {round}: {:?}",
+            response.notices
+        );
+    }
+    let status = service.status();
+    assert_eq!(status.engines[0].state, EngineState::Closed);
+}
+
+/// REQ-ENG-001 (killed a mutant of the wrapper test): only a link on the
+/// provider's own host **and** under `/l/` is a redirect wrapper; a path
+/// `/l/` on another host and another path on the provider's host are links
+/// as they are.
+#[test]
+fn req_eng_001_only_the_providers_l_path_is_a_wrapper() {
+    assert_eq!(
+        DuckDuckGo::unwrap_link("https://example.org/l/page?uddg=https%3A%2F%2Fother.example%2F")
+            .as_deref(),
+        Some("https://example.org/l/page?uddg=https%3A%2F%2Fother.example%2F")
+    );
+    assert_eq!(
+        DuckDuckGo::unwrap_link("https://duckduckgo.com/about").as_deref(),
+        Some("https://duckduckgo.com/about")
+    );
+    assert_eq!(
+        DuckDuckGo::unwrap_link("//duckduckgo.com/l/?uddg=https%3A%2F%2Ftarget.example%2Fx&rut=1")
+            .as_deref(),
+        Some("https://target.example/x")
+    );
+}
