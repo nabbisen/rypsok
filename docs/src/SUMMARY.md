@@ -33,6 +33,7 @@
 - [Verification ledger](./maintainers/verification-ledger.md)
 - [Releasing](./maintainers/releasing.md)
 - [When checks run](./maintainers/checks.md)
+- [Audit report (0.9.0)](./maintainers/audit.md)
 - [Engine admission records](./maintainers/engines/README.md)
   - [Wikipedia](./maintainers/engines/wikipedia.md)
   - [Brave Search](./maintainers/engines/brave.md)

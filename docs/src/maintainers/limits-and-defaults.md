@@ -39,7 +39,7 @@ by a key is "fixed").
 | LIM-S3 | Results requested from each engine | 10 | 5–20 | Overlap for ranking |
 | LIM-S4 | Overall deadline of a search | 2500 ms | 500–10000 | Study proposes 1500 ms (R-10). Measured: cold start to the first answer 729 ms at M1 and 715 ms at M8; rypsok's own share about 6 ms (RFC 020, 020e) |
 | LIM-S5 | Timeout of one engine request | 2000 ms | ≤ LIM-S4 − LIM-S6 | C-14 |
-| LIM-S6 | Reserve for post-processing | 200 ms | 50–1000 | Architecture overview §4.6 |
+| LIM-S6 | Reserve for post-processing | 200 ms | 50–1000 | Architecture overview §4.6. Measured (RFC 020, 020e): post-processing took 0.64 ms median and 5.11 ms at most, with mock engine answers; larger real answers were not measured. Kept at 200 ms (RFC 020, PRF-5) |
 | LIM-S7 | Maximum duration of a `web_search` call | LIM-S4 + 300 ms | derived | X-04 |
 | LIM-S8 | Engines queried per request | 8 | 1–16 | Bounded fan-out |
 | LIM-S9 | Length of a snippet | 300 characters | 50–1000 | Context budget |
