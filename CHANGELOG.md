@@ -94,9 +94,10 @@ a minor release):
   field `reason`, `disabled` (the operator switched the engine off) or
   `no_credential` (it needs a key and none could be read). It is absent for
   every other state; the output schema gains the field.
-- The URL a search result carries is the engine's URL byte for byte, except
-  that tracking parameters are removed. Before, a query was rewritten whenever
-  there was one: `?a=1&b` became `?a=1&b=`, `?a=1;b=2` became `?a=1%3Bb%3D2`,
+- The URL a search result carries keeps the engine's query exactly, except
+  that tracking parameters are removed (the scheme and the host are written in
+  their canonical form and a default port is dropped, as before). Before, a
+  query was rewritten whenever there was one: `?a=1&b` became `?a=1&b=`, `?a=1;b=2` became `?a=1%3Bb%3D2`,
   `?q=a%20b` became `?q=a+b`, `?a=%7e` became `?a=%7E` and `?x=%zz` became
   `?x=%25zz`. The query is rebuilt only when a tracking parameter was removed,
   and the other parameters keep their text (RFC 020, DAT-8).
