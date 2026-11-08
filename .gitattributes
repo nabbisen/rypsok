@@ -1,0 +1,7 @@
+# GitHub's language statistics (Linguist) are meant to show the source code.
+# Test data and examples are not source: the HTML pages the tests read
+# (2.4 MB, among them a deliberately huge node-bomb page) would otherwise
+# outweigh the Rust code and show the project as an HTML one.
+crates/*/fixtures/** linguist-detectable=false
+fuzz/corpus/**       linguist-detectable=false
+examples/**          linguist-documentation
