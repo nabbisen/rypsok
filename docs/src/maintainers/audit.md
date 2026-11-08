@@ -159,6 +159,7 @@ A test whose name starts with `req_` lives under `crates/`.
 | F-3 | Low | A client that could not be built did not say why, and said so twice | 020x | `req_ops_001_a_missing_trust_store_is_named_once_at_start` |
 | F-4 | Medium | `check`'s memory estimate was exceeded by a glibc build | 020x: one measured set per Linux build, and the build named | `req_perf_003_check_names_the_build_of_the_estimate` |
 | N1 | Note | No page said which certificates outbound fetches trust | 020t | documents |
+| N2 | Note | A result whose host had an empty label (such as a leading dot) was shown, although `web_fetch` refuses it | RFC 020, D-24; 020y: dropped and counted as `url_invalid` | `req_rank_003_a_host_web_fetch_would_refuse_is_invalid` |
 | — | — | A property test could generate an address as a host name | 020q (tests only) | `req_sec_006_an_address_deny_rule_is_a_network_rule_not_a_host_rule` |
 
 ## The decisions (RFC 020)
@@ -241,7 +242,6 @@ A test whose name starts with `req_` lives under `crates/`.
 | The verification ledger | 41 requirements whose tests verify part of what they say ([ledger](./verification-ledger.md)) | closed before 1.0.0 (RFC 020, D-18) |
 | DAT-22, RFC 020, D-11 | Which public items are frozen | the 1.0.0 preparation |
 | NET-18, RFC 020, D-5 | Whether DuckDuckGo's no-results page carries the marker the driver reads; without it, three result-less searches open the engine's circuit | one deliberate request, in the release preparation (020v) |
-| N2 | A returned URL whose host has an empty label (such as a leading dot) is shown, although it cannot be fetched | decided (RFC 020, D-24, 2026-11-08): such a result is invalid, dropped and counted; the fix is handoff 020y |
 | DEP-13 | Several pinned actions are a major version behind | the dependency step at the start of the next cycle (RFC 020, D-14) |
 | DEP-16, RFC 020, D-15 | `main` and the release tags have no protection rule | the owner (a repository setting) |
 | First runs | The provenance attestations, the attach of the images, and the book from a tag run for the first time on the 0.9.0 tag | read in that run, as the release procedure says |
