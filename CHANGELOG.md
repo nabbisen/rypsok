@@ -14,321 +14,316 @@ announced here with both values.
 
 ## [Unreleased]
 
-### Added
+## [0.9.0] — 2026-11-08 — The audit (milestone M8)
 
-- Two settings for limits that had no key (RFC 020, D-9):
-  `search.connect_timeout_ms` (LIM-S12, 200 to 5000, default 1000) and
-  `service.shutdown_ms` (LIM-O1, 500 to 10000, default 3000). The defaults are
-  the values the program used; `rypsok check` prints both. The limits table
-  now calls "fixed" every row that no key sets.
-- Every event of a tool call now carries `request_id` and `caller` as
-  top-level fields of its log line (RFC 009 and RFC 013 promised them; no
-  line had them): a per-call identifier (the start time in milliseconds and
-  a sequence number, in hexadecimal; unique within the process, different for
-  each call, not returned to the caller and in no response) and the caller's
-  id (`local` over stdio and on a listener without callers). They are on the
-  engines' events, the refusals, `fetched` and the closing `call` event, at
-  every log level, and calls that overlap do not mix their ids. `engine_status`
-  logs a `call` event like the other tools, with its outcome and latency. The
-  events of the MCP SDK and of the HTTP stack, and of the listener's gate, are
-  outside a call and have neither field. `Rypsok::fetch_as` and
-  `Rypsok::status_as` take the caller, as `search_as` does; `fetch` and
-  `status` are as before and say `local`. The log format is not part of the
-  contract.
-- Internal: five more fuzz targets (`judge_url`, `parse_rule`, `robots_txt`,
-  `engine_json`, `headers`) on parsers of untrusted input that had none, with
-  seed inputs in `fuzz/corpus/<target>/seed-*`; the scheduled workflow runs
-  every target for 240 s and its time limit follows their number. Five
-  `#[doc(hidden)]` items of `rypsok-core` were made public for them, and
-  `Display` for the egress rule types; none is part of the stable surface.
-- Internal: the verification debt on the security paths. Tests for what the
-  audit found unverified: a successful `http` to `https` upgrade against a
-  TLS server with a certificate made at test time, what a fetch sends (method,
-  headers, no cookie, no credentials, no proxy), the engine client's timeout,
-  hostile provider text in errors and logs, every error constructor's message,
-  and a gate that every request is sent on a client `egress.rs` built;
-  a test for 48 of the 54 mutants that `cargo-mutants` found alive on the
-  security paths and `.cargo/mutants.toml` with the six that cannot change
-  behaviour; `docs/src/maintainers/verification-ledger.md` lists the
-  requirements whose tests are still partial. A property test that could
-  generate `0.0.0.0` as a host name and fail was corrected. `rcgen` is a
-  dev-dependency of `rypsok-core`.
-- Linux aarch64: a static binary (`aarch64-unknown-linux-musl`) is built for
-  each release and CI runs on GitHub's native arm runner (RFC 020, D-13). macOS
-  x86_64 and Windows aarch64 are not built.
-- Provenance attestations (RFC 020, D-16): on a release tag the `checksums`
-  job attests the four archives and the two images, so that
-  `gh attestation verify <file> --repo nabbisen/rypsok` shows that the release
-  workflow built a file. Only that job can sign, and it runs no build code.
-- The container images (Linux x86_64 and aarch64) are files of the release,
-  `rypsok-X.Y.Z-image-amd64.tar.gz` and `-arm64.tar.gz`, and are listed in
-  `SHA256SUMS` (RFC 020, D-12). There is still no registry.
-
-- Internal: `tools/measure-memory --defaults` measures the delivered
-  configuration (default limits, the largest page `fetch.max_bytes` admits,
-  four hosts) and prints the worst case of `rypsok check` beside it.
-
-### Fixed
-
-- `rypsok check` gives the memory estimate of the build it runs as (musl or
-  glibc on Linux, each with its own measured constants, LIM-M6 to LIM-M8 for
-  glibc) and says which build the figure is for; on a platform that was not
-  measured it prints the figure with a note and does not warn against the
-  Linux unit (RFC 020, F-4). Both sets are fitted by one method on the
-  delivered four fetches and two parses at a 5 MiB and a 10 MiB page, so that
-  even without the sessions the estimate is above every measured peak; the
-  musl figures moved up for it (122 MiB for the defaults, 194 at a `max_bytes`
-  of 10 MiB). A glibc build with `fetch.max_bytes`
-  at its ceiling of 10 MiB is now warned about: its measured peak is above
-  256 MiB.
-- A client that cannot be built says why, once: `rypsok: configuration:
-  fetch: the HTTP client could not be built: no root certificates could be
-  loaded (the system store, or SSL_CERT_FILE / SSL_CERT_DIR when set; ...)`.
-  It used to say `could not be built` twice and `builder error` (RFC 020,
-  F-3). The reason of an engine that is inactive for the same cause changes
-  the same way.
-
-- A panic is logged as one JSON line without its message (`event` `panic`,
-  `level` `ERROR`, `location`, `thread`); before, the standard hook wrote its
-  location and message as plain text to standard error, outside the JSON log
-  and its privacy rules. A panic inside the extraction of a page still ends
-  that call only.
-- The client that fetches pages now probes a pooled connection every 60 s
-  (`tcp_keepalive`), as RFC 011 says; it only dropped an idle one after 30 s.
-- Internal: tests that depended on elapsed time run with paused time and exact
-  assertions; the crate builds without a warning with no engine feature and
-  with each one alone (CI checks it); `cfg(test)` helpers moved into test
-  modules; the page behind four example answers is in `examples/pages/`.
-
-- A panic inside a critical section no longer makes every later call
-  panic: the counters, health table, limiters, robots.txt cache, returned
-  URL memory and the per-caller limiters recover a poisoned lock instead of
-  failing on it. The result cache keeps disabling itself on a poisoned lock.
-- A connection to the HTTP listener that never sends a byte, or that stops
-  before the protocol is known (a single `P`, or part of the HTTP/2 preface,
-  or a preface sent a byte at a time), is closed after `idle_timeout_s`
-  counted from accept, and frees its connection slot (LIM-H3 now holds for
-  it too). Before, `max_connections` such connections kept every legitimate
-  caller out for as long as they stayed open.
-- The listener no longer spins and floods the log when `accept` fails (for
-  instance when the descriptor limit is below `max_connections`): it waits
-  100 ms between attempts and logs the error at most once per 10 s. The
-  deployment page now advises `LimitNOFILE` of at least `max_connections` + 64.
-- The `Bearer` scheme of the `Authorization` header is matched without
-  regard to case (RFC 9110), followed by one or more spaces.
-- A page nested hundreds of thousands of levels deep no longer holds the two
-  parse permits for ten seconds or more and keeps unrelated fetches waiting:
-  the nesting bound (LIM-F11, 256) is enforced while the page is parsed, as the
-  node bound is, because the HTML parser's time grew with the square of the
-  depth. A release build parses a page nested 100,000 deep in under a
-  millisecond (before: about 17 s for 80,000).
-- `web_fetch` errors no longer mislead. A URL whose scheme is not `http` or
-  `https` (`ftp://…`) is no longer told that "the http URL was retried over
-  https". A fetch that ran out of time says "the page was not retrieved
-  before the deadline" and not that "no engine answered". The unknown
-  `category` error lists only the categories the process serves (it listed
-  all four). The URL-too-long message gives the number of characters
-  allowed, not the name of the limit. The `web_fetch` description in the tool
-  definition now reads "starting at `start_char`", as the design does, and the
-  `extraction_partial` notice is documented as what it is: the page was larger
-  than rypsok reads, in nodes or nesting, and was read in part.
-- The URL a search result carries is the engine's URL byte for byte, except
-  that tracking parameters are removed. Before, a query was rewritten
-  whenever there was one: `?a=1&b` became `?a=1&b=`, `?a=1;b=2` became
-  `?a=1%3Bb%3D2`, `?q=a%20b` became `?q=a+b`, `?a=%7e` became `?a=%7E` and
-  `?x=%zz` became `?x=%25zz`. The query is now rebuilt only when a tracking
-  parameter was removed, and the other parameters keep their text.
-- The secret check no longer refuses ordinary text: `sk-` or `xoxb-` followed
-  by hyphenated words, `bearer` and a phrase, a 20-letter word after `ASIA`,
-  `host.example:8080@mirror`, `ssh://git:@host/…`, three long dotted words
-  starting `eyJ`, `sk_test_` and a plain word, and `password=` followed by an
-  ordinary word all pass.
-- `rypsok check` accepted configurations that `serve --transport http`
-  refuses: a caller whose token variable is unset, whose token file cannot be
-  read or whose token is shorter than 32 bytes. `check` now reads the
-  callers' tokens as `serve` does, fails with the same message and exits 1
-  (RFC 020, DAT-1).
+RFC 020: the project audit and its fixes. The [audit report](docs/src/maintainers/audit.md)
+lists every finding, what was done, the requirement it is held to and the test
+that pins it. This is a minor version before 1.0.0, so it carries announced
+changes of the external contract and of the public items of `rypsok-core`;
+they are under Changed and Removed.
 
 ### Changed
 
+**Contract changes** (announced as REQ-MAIN-006 requires; they are why this is
+a minor release):
+
+- A redirect target is checked against robots.txt on its own host too, not
+  only on another host (RFC 020, D-1): a call whose redirect target robots.txt
+  disallows now answers `denied`/`robots_txt` where it returned the page. The
+  verdict of the origin is cached, so the check costs no request.
+- The built-in refusal table follows the IANA special-purpose address
+  registries, read 2026-11-03 (RFC 020, D-2). These blocks are now refused:
+  `2001:db8::/32` and `3fff::/20` (documentation), `5f00::/16` (segment
+  routing), `100:0:0:1::/64` (dummy prefix), and the deprecated `::/96`
+  (IPv4-compatible) and `fec0::/10` (site-local). A fetch of an address in
+  them is `denied` (`egress`) unless an `allow` rule admits it, as for every
+  built-in refusal.
+- The parse time of a page is linear in its nesting depth, and a page deeper
+  than 256 levels is read in part where it was read in full (RFC 020, D-3):
+  the text after the deep part is not returned, and the answer carries the
+  `extraction_partial` notice. A page nested 100,000 levels deep parses in
+  under a millisecond (before: about 17 s for 80,000, with the two parse
+  permits held and unrelated fetches waiting). LIM-F11 is a fixed limit (it was
+  listed as configurable and has no key).
+- A fetch says whether retrying can help (RFC 020, D-7): an HTTP error status
+  ends "retry later" for 408, 425, 429 and 5xx, and says the site refused the
+  request or has no such page, and that retrying the same URL will not help,
+  for any other 4xx; `denied` with the reason `scheme` has two messages, one
+  for a scheme that is not allowed and one for a failed retry over `https`;
+  `detail.retry_after_ms` is set for a 408, 425, 429 or 5xx answer that carries
+  `Retry-After` in seconds (an integer, at most 3,600; a date is ignored). The
+  field, the kinds, the reasons and the 200-character bound do not change;
+  `detail.status` is unchanged. The documentation of the `unavailable` kind no
+  longer says that the caller may retry: whether retrying helps depends on
+  `detail.reason`.
+- Search results are merged on a stricter key (RFC 020, D-8): an explicit port
+  that is not the default of the URL's scheme, a non-empty fragment and the
+  order of repeated parameters are part of the identity, so `http://x:443/p` is
+  no longer `https://x/p`, `/app#/inbox` is no longer `/app#/settings` and
+  `?a=1&a=2` is no longer `?a=2&a=1`. `http` and `https` and the `www.` fold are
+  unchanged. When `http` and `https` observations merge, the result shows the
+  `https` URL even if the `http` one ranked first. Strict mode remembers
+  returned URLs without their fragment, so a returned URL may be fetched with
+  any fragment.
+- Joiners keep the orthography they carry (RFC 020, D-10): the zero width
+  non-joiner in Arabic-script and Indic text (Persian `می‌خواهم`) and the zero
+  width joiner in Indic conjuncts and between emoji (`👨‍👩‍👧`) are no longer
+  removed, and no longer counted in `characters_removed`. A joiner anywhere
+  else, a second one in a row, and one at the start or the end of a text are
+  removed and counted as before, as is every other invisible character; a flag
+  built with tag characters (Scotland's) still comes back as the black flag,
+  with the tags counted.
+- The secret check recognizes more formats and names them in `detail.kind`
+  (new values `npm_token`, `gitlab_token`, `huggingface_token`, `sendgrid_key`,
+  `telegram_bot_token`, `twilio_key`, `aws_secret_key`, `password_assignment`,
+  `basic_auth_header`, `azure_account_key`): npm, GitLab, Hugging Face,
+  SendGrid, Telegram bot and Twilio keys, an AWS secret access key named by its
+  context, `password=`, `passwd=` and `secret=` with a value that has a digit or
+  a symbol, `Authorization: Basic …`, Azure `AccountKey=`, `Bearer%20…`, a
+  lower-case AWS key id, a key with a zero width character inside and a GitHub
+  token wrapped by a space. A request that carried one of these used to pass;
+  with `secret_detection = "refuse"` it is now `denied`. An AWS key id
+  beginning `ASIA` or `A3T` needs a digit in its sixteen-character tail;
+  one beginning `AKIA` does not. The Slack, OpenAI, Stripe, JWT and Bearer
+  shapes are stricter (the real format, not any run of letters), and ordinary
+  text no longer trips the check: `sk-` or `xoxb-` followed by hyphenated words,
+  `bearer` and a phrase, a 20-letter word after `ASIA`, `host.example:8080@mirror`,
+  `ssh://git:@host/…`, three long dotted words starting `eyJ`, `sk_test_` and a
+  plain word, and `password=` followed by an ordinary word all pass.
+- `engine_status`: an entry whose `state` is `disabled` has a new optional
+  field `reason`, `disabled` (the operator switched the engine off) or
+  `no_credential` (it needs a key and none could be read). It is absent for
+  every other state; the output schema gains the field.
+- The URL a search result carries is the engine's URL byte for byte, except
+  that tracking parameters are removed. Before, a query was rewritten whenever
+  there was one: `?a=1&b` became `?a=1&b=`, `?a=1;b=2` became `?a=1%3Bb%3D2`,
+  `?q=a%20b` became `?q=a+b`, `?a=%7e` became `?a=%7E` and `?x=%zz` became
+  `?x=%25zz`. The query is rebuilt only when a tracking parameter was removed,
+  and the other parameters keep their text (RFC 020, DAT-8).
 - A search result whose URL has a host with an empty label (such as
   `https://.example/`) is dropped and counted as `url_invalid`, as other invalid
   URLs are, instead of being shown (RFC 020, D-24). A result's host must pass
   the check `web_fetch` applies, so the search never shows a URL that the fetch
   refuses on syntax; the egress policy is still decided at fetch time.
+- Two configuration ceilings are lowered; the defaults do not change (RFC 020,
+  D-20 and D-21): `fetch.max_bytes` is now 65536 to 10485760 (was up to
+  20971520) and `service.http.max_sessions` is now 1 to 2048 (was up to 65536).
+  Measured on the delivered binary: four fetches of a 20 MiB page took 265 to
+  282 MiB, above the 256 MiB of the documented systemd unit (the kernel killed
+  the process in 3 of 3 runs), and 65536 sessions took 3.7 GiB at about 60 KiB
+  each. A configuration that sets a value above the new ceiling is refused with
+  the usual "must be between" message.
+- The header block of an HTTP request (request line and headers on HTTP/1, the
+  header list on HTTP/2) is bounded at 16 KiB, a new fixed limit LIM-H7. A
+  larger block is answered 431 (HTTP/2: the connection is closed); hyper's
+  default for HTTP/1 was about 400 KB.
+- A connection to the HTTP listener that never sends a byte, or that stops
+  before the protocol is known (a single `P`, part of the HTTP/2 preface, or a
+  preface sent a byte at a time), is closed after `idle_timeout_s` counted from
+  accept, and frees its connection slot (LIM-H3 now holds for it too; RFC 020,
+  D-4). Before, `max_connections` such connections kept every legitimate caller
+  out for as long as they stayed open. The close is counted as the new refusal
+  reason `idle_connection` in the `counters` event (`refusals`, under `http`),
+  and not logged.
+
+Other changes:
+
+- Configuration messages say what to do (RFC 020, DAT-11, DAT-12, DAT-14). A
+  value of the wrong kind is reported as `<key path>: expected <what>, found
+  <what> (line N, column M)` in the words of the file, for example
+  `search.max_results: expected an integer from 1 to 20, found text (line 3,
+  column 15)`, where it was `invalid type: string "five", expected u8 (at byte
+  42)`; a syntax error, a duplicate and an unknown key have a key path and a
+  line and column too. A text that was found is never repeated. Where a range
+  depends on another key the message names that key and its value
+  (`search.engine_timeout_ms: must be between 100 and 300 (search.deadline_ms
+  500 minus search.reserve_ms 200)`), and a deny or allow rule that ends in a
+  dot says so. The wording changed; the rules did not: a file that was valid is
+  valid.
+- A message never repeats a value from the file (RFC 020): an unknown word for
+  a setting is reported as `found an unknown word` after the list of the
+  allowed words, and the name in `api_key_env` or `token_env` is shown in
+  "environment variable X is unset or empty" only when it looks like a variable
+  name (upper-case letters, digits and underscores). A secret pasted into those
+  keys by mistake used to come back in the message, in `check` and in the log of
+  `serve`.
+- `rypsok check` prints more (RFC 020, DAT-2, D-6, D-20, D-21): a line for every
+  section it said nothing of (`service.http`, `fetch`, `egress`, `privacy`,
+  `logging`, `cache`, `scraping`, `resilience`, `limits`); the worst-case memory
+  of the settings, for the build that runs it (`13 MiB + fetches × max_bytes +
+  parses × (5.2 × max_bytes + 11 MiB) + max_sessions × 60 KiB` while
+  `legacy_revisions` is on, on musl; 14 MiB and `10.6 × max_bytes + 21 MiB` on a
+  glibc build; both fitted on the delivered four fetches and two parses, and
+  above every measured peak; a platform that was not measured prints the figure
+  with a note and is not compared with the unit); and warnings, each one line
+  `rypsok: warning: <key>: <what happens>; <the safer setting>`, for an allow
+  rule wider than /16 or /32, `secret_detection = "off"`, a bind off loopback
+  (plain HTTP), `log_queries`, `robots_txt = false`, `allow_http`,
+  `follow_cross_host_redirects`, a scraping engine, a cache with no storable
+  engine and a worst case above 256 MiB (122 MiB for the defaults on musl, 197 on
+  glibc). The exit code does not change. There is no warning for
+  `legacy_revisions`. The format of the lines is not part of the contract.
+- The stability page says what the code holds about `rypsok-core` (RFC 020,
+  D-11): the frozen surface is the facade (`Rypsok`) and the types of the `model`
+  module; the other public items of the crate are public for the `rypsok` crate
+  and are outside the promise until 1.0.0 decides what else is frozen. The page
+  lists the types that are `#[non_exhaustive]` and the types that are
+  deliberately exhaustive (`Outcome`, `ErrorKind`, `CallError`, `EngineState`,
+  `TimeRange` and the validated identifiers), and a test keeps the lists equal
+  to the source. It used to say that all public types are `#[non_exhaustive]`,
+  which 16 of the surface's types are.
 - The book is published from the release tag and says on its first page which
   release it describes (RFC 020, D-17): a push to `main` publishes nothing, a
-  tag `X.Y.Z` publishes, and a manual run publishes the ref it was started
-  from and says so; a failed publish is red. The owner allows the tag in the
+  tag `X.Y.Z` publishes, and a manual run publishes the ref it was started from
+  and says so; a failed publish is red. The owner allows the tag in the
   `github-pages` environment (`releasing.md`).
 - Documents: the deployment page adds `MemorySwapMax=0` and `--memory-swap
   256m` (without them a host with swap slows down instead of restarting the
-  process), says which certificates the fetches trust (the system store, and
-  on Linux `SSL_CERT_FILE` and `SSL_CERT_DIR`; a start without any root fails
-  at once) and the measured memory of the delivered defaults (98 to 107 MiB on
-  the musl build, 171 to 187 MiB on a glibc build); the Wikipedia admission
-  record states the burst wait; the basis of LIM-S4 names its measurements.
-  Every audit decision in the book is written `RFC 020, D-n`, and a bare
-  `D-nn` is said to be a decision of the startup review.
+  process), says which certificates the fetches trust (the system store, and on
+  Linux `SSL_CERT_FILE` and `SSL_CERT_DIR`; a start without any root fails at
+  once) and the measured memory of the delivered defaults (98 to 107 MiB on the
+  musl build, 171 to 187 MiB on a glibc build); the Wikipedia admission record
+  states the burst wait; the basis of LIM-S4 names its measurements. Every audit
+  decision in the book is written `RFC 020, D-n`, and a bare `D-nn` is said to
+  be a decision of the startup review.
 - The container image is made from the release binary instead of being built
   from source with another compiler: the `Dockerfile` compiles nothing and
   copies the binary of the release onto the pinned distroless base (RFC 020,
   D-12). `docker build` needs the musl binary under `dist/linux-<arch>/`.
-- Release binaries are stripped of symbols (`strip = "symbols"`; RFC 020,
-  D-22): the Linux x86_64 binary shrinks from 18,997,040 to 13,692,376 bytes
-  (28 %). Unwinding stays, and there is no LTO. Nothing a binary does changes.
-- Internal: checks run per change and before every release, not on a timer.
-  `release-checks.yml` (reproducibility of the release builds, every fuzz
-  target for 300 s, mutation testing of the six security modules, the live
-  checks and the advisory check) replaces the weekly `scheduled.yml`; the live
-  checks and the advisories are also `external-checks.yml`, run on demand. The
-  release build is one local action, `.github/actions/build-release`, which
-  alone names the release compiler. New requirement REQ-TEST-019.
-  `docs/src/maintainers/checks.md` says when each check runs and what red
-  means.
+- The release binaries are built with a named compiler (1.99.1) instead of the
+  day's `stable`, and the Windows executable is linked with `/Brepro` (no
+  timestamp in the header), so that two builds of one commit give the same
+  binary. The release notes name the compiler. The binaries are stripped of
+  symbols (`strip = "symbols"`; RFC 020, D-22): the Linux x86_64 binary shrinks
+  from 18,997,040 to 13,692,376 bytes (28 %). Unwinding stays, and there is no
+  LTO. Nothing a binary does changes.
 
-- **Removed from `rypsok-core`'s public items** (RFC 020, TST-10; none is in the
-  frozen surface of the stability page): the type `UserAgentFormat` and the
-  field `EngineProperties::user_agent`; the six builders
+### Added
+
+- Two settings for limits that had no key (RFC 020, D-9):
+  `search.connect_timeout_ms` (LIM-S12, 200 to 5000, default 1000) and
+  `service.shutdown_ms` (LIM-O1, 500 to 10000, default 3000). The defaults are
+  the values the program used; `rypsok check` prints both. The limits table now
+  calls "fixed" every row that no key sets.
+- Every event of a tool call carries `request_id` and `caller` as top-level
+  fields of its log line (RFC 009 and RFC 013 promised them; no line had them):
+  a per-call identifier (the start time in milliseconds and a sequence number,
+  in hexadecimal; unique within the process, different for each call, not
+  returned to the caller and in no response) and the caller's id (`local` over
+  stdio and on a listener without callers). They are on the engines' events, the
+  refusals, `fetched` and the closing `call` event, at every log level, and
+  calls that overlap do not mix their ids. `engine_status` logs a `call` event
+  like the other tools, with its outcome and latency. The events of the MCP SDK
+  and of the HTTP stack, and of the listener's gate, are outside a call and have
+  neither field. `Rypsok::fetch_as` and `Rypsok::status_as` take the caller, as
+  `search_as` does; `fetch` and `status` are as before and say `local`. The log
+  format is not part of the contract.
+- Linux aarch64: a static binary (`aarch64-unknown-linux-musl`) is built for
+  each release and CI runs on GitHub's native arm runner (RFC 020, D-13). macOS
+  x86_64 and Windows aarch64 are not built.
+- The container images (Linux x86_64 and aarch64) are files of the release,
+  `rypsok-X.Y.Z-image-amd64.tar.gz` and `-arm64.tar.gz`, and are listed in
+  `SHA256SUMS` (RFC 020, D-12). There is still no registry.
+- Provenance attestations (RFC 020, D-16): on a release tag the `checksums` job
+  attests the four archives and the two images, so that `gh attestation verify
+  <file> --repo nabbisen/rypsok` shows that the release workflow built a file.
+  Only that job can sign, and it runs no build code.
+
+### Removed
+
+- From `rypsok-core`'s public items (RFC 020, TST-10; none is in the frozen
+  surface of the stability page): the type `UserAgentFormat` and the field
+  `EngineProperties::user_agent`; the six builders
   `EngineProperties::with_max_query_words`, `with_languages`,
   `with_attribution_required`, `with_user_agent`, `with_max_response_bytes` and
   `with_scraping`; `Rypsok::returned_urls`; the fields `fetch_ports`,
   `http_max_connections`, `http_max_request_bytes`, `http_idle_timeout_s`,
   `http_max_streams`, `http_request_timeout_s` and `http_max_sessions` of
-  `Limits` (the listener and the fetch service read the configuration, which
-  is the one source of those numbers). `Limits::worst_case_memory` takes the
-  number of sessions as its first argument, and `EngineLimiter::acquire` takes a
+  `Limits` (the listener and the fetch service read the configuration, which is
+  the one source of those numbers). `Limits::worst_case_memory` takes the number
+  of sessions as its first argument, and `EngineLimiter::acquire` takes a
   `tokio::time::Instant`.
+- `SearchResult` and `SearchResponse` no longer implement `Deserialize`: a
+  result is built only by the content boundary, and reading one from JSON would
+  have been a second way. Nothing in the tree needed to read them back; the
+  tests that did compare the serialized form instead, or read the documentation
+  examples into a private mirror of the type.
 
-- New refusal reason `idle_connection` in the `counters` event (`refusals`,
-  under `http`): a connection closed because it had not told its protocol
-  within the idle time. It is counted and not logged.
-- The header block of an HTTP request (request line and headers on HTTP/1,
-  the header list on HTTP/2) is bounded at 16 KiB, a new fixed limit LIM-H7.
-  A larger block is now answered 431 (HTTP/2: the connection is closed); hyper's
-  default for HTTP/1 was about 400 KB.
-- A redirect target is checked against robots.txt on the same host too (it
-  was only checked on another host). A call whose redirect target robots.txt
-  disallows now answers `denied`/`robots_txt` where it returned the page.
-  The verdict of the origin is cached, so the check costs no request.
-- The built-in refusal table now follows the IANA special-purpose address
-  registries (read 2026-11-03). These blocks are now refused: `2001:db8::/32`
-  and `3fff::/20` (documentation), `5f00::/16` (segment routing),
-  `100:0:0:1::/64` (dummy prefix), and the deprecated `::/96` (IPv4-compatible)
-  and `fec0::/10` (site-local). A fetch of an address in them is `denied`
-  (`egress`) unless an `allow` rule admits it, as for every built-in refusal.
-- The release binaries are built with a named compiler (1.99.1) instead of
-  the day's `stable`, and the Windows executable is linked with `/Brepro`
-  (no timestamp in the header), so that two builds of one commit give the same
-  binary. The release notes name the compiler. No change to the files a
-  release carries.
-- A page deeper than 256 levels is now read in part where it was read in
-  full: the text after the deep part is not returned, and the answer carries
-  the `extraction_partial` notice. LIM-F11 is a fixed limit (it was listed as
-  configurable and has no configuration key).
-- The wording of some error `message`s changed (the field, the kinds, the
-  reasons and the 200-character bound do not): an HTTP error status says whether retrying can
-  help (408, 425, 429 and 5xx end "retry later"; any other 4xx says the site
-  refused the request or has no such page and that retrying the same URL will
-  not help), and `denied` with the reason `scheme` has two messages, one for a
-  scheme that is not allowed and one for a failed retry over `https`.
-  `detail.status` is unchanged. `detail.retry_after_ms`
-  is now set for a 408, 425, 429 or 5xx answer that carries `Retry-After` in
-  seconds (an integer, at most 3,600; a date is ignored). The documentation of
-  the `unavailable` kind no longer says that the caller may retry: whether
-  retrying helps depends on `detail.reason`.
-- `engine_status`: an entry whose `state` is `disabled` has a new optional
-  field `reason`, `disabled` (the operator switched the engine off) or
-  `no_credential` (it needs a key and none could be read). It is absent for
-  every other state; the output schema gains the field.
-- Search results are merged on a stricter key (RFC 008, D-8): an explicit
-  port that is not the default of the URL's scheme, a non-empty fragment and
-  the order of repeated parameters are now part of the identity, so
-  `http://x:443/p` is no longer `https://x/p`, `/app#/inbox` is no longer
-  `/app#/settings` and `?a=1&a=2` is no longer `?a=2&a=1`. `http` and `https`
-  and the `www.` fold are unchanged. When `http` and `https` observations
-  merge, the result shows the `https` URL even if the `http` one ranked
-  first. Strict mode is not affected: it remembers returned URLs without
-  their fragment, so a returned URL may be fetched with any fragment.
-- Joiners keep the orthography they carry (D-10): the zero width non-joiner in
-  Arabic-script and Indic text (Persian `می‌خواهم`), the zero width joiner in
-  Indic conjuncts and between emoji (`👨‍👩‍👧`) are no longer removed, and no longer
-  counted in `characters_removed`. A joiner anywhere else, a second one in a
-  row, and one at the start or the end of a text are removed and counted as
-  before, as is every other invisible character; a flag built with tag
-  characters (Scotland's) still comes back as the black flag, with the tags
-  counted.
-- The secret check recognizes more formats and names them in `detail.kind`
-  (new values `npm_token`, `gitlab_token`, `huggingface_token`,
-  `sendgrid_key`, `telegram_bot_token`, `twilio_key`, `aws_secret_key`,
-  `password_assignment`, `basic_auth_header`, `azure_account_key`): npm,
-  GitLab, Hugging Face, SendGrid, Telegram bot and Twilio keys, an AWS secret
-  access key named by its context, `password=`, `passwd=` and `secret=` with a
-  value that has a digit or a symbol, `Authorization: Basic …`, Azure
-  `AccountKey=`, `Bearer%20…`, a lower-case AWS key id, a key with a zero
-  width character inside and a GitHub token wrapped by a space. A request that
-  carried one of these used to pass; with `secret_detection = "refuse"` it is
-  now `denied`. An AWS key id beginning `ASIA` or `A3T` needs a digit in its
-  sixteen-character tail (an `ASIA` followed by a 16-letter word has none); one
-  beginning `AKIA` does not. The Slack, OpenAI, Stripe, JWT and Bearer shapes
-  are stricter (the real format, not any run of letters).
-- The stability page now says what the code holds about `rypsok-core`
-  (D-11): the frozen surface is the facade (`Rypsok`) and the types of the
-  `model` module; the other public items of the crate are public for the
-  `rypsok` crate and are outside the promise until 1.0.0 decides what else is
-  frozen. The page lists the types that are `#[non_exhaustive]` and the
-  types that are deliberately exhaustive (`Outcome`, `ErrorKind`,
-  `CallError`, `EngineState`, `TimeRange` and the validated identifiers), and
-  a test keeps the lists equal to the source. It used to say that all public
-  types are `#[non_exhaustive]`, which 16 of the surface's types are.
-- `SearchResult` and `SearchResponse` no longer implement `Deserialize`
-  (public items of `rypsok-core`): a result is built only by the content
-  boundary, and reading one from JSON would have been a second way. Nothing
-  in the tree needed to read them back; the tests that did compare the
-  serialized form instead, or read the documentation examples into a
-  private mirror of the type.
-- Two configuration ceilings are lowered (a contract change, RFC 020 D-20 and
-  D-21; the defaults do not change): `fetch.max_bytes` is now 65536 to
-  10485760 (was up to 20971520) and `service.http.max_sessions` is now 1 to
-  2048 (was up to 65536). Measured on the delivered binary: four fetches of a
-  20 MiB page took 265 to 282 MiB, above the 256 MiB of the documented
-  systemd unit (the kernel killed the process in 3 of 3 runs), and 65536
-  sessions took 3.7 GiB at about 60 KiB each. A configuration that sets a
-  value above the new ceiling is refused with the usual "must be between"
-  message.
-- Configuration messages say what to do (RFC 020, DAT-11, DAT-12, DAT-14). A
-  value of the wrong kind is reported as `<key path>: expected <what>, found
-  <what> (line N, column M)` in the words of the file, for example
-  `search.max_results: expected an integer from 1 to 20, found text (line 3,
-  column 15)`, where it was `invalid type: string "five", expected u8 (at
-  byte 42)`; a syntax error, a duplicate and an unknown key have a key path
-  and a line and column too. A text that was found is never repeated. Where
-  a range depends on another key the message names that key and its value
-  (`search.engine_timeout_ms: must be between 100 and 300 (search.deadline_ms
-  500 minus search.reserve_ms 200)`), and a deny or allow rule that ends in a
-  dot says so. The wording changed; the rules did not: a file that was valid
-  is valid.
-- `rypsok check` prints more (RFC 020, DAT-2, D-6, D-20, D-21): a line for
-  every section it said nothing of (`service.http`, `fetch`, `egress`,
-  `privacy`, `logging`, `cache`, `scraping`, `resilience`, `limits`), the
-  worst-case memory of the settings (13 MiB + fetches × `max_bytes` + parses ×
-  (5.2 × `max_bytes` + 11 MiB) + `max_sessions` × 60 KiB while `legacy_revisions`
-  is on, an estimate for the musl build; a glibc build has its own constants,
-  see Fixed), and warnings, each one line `rypsok:
-  warning: <key>: <what happens>; <the safer setting>`, for an allow rule wider
-  than /16 or /32, `secret_detection = "off"`, a bind off loopback (plain
-  HTTP), `log_queries`, `robots_txt = false`, `allow_http`,
-  `follow_cross_host_redirects`, a scraping engine, a cache with no storable
-  engine and a worst case above 256 MiB. The exit code does not change. There
-  is no warning for `legacy_revisions`. The format of the lines is not part of
-  the contract.
-- A message never repeats a value from the file (RFC 020): an unknown word
-  for a setting is reported as `found an unknown word` after the list of the
-  allowed words, and the name in `api_key_env` or `token_env` is shown in
-  "environment variable X is unset or empty" only when it looks like a
-  variable name (upper-case letters, digits and underscores). A secret pasted
-  into those keys by mistake used to come back in the message, in `check` and
-  in the log of `serve`.
+### Fixed
+
+- A panic is logged as one JSON line without its message (`event` `panic`,
+  `level` `ERROR`, `location`, `thread`); before, the standard hook wrote its
+  location and message as plain text to standard error, outside the JSON log
+  and its privacy rules. A panic inside the extraction of a page still ends that
+  call only.
+- A panic inside a critical section no longer makes every later call panic:
+  the counters, health table, limiters, robots.txt cache, returned URL memory
+  and the per-caller limiters recover a poisoned lock instead of failing on it.
+  The result cache keeps disabling itself on a poisoned lock.
+- The client that fetches pages probes a pooled connection every 60 s
+  (`tcp_keepalive`), as RFC 011 says; it only dropped an idle one after 30 s.
+- The listener no longer spins and floods the log when `accept` fails (for
+  instance when the descriptor limit is below `max_connections`): it waits 100
+  ms between attempts and logs the error at most once per 10 s. The deployment
+  page advises `LimitNOFILE` of at least `max_connections` + 64.
+- The `Bearer` scheme of the `Authorization` header is matched without regard to
+  case (RFC 9110), followed by one or more spaces.
+- `web_fetch` errors no longer mislead. A URL whose scheme is not `http` or
+  `https` (`ftp://…`) is no longer told that "the http URL was retried over
+  https". A fetch that ran out of time says "the page was not retrieved before
+  the deadline" and not that "no engine answered". The unknown `category` error
+  lists only the categories the process serves (it listed all four). The
+  URL-too-long message gives the number of characters allowed, not the name of
+  the limit. The `web_fetch` description in the tool definition reads "starting
+  at `start_char`", as the design does, and the `extraction_partial` notice is
+  documented as what it is: the page was larger than rypsok reads, in nodes or
+  nesting, and was read in part.
+- `rypsok check` accepted configurations that `serve --transport http` refuses:
+  a caller whose token variable is unset, whose token file cannot be read or
+  whose token is shorter than 32 bytes. `check` reads the callers' tokens as
+  `serve` does, fails with the same message and exits 1 (RFC 020, DAT-1).
+- A client that cannot be built says why, once: `rypsok: configuration: fetch:
+  the HTTP client could not be built: no root certificates could be loaded (the
+  system store, or SSL_CERT_FILE / SSL_CERT_DIR when set; ...)`. It used to say
+  "could not be built" twice and only `builder error`. The reason of an engine
+  that is inactive for the same cause changes the same way.
+
+### Internal
+
+- Checks run per change and before every release, not on a timer (RFC 020,
+  D-23). `release-checks.yml` (reproducibility of the release builds of every
+  target, every one of the 14 fuzz targets for 300 s, mutation testing of the six
+  security modules, the live checks and the advisory check) replaces the weekly
+  `scheduled.yml`; the live checks and the advisories are also
+  `external-checks.yml`, run on demand. The release build is one local action,
+  `.github/actions/build-release`, which alone names the release compiler. New
+  requirement REQ-TEST-019. `docs/src/maintainers/checks.md` says when each check
+  runs and what red means.
+- Fuzz targets on parsers of untrusted input: five more (`judge_url`,
+  `parse_rule`, `robots_txt`, `engine_json`, `headers`, 14 in all), every one
+  with seed inputs in `fuzz/corpus/<target>/seed-*`. Some items of `rypsok-core`
+  were made public (hidden from the documentation) and the egress rule types
+  gained `Display` for them; none is part of the stable surface.
+- The verification debt on the security paths. Tests for what the audit found
+  unverified: a successful `http` to `https` upgrade against a TLS server with a
+  certificate made at test time, what a fetch sends (method, headers, no cookie,
+  no credentials, no proxy), the engine client's timeout, hostile provider text
+  in errors and logs, every error constructor's message, and a gate that every
+  request is sent on a client `egress.rs` built; a test for 48 of the 54
+  mutants that `cargo-mutants` found alive on the security paths and
+  `.cargo/mutants.toml` with the six that cannot change behaviour;
+  `docs/src/maintainers/verification-ledger.md` lists the requirements whose
+  tests are still partial. A property test that could generate `0.0.0.0` as a
+  host name and fail was corrected. `rcgen` is a dev-dependency of
+  `rypsok-core`.
+- Tests that depended on elapsed time run with paused time and exact assertions;
+  the crate builds without a warning with no engine feature and with each one
+  alone (CI checks it); `cfg(test)` helpers moved into test modules; the page
+  behind four example answers is in `examples/pages/`.
+- `tools/measure-memory --defaults` measures the delivered configuration
+  (default limits, the largest page `fetch.max_bytes` admits, four hosts) and
+  prints the worst case of `rypsok check` beside it. `EstimateBasis` and
+  `Limits::worst_case_memory_for` select the constants of a build.
 
 ## [0.8.0] — 2026-10-29 — Corrections from the first independent review
 
@@ -622,7 +617,8 @@ Search deadline 2500 ms, engine timeout 2000 ms, reserve 200 ms, up to 8
 engines per request, 10 results per engine, snippets 300 and titles 150
 characters, query 400 characters, 60 `web_search` calls per minute.
 
-[Unreleased]: https://github.com/nabbisen/rypsok/compare/0.8.0...HEAD
+[Unreleased]: https://github.com/nabbisen/rypsok/compare/0.9.0...HEAD
+[0.9.0]: https://github.com/nabbisen/rypsok/compare/0.8.0...0.9.0
 [0.8.0]: https://github.com/nabbisen/rypsok/releases/tag/0.8.0
 [0.7.0]: https://github.com/nabbisen/rypsok/releases/tag/0.7.0
 [0.6.0]: https://github.com/nabbisen/rypsok/releases/tag/0.6.0
