@@ -242,8 +242,14 @@ fn req_eng_001_oddly_written_links_are_made_canonical_by_the_pipeline() {
         !unwrapped.starts_with("https://"),
         "the driver's text is the provider's: {unwrapped}"
     );
+    // The wrapped link with an empty label is refused (RFC 020, D-24): the
+    // search would otherwise show a URL that `web_fetch` cannot fetch.
+    assert_eq!(
+        returned_url(&unwrapped, 2048),
+        Err(crate::search::normalize::UrlRejection::Invalid),
+        "{unwrapped:?}"
+    );
     for (href, canonical) in [
-        (wrapped, "https://.xtras__url/"),
         ("HTTPS://example.org/A", "https://example.org/A"),
         (
             "http:///doc.rust-lang.org/book/",

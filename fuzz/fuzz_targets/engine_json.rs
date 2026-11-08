@@ -25,7 +25,13 @@ fuzz_target!(|data: &[u8]| {
     let Ok(results) = results else { return };
     for result in &results {
         match returned_url(&result.url, MAX_URL_CHARS) {
-            Ok(url) => assert!(url.starts_with("http://") || url.starts_with("https://"), "{url}"),
+            Ok(url) => {
+                assert!(url.starts_with("http://") || url.starts_with("https://"), "{url}");
+                // RFC 020, D-24: the host is one `web_fetch` accepts.
+                if let Some(url::Host::Domain(name)) = url::Url::parse(&url).unwrap().host() {
+                    assert!(rypsok_core::egress::policy::Host::from_name(name).is_ok(), "{url}");
+                }
+            }
             Err(rejection) => {
                 // A URL the reader built itself is always admitted, unless
                 // it is longer than the pipeline's bound.

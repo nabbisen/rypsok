@@ -506,7 +506,10 @@ never be returned to the caller and never be fetched. (C-07)
 ### REQ-RANK-003 Returned URL — M1 · T
 The URL returned to the caller shall be the engine's URL with known tracking
 parameters removed, provider redirect wrappers unwrapped by the driver, and
-the host written in its ASCII (IDNA) form, and nothing else changed.
+the host written in its ASCII (IDNA) form, and nothing else changed. A result
+whose URL is not an `http` or `https` URL with a host that `web_fetch` would
+accept (a name without an empty label, or an address) shall be dropped and
+counted in a notice. (RFC 020, D-24)
 
 ### REQ-RANK-004 Cross-engine deduplication — M1 · T
 Results with the same comparison key shall be merged into one result whose

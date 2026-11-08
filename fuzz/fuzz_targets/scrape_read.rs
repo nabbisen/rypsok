@@ -21,6 +21,10 @@ fuzz_target!(|data: &[u8]| {
                 assert!(matches!(parsed.scheme(), "http" | "https"), "{}", result.url);
                 if let Ok(canonical) = returned_url(&result.url, 2048) {
                     assert!(canonical.starts_with("http://") || canonical.starts_with("https://"));
+                    // RFC 020, D-24: the host is one `web_fetch` accepts.
+                    if let Some(url::Host::Domain(name)) = url::Url::parse(&canonical).unwrap().host() {
+                        assert!(rypsok_core::egress::policy::Host::from_name(name).is_ok(), "{canonical}");
+                    }
                 }
             }
         }

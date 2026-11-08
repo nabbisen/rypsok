@@ -150,6 +150,63 @@ fn req_rank_003_returned_url_table() {
     assert!(returned_url(&long, 4096).is_ok());
 }
 
+/// REQ-RANK-003 (RFC 020, D-24): a result's URL is shown only if its host
+/// passes the check `web_fetch` applies (`Host::from_name` for a name, or it
+/// is an address), so that the search never shows a URL the fetch refuses on
+/// syntax. A host with an empty label is invalid; one trailing root dot is
+/// not; underscores stay; address literals pass.
+#[test]
+fn req_rank_003_a_host_web_fetch_would_refuse_is_invalid() {
+    let rows: &[(&str, Result<&str, UrlRejection>)] = &[
+        ("https://.xtras__url/", Err(UrlRejection::Invalid)),
+        ("https:/.xtras__url", Err(UrlRejection::Invalid)),
+        ("https://a..b/", Err(UrlRejection::Invalid)),
+        ("https://a../", Err(UrlRejection::Invalid)),
+        ("https://.example/", Err(UrlRejection::Invalid)),
+        ("https://a./", Ok("https://a./")),
+        ("https://a_b.example/", Ok("https://a_b.example/")),
+        ("https://127.0.0.1/", Ok("https://127.0.0.1/")),
+        ("https://0x7f.1/", Ok("https://127.0.0.1/")),
+        ("https://[::1]/p", Ok("https://[::1]/p")),
+    ];
+    let mut wrong = Vec::new();
+    for (input, expected) in rows {
+        let got = returned_url(input, MAX);
+        if got.as_ref().map(String::as_str).map_err(|e| *e) != *expected {
+            wrong.push(format!("{input}: got {got:?}, expected {expected:?}"));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    // One rule, not two: for a range of hosts the answer is what the fetch
+    // path's own check gives.
+    for host in [
+        "example.org",
+        "a.b.c",
+        "a.",
+        "a..",
+        ".a",
+        "a..b",
+        "x--y.example",
+        "_x.example",
+        "1.2.3.4",
+        "xn--r8jz45g.jp",
+        "a.b.",
+        "www.",
+        "\u{4f8b}\u{3048}.jp",
+    ] {
+        let url = format!("https://{host}/");
+        let fetchable = match Url::parse(&url)
+            .ok()
+            .and_then(|u| u.host().map(|h| h.to_owned()))
+        {
+            Some(url::Host::Domain(name)) => crate::egress::policy::Host::from_name(&name).is_ok(),
+            Some(_) => true,
+            None => false,
+        };
+        assert_eq!(returned_url(&url, MAX).is_ok(), fetchable, "{host}");
+    }
+}
+
 /// REQ-RANK-002: equal keys for the forms of one resource, different keys
 /// for different resources.
 #[test]

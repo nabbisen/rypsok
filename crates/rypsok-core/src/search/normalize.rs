@@ -4,6 +4,8 @@
 
 use url::Url;
 
+use crate::egress::policy::Host;
+
 /// Query parameters removed from returned URLs: tracking only, never
 /// content. Reviewable.
 pub const TRACKING_PARAMETERS: &[&str] = &[
@@ -43,8 +45,18 @@ pub enum UrlRejection {
 /// host and drops a default port, which does not change the resource.
 pub fn returned_url(raw: &str, max_chars: u32) -> Result<String, UrlRejection> {
     let mut url = Url::parse(raw.trim()).map_err(|_| UrlRejection::Invalid)?;
-    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+    if !matches!(url.scheme(), "http" | "https") {
         return Err(UrlRejection::Invalid);
+    }
+    // A host `web_fetch` would refuse on syntax is not shown (RFC 020, D-24):
+    // a name must pass the one check the fetch path applies, an address is
+    // well formed by construction. Egress policy is not applied here.
+    match url.host() {
+        Some(url::Host::Domain(name)) if Host::from_name(name).is_err() => {
+            return Err(UrlRejection::Invalid);
+        }
+        Some(_) => {}
+        None => return Err(UrlRejection::Invalid),
     }
     if !url.username().is_empty() || url.password().is_some() {
         return Err(UrlRejection::Invalid);

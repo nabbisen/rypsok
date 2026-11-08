@@ -151,6 +151,11 @@ announced here with both values.
 
 ### Changed
 
+- A search result whose URL has a host with an empty label (such as
+  `https://.example/`) is dropped and counted as `url_invalid`, as other invalid
+  URLs are, instead of being shown (RFC 020, D-24). A result's host must pass
+  the check `web_fetch` applies, so the search never shows a URL that the fetch
+  refuses on syntax; the egress policy is still decided at fetch time.
 - The book is published from the release tag and says on its first page which
   release it describes (RFC 020, D-17): a push to `main` publishes nothing, a
   tag `X.Y.Z` publishes, and a manual run publishes the ref it was started

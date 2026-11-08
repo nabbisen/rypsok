@@ -633,6 +633,27 @@ async fn req_priv_002_secret_in_query_is_refused_before_any_request() {
     assert_eq!(h.counters.refusals_of("web_search", "secret_in_query"), 1);
 }
 
+/// REQ-RANK-003 (RFC 020, D-24): a result whose host `web_fetch` would refuse
+/// (an empty label) is dropped and counted as `url_invalid` with the other
+/// invalid URLs; the good results stay.
+#[tokio::test]
+async fn req_rank_003_a_result_with_an_unfetchable_host_is_dropped_and_counted() {
+    let items = vec![
+        ("Good", "https://example.org/a", "ok"),
+        ("Empty label", "https://.xtras__url/", "no"),
+        ("Two dots", "https://a..b/", "no"),
+        ("Also good", "https://example.org/b", "ok"),
+    ];
+    let h = harness(vec![("a", Script::Answer(items))]);
+    let response = h.search(req(), CancellationToken::new()).await.unwrap();
+    assert_eq!(response.results.len(), 2, "{:?}", response.results);
+    assert!(response.notices.contains(&Notice::counted_with_reason(
+        NoticeCode::ResultsDropped,
+        Reason::UrlInvalid,
+        2
+    )));
+}
+
 /// REQ-CTX-001, REQ-SEC-003 and REQ-CTX-006: attribution appears only
 /// when enabled; flagged results are noticed or dropped; invalid URLs are
 /// dropped and counted.

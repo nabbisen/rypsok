@@ -24,7 +24,7 @@ exclude_re = [
 
     # `i + 2 < bytes.len()` against `<=`: at `i + 2 == len` the next line's
     # `bytes.get(i + 2)` is `None` and the escape is not read either way.
-    'normalize\.rs:164:52: replace < with <= in normalize_percent',
+    'normalize\.rs:170:52: replace < with <= in normalize_percent',
 
     # `contains(&c) || c == '\u{00AD}'`: the tag characters (U+E0000 to
     # U+E007F) and the soft hyphen are format characters or unassigned, and
