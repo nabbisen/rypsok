@@ -132,19 +132,23 @@ pub mod defaults {
     /// Size of one cache entry, in bytes (RFC 014).
     pub const CACHE_ENTRY_BYTES: u32 = 32768; // LIM-K4
 
-    // The measured costs of the memory estimate (RFC 020 D-20, D-21). They
-    // come from audit 020e, taken on the delivered musl release build of
-    // 0.8.0, and are rounded up: the estimate is on the safe side.
+    // The measured costs of the memory estimate (RFC 020 D-20, D-21; 020x).
+    // They are fitted on the delivered musl release build, with
+    // `tools/measure-memory --defaults` at four fetches and two parses at
+    // once, at a 5 MiB and a 10 MiB page, five runs each: the maximum of the
+    // runs less the idle base and the four bodies is the cost of two parses,
+    // a line through the two sizes is rounded up, so that the estimate is
+    // above every run even without the sessions. (Audit 020e's single-fetch
+    // figures, 34.1 MiB at 5 MiB and 99.2 at 20 MiB, are the history.)
 
-    /// The process at rest: 10 to 12 MiB idle (median 10.9) and a margin.
+    /// The process at rest: 10 to 12.05 MiB idle and a margin.
     pub const MEASURED_BASE_BYTES: u64 = 13_631_488; // LIM-M1
-    /// The part of one parse that does not grow with the page: the line of
-    /// 34.1 MiB (5 MiB page) and 99.2 MiB (20 MiB page) crosses the
-    /// vertical axis at 12.4 MiB.
-    pub const MEASURED_PARSE_FIXED_BYTES: u64 = 13_631_488; // LIM-M2
+    /// The part of one parse that does not grow with the page: the line
+    /// crosses at 10.2 MiB, rounded up.
+    pub const MEASURED_PARSE_FIXED_BYTES: u64 = 11_534_336; // LIM-M2
     /// The part of one parse that grows with the page, in tenths of a byte
-    /// per byte: the same line rises 4.34 per byte, rounded up to 4.5.
-    pub const MEASURED_PARSE_TENTHS_PER_BYTE: u64 = 45; // LIM-M3
+    /// per byte: the line rises 5.13 per byte, rounded up to 5.2.
+    pub const MEASURED_PARSE_TENTHS_PER_BYTE: u64 = 52; // LIM-M3
     /// One live session of the handshake-based revisions: 58.5 KiB
     /// measured (56.7 to 60.6), rounded up.
     pub const MEASURED_SESSION_BYTES: u64 = 61_440; // LIM-M4

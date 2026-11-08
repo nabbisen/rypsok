@@ -146,12 +146,12 @@ by a key is "fixed").
 ## Measured costs (the memory estimate of `rypsok check`)
 
 These are not limits an operator sets. They are the costs that the audit
-measured (handoff 020e, the delivered musl release build of 0.8.0), rounded
-up, and `rypsok check` combines them with the effective settings into the
+measured (handoff 020e, the delivered musl release build of 0.8.0, and
+handoff 020x, which fitted both sets by one method), rounded up, and `rypsok check` combines them with the effective settings into the
 worst-case memory it prints and compares with `MemoryMax` of the documented
 unit (RFC 020, D-20, D-21):
 
-`13 MiB + fetches_in_flight × max_bytes + parsing_in_flight × (4.5 × max_bytes + 13 MiB) + max_sessions × 60 KiB` (the sessions only while `legacy_revisions` is on),
+`13 MiB + fetches_in_flight × max_bytes + parsing_in_flight × (5.2 × max_bytes + 11 MiB) + max_sessions × 60 KiB` (the sessions only while `legacy_revisions` is on),
 plus `cache.max_entries × cache.max_entry_bytes` (LIM-K3 × LIM-K4) when the
 cache is on. It is an estimate, not a guarantee.
 
@@ -159,23 +159,24 @@ The allocator decides how much a process holds after a parse, so the costs
 exist twice (RFC 020, 020x): LIM-M1 to LIM-M3 for a Linux musl build (the
 release binaries and the image), LIM-M6 to LIM-M8 for a Linux glibc build
 (what `cargo install` makes there), which replace the three in the formula
-above (`14 MiB`, `10.6 × max_bytes + 21 MiB`). `rypsok check` uses the set of
+above (`14 MiB`, `10.6 × max_bytes + 21 MiB`). Both sets are fitted by the same
+method, and without the sessions the estimate is above every measured peak. `rypsok check` uses the set of
 the build it runs as and says which. On a platform that was not measured it
 prints the larger set with the note "measured on Linux; not measured for this
 platform" and does not compare it with the unit.
 
 | ID | Parameter | Default | Range | Basis |
 |---|---|---:|---|---|
-| LIM-M1 | The process at rest (musl) | 13 MiB | fixed | Audit 020e: idle 10 to 12 MiB, median 10.9, and a margin |
-| LIM-M2 | The part of one parse that does not grow with the page (musl) | 13 MiB | fixed | Audit 020e: 34.1 MiB at a 5 MiB page and 99.2 MiB at 20 MiB are on a line that crosses at 12.4 MiB |
-| LIM-M3 | The part of one parse that grows with the page, in tenths of a byte per byte of page (musl) | 45 | fixed | The same line rises 4.34 per byte; rounded up to 4.5 |
+| LIM-M1 | The process at rest (musl) | 13 MiB | fixed | Idle 10.0 to 12.05 MiB in 20 runs (020x; audit 020e: 10 to 12, median 10.9), and a margin |
+| LIM-M2 | The part of one parse that does not grow with the page (musl) | 11 MiB | fixed | 020x: see below (audit 020e, on one fetch: the line crossed at 12.4 MiB) |
+| LIM-M3 | The part of one parse that grows with the page, in tenths of a byte per byte of page (musl) | 52 | fixed | 020x: see below (audit 020e, on one fetch: 4.34 per byte) |
 | LIM-M4 | One live session of the handshake-based revisions | 60 KiB | fixed | Audit 020e: 58.5 KiB measured (56.7 to 60.6) |
 | LIM-M5 | `MemoryMax` of the documented systemd unit, the figure the estimate is compared with | 256 MiB | fixed | `deployment.md` |
 | LIM-M6 | The process at rest (glibc) | 14 MiB | fixed | 020x: idle 12.8 to 13.4 MiB in 20 runs, and a margin |
 | LIM-M7 | The part of one parse that does not grow with the page (glibc) | 21 MiB | fixed | 020x: see below |
 | LIM-M8 | The part of one parse that grows with the page, in tenths of a byte per byte of page (glibc) | 106 | fixed | 020x: see below |
 
-Basis of LIM-M6 to LIM-M8 (RFC 020, 020x, F-4). `tools/measure-memory
+Basis of LIM-M2, LIM-M3 and LIM-M6 to LIM-M8 (RFC 020, 020x, F-4 and C1). `tools/measure-memory
 --defaults --page-mib=N` on the host glibc release build, with the defaults
 (four fetches from four hosts, two parses at once), five runs at a 5 MiB page
 and five at a 10 MiB page (the ceiling of `fetch.max_bytes`; LIM-F3's old top
@@ -188,7 +189,11 @@ above every run (182 and 307 MiB against 178.0 and 301.9). The line is fitted
 on the delivered concurrency of two parses; a single fetch costs less on glibc
 (52 to 57 MiB at 5 MiB, 79 to 106 at 10 MiB) because the allocator keeps what
 earlier parses freed, and the estimate is for the concurrent case. For other
-numbers of parses it extrapolates, as the musl set does. The same runs on the
-musl binary peaked at 99.4 to 104.6 MiB (5 MiB) and 172.9 to 175.3 MiB
-(10 MiB).
+numbers of parses it extrapolates, as the musl set does. The musl set is
+fitted the same way on the musl binary: peaks 99.4 to 104.6 MiB (5 MiB) and
+172.9 to 175.3 MiB (10 MiB); less the idle base (13 MiB) and the four bodies,
+the maxima are 71.6 and 122.5 MiB for two parses (35.8 and 61.3 per parse), a
+line of 5.13 per byte crossing at 10.2 MiB, rounded up to 5.2 and 11 MiB. The
+estimate without sessions is 107 and 179 MiB, above the maxima 104.6 and 175.3.
+A unit test pins the rule for both builds with these peaks.
 

@@ -96,7 +96,7 @@ token_env = "RYPSOK_TOKEN_MIMLYS"
 |---|---|---|---|
 | `max_chars` | `3000` | 500 to `max_chars_ceiling` (depends on `max_chars_ceiling`) | Default of `max_chars` (LIM-F1) |
 | `max_chars_ceiling` | `20000` | 500–100000 | Ceiling of `max_chars` (LIM-F2) |
-| `max_bytes` | `5242880` | 65536–10485760 | Response bytes after decompression (LIM-F3). Memory grows with it: a page of this size costs about 4.5 times as much while it is parsed (`rypsok check` prints the worst case for your settings) |
+| `max_bytes` | `5242880` | 65536–10485760 | Response bytes after decompression (LIM-F3). Memory grows with it: a page of this size costs about 5 times as much while it is parsed (`rypsok check` prints the worst case for your settings) |
 | `deadline_ms` | `10000` | 1000–30000 | Overall deadline of a fetch (LIM-F4) |
 | `connect_timeout_ms` | `3000` | 500–10000 | Connect timeout (LIM-F6) |
 | `max_redirects` | `5` | 0–10 | Redirects followed (LIM-F7); every hop counts, a cross-host one too when `follow_cross_host_redirects` is on |
@@ -320,7 +320,7 @@ rypsok: cache: enabled=false max_entries=1000 ttl_s=300 max_entry_bytes=32768
 rypsok: scraping: enabled=false
 rypsok: resilience: failures_to_open=3 first_cooldown_s=60 max_cooldown_s=900
 rypsok: limits: outbound_in_flight=32 per_engine_in_flight=2 fetches_in_flight=4 parsing_in_flight=2 strict_mode_urls=10000 robots_cache_entries=1000
-rypsok: memory: worst case about 119 MiB (base 13 + bodies 20 + parses 71 + sessions 15 + cache 0 MiB; an estimate for the musl build)
+rypsok: memory: worst case about 122 MiB (base 13 + bodies 20 + parses 74 + sessions 15 + cache 0 MiB; an estimate for the musl build)
 ```
 
 (The `search`, rate-limit, engine and category lines come first. The last

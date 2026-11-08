@@ -301,7 +301,7 @@ fn req_ops_001_each_risky_setting_has_its_warning() {
         (
             "more parses than the unit holds",
             "config_version = 1\n[limits]\nparsing_in_flight = 16\n".to_owned(),
-            "rypsok: warning: memory: the worst case is about 616 MiB, above the 256 MiB of the documented unit (an estimate for the musl build); lower fetch.max_bytes, limits.fetches_in_flight, limits.parsing_in_flight or service.http.max_sessions",
+            "rypsok: warning: memory: the worst case is about 640 MiB, above the 256 MiB of the documented unit (an estimate for the musl build); lower fetch.max_bytes, limits.fetches_in_flight, limits.parsing_in_flight or service.http.max_sessions",
         ),
     ];
     let mut wrong = Vec::new();
@@ -351,11 +351,11 @@ fn req_ops_001_safe_settings_give_no_warning() {
             "config_version = 1\n[cache]\nenabled = true\n".to_owned(),
         ),
         (
-            "the new max_bytes ceiling with the defaults (184 MiB)",
+            "the new max_bytes ceiling with the defaults (194 MiB)",
             "config_version = 1\n[fetch]\nmax_bytes = 10485760\n".to_owned(),
         ),
         (
-            "the new max_sessions ceiling with the defaults (224 MiB)",
+            "the new max_sessions ceiling with the defaults (227 MiB)",
             "config_version = 1\n[service.http]\nmax_sessions = 2048\n".to_owned(),
         ),
     ] {
@@ -365,18 +365,18 @@ fn req_ops_001_safe_settings_give_no_warning() {
 }
 
 /// REQ-PERF-003 (RFC 020, D-20, D-21): each new ceiling fits the unit
-/// alone, both together (289 MiB) do not, and `check` says so.
+/// alone, both together (299 MiB) do not, and `check` says so.
 #[test]
 fn req_perf_003_both_new_ceilings_together_exceed_the_unit() {
     let both = warnings_of(
         "config_version = 1\n[fetch]\nmax_bytes = 10485760\n[service.http]\nmax_sessions = 2048\n",
     );
     assert_eq!(both.len(), 1, "{both:?}");
-    assert!(both[0].contains("about 289 MiB"), "{both:?}");
+    assert!(both[0].contains("about 299 MiB"), "{both:?}");
 }
 
 /// REQ-PERF-003 (RFC 020, D-20, D-21): `check` prints the memory estimate;
-/// the defaults give 119 MiB, the new `max_bytes` ceiling stays under the
+/// the defaults give 122 MiB, the new `max_bytes` ceiling stays under the
 /// unit, and the line shows its parts.
 #[test]
 fn req_perf_003_check_prints_the_memory_estimate() {
@@ -390,10 +390,10 @@ fn req_perf_003_check_prints_the_memory_estimate() {
     };
     assert_eq!(
         line("config_version = 1\n"),
-        "rypsok: memory: worst case about 119 MiB (base 13 + bodies 20 + parses 71 + sessions 15 + cache 0 MiB; an estimate for the musl build)"
+        "rypsok: memory: worst case about 122 MiB (base 13 + bodies 20 + parses 74 + sessions 15 + cache 0 MiB; an estimate for the musl build)"
     );
     let ceiling = line("config_version = 1\n[fetch]\nmax_bytes = 10485760\n");
-    assert!(ceiling.contains("about 184 MiB"), "{ceiling}");
+    assert!(ceiling.contains("about 194 MiB"), "{ceiling}");
     let cached = line("config_version = 1\n[cache]\nenabled = true\n");
     assert!(cached.contains("cache 32 MiB"), "{cached}");
     assert!(
@@ -470,22 +470,22 @@ fn req_perf_003_sessions_count_only_with_legacy_revisions() {
     };
     assert!(
         line("config_version = 1\n").contains(
-            "about 119 MiB (base 13 + bodies 20 + parses 71 + sessions 15 + cache 0 MiB;"
+            "about 122 MiB (base 13 + bodies 20 + parses 74 + sessions 15 + cache 0 MiB;"
         )
     );
     let off = line("config_version = 1\n[service.http]\nlegacy_revisions = false\n");
     assert!(
-        off.contains("about 104 MiB (base 13 + bodies 20 + parses 71 + sessions 0 + cache 0 MiB;"),
+        off.contains("about 107 MiB (base 13 + bodies 20 + parses 74 + sessions 0 + cache 0 MiB;"),
         "{off}"
     );
-    // The two ceilings together are 289 MiB with sessions and 169 without.
+    // The two ceilings together are 299 MiB with sessions and 179 without.
     let both =
         "config_version = 1\n[fetch]\nmax_bytes = 10485760\n[service.http]\nmax_sessions = 2048\n";
     assert_eq!(warnings_of(both).len(), 1);
     let without = format!("{both}legacy_revisions = false\n");
     assert_eq!(warnings_of(&without), Vec::<String>::new());
     assert!(
-        line(&without).contains("about 169 MiB"),
+        line(&without).contains("about 179 MiB"),
         "{}",
         line(&without)
     );

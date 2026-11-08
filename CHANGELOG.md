@@ -74,7 +74,11 @@ announced here with both values.
   glibc on Linux, each with its own measured constants, LIM-M6 to LIM-M8 for
   glibc) and says which build the figure is for; on a platform that was not
   measured it prints the figure with a note and does not warn against the
-  Linux unit (RFC 020, F-4). A glibc build with `fetch.max_bytes`
+  Linux unit (RFC 020, F-4). Both sets are fitted by one method on the
+  delivered four fetches and two parses at a 5 MiB and a 10 MiB page, so that
+  even without the sessions the estimate is above every measured peak; the
+  musl figures moved up for it (122 MiB for the defaults, 194 at a `max_bytes`
+  of 10 MiB). A glibc build with `fetch.max_bytes`
   at its ceiling of 10 MiB is now warned about: its measured peak is above
   256 MiB.
 - A client that cannot be built says why, once: `rypsok: configuration:
@@ -303,9 +307,9 @@ announced here with both values.
   every section it said nothing of (`service.http`, `fetch`, `egress`,
   `privacy`, `logging`, `cache`, `scraping`, `resilience`, `limits`), the
   worst-case memory of the settings (13 MiB + fetches × `max_bytes` + parses ×
-  (4.5 × `max_bytes` + 13 MiB) + `max_sessions` × 60 KiB while `legacy_revisions`
-  is on, an estimate
-  measured on the musl release build), and warnings, each one line `rypsok:
+  (5.2 × `max_bytes` + 11 MiB) + `max_sessions` × 60 KiB while `legacy_revisions`
+  is on, an estimate for the musl build; a glibc build has its own constants,
+  see Fixed), and warnings, each one line `rypsok:
   warning: <key>: <what happens>; <the safer setting>`, for an allow rule wider
   than /16 or /32, `secret_detection = "off"`, a bind off loopback (plain
   HTTP), `log_queries`, `robots_txt = false`, `allow_http`,

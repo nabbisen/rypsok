@@ -26,8 +26,9 @@ fn limits_with(f: impl FnOnce(&mut Limits)) -> Limits {
 }
 
 /// REQ-PERF-003 (RFC 020 D-20, D-21): the worst-case memory is the measured
-/// formula of audit 020e: base 13 MiB, bodies `fetches_in_flight x
-/// max_bytes`, parses `parsing_in_flight x (4.5 x max_bytes + 13 MiB)`,
+/// formula of audit 020e, fitted again in 020x: base 13 MiB, bodies
+/// `fetches_in_flight x max_bytes`, parses `parsing_in_flight x (5.2 x
+/// max_bytes + 11 MiB)` on musl,
 /// sessions `max_sessions x 60 KiB`, plus the cache bound when it is on.
 #[test]
 fn req_perf_003_the_memory_formula_of_the_audit() {
@@ -38,18 +39,17 @@ fn req_perf_003_the_memory_formula_of_the_audit() {
     );
     assert_eq!(estimate.base, 13 * MIB);
     assert_eq!(estimate.bodies, 4 * 5 * MIB);
-    // 4.5 x 5 MiB = 22.5 MiB, plus 13 MiB, twice.
-    assert_eq!(estimate.parses, 2 * (45 * 5 * MIB / 10 + 13 * MIB));
+    // 5.2 x 5 MiB = 26 MiB, plus 11 MiB, twice.
+    assert_eq!(estimate.parses, 2 * (52 * 5 * MIB / 10 + 11 * MIB));
     assert_eq!(estimate.sessions, 256 * 60 * 1024);
     assert_eq!(estimate.cache, 0);
-    let total = 13 * MIB + 20 * MIB + 71 * MIB + 15 * MIB;
+    let total = 13 * MIB + 20 * MIB + 74 * MIB + 15 * MIB;
     assert_eq!(estimate.total_bytes(), total);
-    assert_eq!(estimate.total_mib(), 119);
+    assert_eq!(estimate.total_mib(), 122);
     assert!(!estimate.exceeds_unit());
-    // The defaults, without the sessions, are the 104 MiB the measurement
-    // compares with (90 to 98 MiB at four 5 MiB pages, 102 to 106 in the
-    // test with a larger `max_bytes`).
-    assert_eq!(estimate.total_bytes() - estimate.sessions, 104 * MIB);
+    // The defaults, without the sessions, are the 107 MiB the measurement
+    // compares with (99.4 to 104.6 MiB at four 5 MiB pages).
+    assert_eq!(estimate.total_bytes() - estimate.sessions, 107 * MIB);
 }
 
 /// REQ-PERF-003 (RFC 020 D-20): `fetch.max_bytes` at its new ceiling with
@@ -61,7 +61,7 @@ fn req_perf_003_the_new_ceiling_fits_the_unit_and_the_old_one_did_not() {
         defaults::HTTP_MAX_SESSIONS,
         0,
     );
-    assert_eq!(at_ceiling.total_mib(), 184, "{at_ceiling:?}");
+    assert_eq!(at_ceiling.total_mib(), 194, "{at_ceiling:?}");
     assert!(!at_ceiling.exceeds_unit());
     let old_ceiling = limits_with(|l| l.fetch_max_bytes = 20 * MIB).worst_case_memory_for(
         EstimateBasis::Musl,
@@ -70,7 +70,7 @@ fn req_perf_003_the_new_ceiling_fits_the_unit_and_the_old_one_did_not() {
     );
     assert!(old_ceiling.exceeds_unit(), "{old_ceiling:?}");
     // The audit measured 265 to 282 MiB at that setting; the formula says
-    // about 325 MiB, on the safe side of the measurement.
+    // about 338 MiB, on the safe side of the measurement.
     assert!(old_ceiling.total_mib() >= 282);
 }
 
@@ -86,14 +86,14 @@ fn req_perf_003_the_formula_follows_each_setting() {
     assert!(sixteen.exceeds_unit(), "{sixteen:?}");
     let sessions = Limits::default().worst_case_memory_for(EstimateBasis::Musl, 2048, 0);
     assert_eq!(sessions.sessions, 2048 * 60 * 1024);
-    assert_eq!(sessions.total_mib(), 119 - 15 + 120);
+    assert_eq!(sessions.total_mib(), 122 - 15 + 120);
     let cache = Limits::default().worst_case_memory_for(
         EstimateBasis::Musl,
         defaults::HTTP_MAX_SESSIONS,
         1000 * 32768,
     );
     assert_eq!(cache.cache, 1000 * 32768);
-    assert_eq!(cache.total_bytes(), 119 * MIB + 1000 * 32768);
+    assert_eq!(cache.total_bytes(), 122 * MIB + 1000 * 32768);
     // The estimate rounds up to a whole MiB.
     assert_eq!(MemoryEstimate::mib(1), 1);
     assert_eq!(MemoryEstimate::mib(MIB), 1);
@@ -106,8 +106,8 @@ fn req_perf_003_the_formula_follows_each_setting() {
 #[test]
 fn req_perf_003_the_measured_costs_are_the_table_rows() {
     assert_eq!(defaults::MEASURED_BASE_BYTES, 13 * MIB);
-    assert_eq!(defaults::MEASURED_PARSE_FIXED_BYTES, 13 * MIB);
-    assert_eq!(defaults::MEASURED_PARSE_TENTHS_PER_BYTE, 45);
+    assert_eq!(defaults::MEASURED_PARSE_FIXED_BYTES, 11 * MIB);
+    assert_eq!(defaults::MEASURED_PARSE_TENTHS_PER_BYTE, 52);
     assert_eq!(defaults::MEASURED_SESSION_BYTES, 60 * 1024);
     assert_eq!(defaults::MEMORY_UNIT_BYTES, 256 * MIB);
 }
@@ -128,7 +128,7 @@ fn req_perf_003_each_allocator_has_its_own_constants() {
         defaults::HTTP_MAX_SESSIONS,
         0,
     );
-    assert_eq!(musl.total_mib(), 119);
+    assert_eq!(musl.total_mib(), 122);
     assert_eq!(musl.basis, EstimateBasis::Musl);
     // 14 + 4 x 5 + 2 x (10.6 x 5 + 21) + 15 sessions.
     assert_eq!(glibc.base, 14 * MIB);
@@ -240,4 +240,30 @@ fn req_perf_003_the_unit_itself_is_not_exceeded() {
     assert!(!at.exceeds_unit());
     let over = MemoryEstimate { bodies: 2, ..at };
     assert!(over.exceeds_unit());
+}
+
+/// REQ-PERF-003 (RFC 020, 020x, C1 of the review): the rule the estimate
+/// must keep for each build. Without the sessions term, at a 5 MiB and at a
+/// 10 MiB page (`fetch.max_bytes`) with the delivered four fetches and two
+/// parses, the estimate is at least the largest peak measured with
+/// `tools/measure-memory --defaults --page-mib=N` (five runs each, in MiB;
+/// raw output in `.git-exclude/evidence/020x/defaults-musl.txt` and
+/// `defaults-glibc.txt`).
+#[test]
+fn req_perf_003_the_estimate_is_above_every_measured_peak_without_sessions() {
+    let cases = [
+        (EstimateBasis::Musl, 5, 104.62),
+        (EstimateBasis::Musl, 10, 175.34),
+        (EstimateBasis::Glibc, 5, 178.03),
+        (EstimateBasis::Glibc, 10, 301.87),
+    ];
+    for (basis, page_mib, peak) in cases {
+        let limits = limits_with(|l| l.fetch_max_bytes = page_mib * MIB);
+        let estimate = limits.worst_case_memory_for(basis, 0, 0);
+        let mib = estimate.total_bytes() as f64 / MIB as f64;
+        assert!(
+            mib >= peak,
+            "{basis:?} at {page_mib} MiB: the estimate {mib:.1} MiB is under the measured peak {peak}"
+        );
+    }
 }
