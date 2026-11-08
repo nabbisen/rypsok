@@ -8,7 +8,7 @@ and goes through implement → review.
 **Requirements.** REQ-MAIN-006 (every contract change announced), REQ-DEP-005.
 **Rules.** As 020w. Evidence goes to `.git-exclude/evidence/020v/`.
 **Depends on.**
-- The approval of 020x.
+- The approval of 020x and 020y.
 - The architect's audit report, `docs/src/maintainers/audit.md`, landed on
   `main` before this starts; verify it.
 

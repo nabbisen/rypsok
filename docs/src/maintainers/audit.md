@@ -24,7 +24,7 @@ so that a reader can check each fix against the test that pins it.
   - **Re-performance.** The architect reviewed each report and re-ran at
     least a fifth of its findings, including every High and Medium resting
     on a run. The architect also set the final severities and the fix list.
-  - **Decisions.** The owner decided 23 questions (RFC 020, D-1 to D-23 below).
+  - **Decisions.** The owner decided 24 questions (RFC 020, D-1 to D-24 below).
   - **Fixes.** Each fix was a handoff of its own (020g to 020x), with tests
     first, shown failing before the fix, and its own review.
 - **Dates.** 2026-10-29 (RFC 020 accepted) to 2026-11-08.
@@ -196,6 +196,8 @@ A test whose name starts with `req_` lives under `crates/`.
 - **RFC 020, D-23: when checks run** ([When checks run](./checks.md)). CI on every
   push, the deep checks in each change and before every release, and no
   timer.
+- **RFC 020, D-24:** a search result is shown only with a host that
+  `web_fetch` would accept; one with an empty label is invalid.
 - **RFC 020, D-5:** one deliberate DuckDuckGo no-results request; it is under
   "What remains".
 
@@ -239,7 +241,7 @@ A test whose name starts with `req_` lives under `crates/`.
 | The verification ledger | 41 requirements whose tests verify part of what they say ([ledger](./verification-ledger.md)) | closed before 1.0.0 (RFC 020, D-18) |
 | DAT-22, RFC 020, D-11 | Which public items are frozen | the 1.0.0 preparation |
 | NET-18, RFC 020, D-5 | Whether DuckDuckGo's no-results page carries the marker the driver reads; without it, three result-less searches open the engine's circuit | one deliberate request, in the release preparation (020v) |
-| N2 | A returned URL whose host has an empty label (such as a leading dot) is shown, although it cannot be fetched | the owner: drop such results as invalid, or keep them |
+| N2 | A returned URL whose host has an empty label (such as a leading dot) is shown, although it cannot be fetched | decided (RFC 020, D-24, 2026-11-08): such a result is invalid, dropped and counted; the fix is handoff 020y |
 | DEP-13 | Several pinned actions are a major version behind | the dependency step at the start of the next cycle (RFC 020, D-14) |
 | DEP-16, RFC 020, D-15 | `main` and the release tags have no protection rule | the owner (a repository setting) |
 | First runs | The provenance attestations, the attach of the images, and the book from a tag run for the first time on the 0.9.0 tag | read in that run, as the release procedure says |
