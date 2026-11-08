@@ -39,7 +39,9 @@ findings only); fixes: [`020j`](../handoffs/020j-lock-helper/README.md),
 [`020t`](../handoffs/020t-documents/README.md),
 [`020x`](../handoffs/020x-truthful-startup-and-estimate/README.md),
 [`020y`](../handoffs/020y-fetchable-result-hosts/README.md); release:
-[`020v`](../handoffs/020v-release-preparation/README.md).
+[`020v`](../handoffs/020v-release-preparation/README.md), then
+[`020z`](../handoffs/020z-duckduckgo-no-results/README.md) (NET-18, found by
+020v).
 
 ## Problem and motivation
 

@@ -241,7 +241,7 @@ A test whose name starts with `req_` lives under `crates/`.
 |---|---|---|
 | The verification ledger | 41 requirements whose tests verify part of what they say ([ledger](./verification-ledger.md)) | closed before 1.0.0 (RFC 020, D-18) |
 | DAT-22, RFC 020, D-11 | Which public items are frozen | the 1.0.0 preparation |
-| NET-18, RFC 020, D-5 | Whether DuckDuckGo's no-results page carries the marker the driver reads; without it, three result-less searches open the engine's circuit | one deliberate request, in the release preparation (020v) |
+| NET-18, RFC 020, D-5 | Confirmed on 2026-11-08: DuckDuckGo's no-results page marks itself with `span.no-results`, and the driver read `div.no-results`, so a search with no results counted as a parse failure toward the circuit | fixed before the release in handoff 020z |
 | DEP-13 | Several pinned actions are a major version behind | the dependency step at the start of the next cycle (RFC 020, D-14) |
 | DEP-16, RFC 020, D-15 | `main` and the release tags have no protection rule | the owner (a repository setting) |
 | First runs | The provenance attestations, the attach of the images, and the book from a tag run for the first time on the 0.9.0 tag | read in that run, as the release procedure says |
