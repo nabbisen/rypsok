@@ -6,7 +6,7 @@ already asks that `rypsok check` tell an operator the truth about their own
 settings. F-4 shows that the estimate is true for one of the two Linux
 builds only.
 
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md).
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md).
 **Rules.** As 020w, including the per-change rule (`egress.rs` is not in its
 list, but run mutation on it anyway: 020s found six mutants alive there).
 Evidence goes to `.git-exclude/evidence/020x/`.

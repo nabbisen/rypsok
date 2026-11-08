@@ -5,7 +5,7 @@ NET-13 (audit 020b; Low): 29 sites call `.expect("… lock")` on a
 `std::sync` lock. A panic while one is held would make every later use
 panic. No input reaches it today; the failure mode would be total.
 
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md).
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md).
 **Rules.** As 020g (commit your own work; push only after approval).
 **Depends on.** Nothing. **Evidence rule.** As 020g.
 

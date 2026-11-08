@@ -5,7 +5,7 @@
 **Task title.** Audit the model, configuration and driver types, the tool
 schemas and the error surface against the external design, the stability
 page and what a user is told, and report findings in the format of RFC 020 D1.
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md),
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md),
 D1 and D4.
 **Applicable requirements.** REQ-CTX-*, REQ-SEC-003, REQ-CFG-*, REQ-RANK-*, REQ-ERR-*,
 REQ-OPS-*, REQ-STATUS-*, REQ-MAIN-* (Appendix A of `requirements.md` lists the

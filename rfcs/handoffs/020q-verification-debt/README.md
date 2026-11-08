@@ -9,7 +9,7 @@ TST-6, TST-7 (Medium); the `partial` and `names-only` rows of the audit's
 per-requirement table (`.git-exclude/review-requests/020d-tests-and-code-audit/requirements-table.md`)
 named below.
 
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md), RFC 002 (test strategy).
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md), RFC 002 (test strategy).
 **Rules.** As the earlier fix handoffs: tests first and shown failing where a
 behaviour is missing (a test that passes at once must say so and say why it is
 still worth having); commit your own work; push only after approval; evidence

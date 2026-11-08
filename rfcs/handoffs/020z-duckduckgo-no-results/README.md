@@ -4,7 +4,7 @@
 Finding **NET-18**, confirmed by the second request of RFC 020, D-5 (020v,
 correction C1, 2026-11-08). The owner decided to fix it before 0.9.0.
 
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md), RFC 015 (scraping drivers).
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md), RFC 015 (scraping drivers).
 **Rules.** As 020w, including the per-change rule (`scrape_read` reads the
 changed shape: run it). Evidence goes to `.git-exclude/evidence/020z/`. **No
 request to DuckDuckGo**: the saved page of 020v is the evidence.

@@ -7,7 +7,7 @@ RFC 009 lists `request_id`, RFC 013 the `caller` in the `call` event; no line
 carries either, and `telemetry::request_id()` is used by no code. Also RFC 009
 "one `call` event per call": `engine_status` logs none (TST-15).
 
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md), RFC 009, RFC 013.
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md), RFC 009, RFC 013.
 **Rules.** As 020q. Evidence to `.git-exclude/evidence/020r/`.
 **Depends on.** Nothing.
 

@@ -39,9 +39,7 @@ _None yet._
 
 ## Accepted
 
-| ID | Title | Milestone | Handoff |
-|----|-------|-----------|---------|
-| 020 | [Project audit (M8)](./accepted/020-project-audit.md) | 0.9.0 | [020a](./handoffs/020a-baseline-text/README.md), [020b](./handoffs/020b-network-audit/README.md), [020c](./handoffs/020c-data-and-contract-audit/README.md), [020d](./handoffs/020d-tests-and-code-audit/README.md), [020e](./handoffs/020e-measurements/README.md), [020f](./handoffs/020f-dependencies-and-ci-audit/README.md), fixes [020g](./handoffs/020g-listener-corrections/README.md), [020h](./handoffs/020h-egress-corrections/README.md), [020i](./handoffs/020i-parse-depth/README.md), [020j](./handoffs/020j-lock-helper/README.md), [020k](./handoffs/020k-trustworthy-answers/README.md), [020l](./handoffs/020l-check-and-configuration/README.md), [020m](./handoffs/020m-promises-with-tests/README.md), [020n](./handoffs/020n-text-fidelity/README.md), [020o](./handoffs/020o-workflow-hygiene/README.md), [020q](./handoffs/020q-verification-debt/README.md), [020r](./handoffs/020r-request-id/README.md), [020s](./handoffs/020s-clean-up/README.md), [020u](./handoffs/020u-fuzz-targets/README.md), [020w](./handoffs/020w-check-policy/README.md), [020p](./handoffs/020p-release-path/README.md), [020t](./handoffs/020t-documents/README.md), [020x](./handoffs/020x-truthful-startup-and-estimate/README.md), [020y](./handoffs/020y-fetchable-result-hosts/README.md), [020v](./handoffs/020v-release-preparation/README.md), [020z](./handoffs/020z-duckduckgo-no-results/README.md) |
+_None._
 
 Review records are not in the repository: the owner keeps review requests and reviewed packages under a private directory, which earlier handoffs name as `.git-exclude/reviews/`, today `.git-exclude/review-requests/` and `.git-exclude/reviewed/`.
 
@@ -69,6 +67,7 @@ Review records are not in the repository: the owner keeps review requests and re
 | 017 | [User documentation, tutorials and checked examples](./done/017-user-documentation.md) | 0.6.0 |
 | 018 | [Threat model revision and hardening](./done/018-threat-model-revision.md) | 0.7.0 |
 | 019 | [Corrections from the first independent review](./done/019-first-independent-review.md) | 0.8.0 |
+| 020 | [Project audit (M8)](./done/020-project-audit.md) | 0.9.0 |
 
 ## Archive
 

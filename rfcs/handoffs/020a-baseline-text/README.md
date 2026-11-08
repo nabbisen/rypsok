@@ -4,7 +4,7 @@
 
 **Task title.** Correct the known drift between the baseline texts, the RFCs
 and the delivered system, in documents only.
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md).
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md).
 **Applicable requirements.** REQ-DOC-001, REQ-MAIN-006. **Source findings.**
 `arch-001-prepare` B1, B2, B3 (verify), B6, B7, B10, B12, B15.
 **Rules.** English for documents; no source change; commit messages one-line

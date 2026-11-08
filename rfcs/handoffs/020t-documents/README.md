@@ -7,7 +7,7 @@ runs ahead of the releases), PRF-4, PRF-6, PRF-7 and PRF-9 (the 020e review),
 N1 of the 020q review (which certificates the fetches trust), and one found
 while this handoff was written (item 7, decision ids).
 
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md), RFC 017 (the book).
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md), RFC 017 (the book).
 **Rules.** As 020w. Evidence goes to `.git-exclude/evidence/020t/`. No source
 file under `crates/` changes, except tests that read documents.
 **Depends on.** 020p, which changes `deployment.md`'s container section and

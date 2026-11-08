@@ -4,7 +4,7 @@
 decision **D-3** (authorized 2026-11-03): **one** depth bound, LIM-F11 (256),
 enforced while parsing; rendering inherits it. Finding NET-5 (Medium).
 
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md), RFC 012.
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md), RFC 012.
 **Applicable requirements.** REQ-PAGE-006, REQ-SEC-011, REQ-SEC-012.
 **Rules.** As 020h. Evidence to `.git-exclude/evidence/020i/`.
 **Depends on.** Nothing.

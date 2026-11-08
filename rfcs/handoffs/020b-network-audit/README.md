@@ -5,7 +5,7 @@
 **Task title.** Audit every outbound and inbound network path and every
 bound on a network-facing resource, and report findings in the format of
 RFC 020 D1.
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md),
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md),
 D1 (method, severity, evidence, safety rules) and D4.
 **Applicable requirements.** REQ-SEC-006 to -012 (egress), REQ-CMP-005,
 REQ-FETCH-*, REQ-PERF-001, REQ-SEC-013 to -018, REQ-SEC-024, LIM-H*, LIM-F*,

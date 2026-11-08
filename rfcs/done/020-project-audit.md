@@ -1,6 +1,6 @@
 # RFC 020 — Project audit (milestone M8)
 
-**Status.** Accepted (2026-10-29) for Part 1, the audit: milestone M8 was
+**Status.** Implemented (0.9.0, 2026-11-08); accepted 2026-10-29 for Part 1, the audit: milestone M8 was
 accepted on 2026-10-27, this RFC adds no behavior, and the owner asked on
 2026-10-29 for the handoffs to follow. Part 2 (the questions the audit
 must answer) are not decisions: each is decided by the owner after the

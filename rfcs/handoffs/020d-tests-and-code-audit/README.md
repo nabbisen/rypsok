@@ -5,7 +5,7 @@
 **Task title.** Show which requirements are verified by their tests and
 which are only named by them; find dead and risky code; find where the code
 differs from what the done RFCs say; report in the format of RFC 020 D1.
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md),
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md),
 D1 and D4.
 **Applicable requirements.** REQ-TEST-*, REQ-MAIN-*, and every requirement
 with verification method `T`. **Seeds.** `arch-001-prepare` S9, B14;

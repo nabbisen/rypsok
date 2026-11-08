@@ -5,7 +5,7 @@ audit reports 020b and its review `arch-003-audit/020b-review.md`.
 
 **Task title.** Make the HTTP listener keep the bounds its documents state,
 and give each bound the test it lacked.
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md),
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md),
 RFC 013 and RFC 018 (the bounds), RFC 019 D5/D6 (sessions, statuses).
 **Applicable requirements.** REQ-SEC-018, REQ-SEC-022, REQ-TEST-014.
 **Findings.** NET-1 (High), NET-2, NET-7, NET-8, NET-11, NET-12, NET-16.

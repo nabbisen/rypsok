@@ -5,7 +5,7 @@ Owner decisions **D-6, D-20, D-21** (authorized 2026-11-03,
 `arch-003-audit/DECISIONS-REVIEWED.md`). Findings DAT-1, DAT-2 (Medium);
 DAT-11, DAT-12, DAT-14 (Low); PRF-2, PRF-3 (Medium).
 
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md), RFC 004 (configuration), RFC 016 (`check` writes to stderr).
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md), RFC 004 (configuration), RFC 016 (`check` writes to stderr).
 **Applicable requirements.** REQ-OPS-001, REQ-CFG-*, REQ-PERF-003, REQ-DOC-001.
 **Rules.** As 020h (tests first and shown failing; commit your own work; push only after approval; evidence to `.git-exclude/evidence/020l/`; relative paths with `cd`).
 **Depends on.** Wave 1 (020i changed LIM-F11; the memory figure below uses the measured costs of audit 020e).

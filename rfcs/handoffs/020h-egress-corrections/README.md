@@ -4,7 +4,7 @@
 decisions **D-1** and **D-2** of `arch-003-audit/DECISIONS-REVIEWED.md`
 (authorized 2026-11-03). Findings NET-3 (S4), NET-4 (S2), TST-3.
 
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md),
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md),
 RFC 011 (egress policy) and RFC 012 (fetch pipeline).
 **Applicable requirements.** REQ-CMP-005, REQ-SEC-006, REQ-SEC-008.
 **Rules.** English; one-line commit digests, optional body of at most 400

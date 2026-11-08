@@ -5,7 +5,7 @@ Finding TST-14 (Medium for the policy and robots.txt, Low for the rest):
 parsers of untrusted input with no fuzz target. REQ-SEC-023 lists the eight
 parsers that had one.
 
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md), RFC 018 (fuzzing).
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md), RFC 018 (fuzzing).
 **Rules.** As 020q. Evidence to `.git-exclude/evidence/020u/`. Each new target
 runs 120 s locally before hand-in (state runs, crashes); a crash found is
 **not fixed here**: it becomes a test and a finding in the review request, and

@@ -4,7 +4,7 @@
 Owner decisions **D-11** (reword to what the code holds) and **D-18**.
 Findings DAT-5, DAT-6, DAT-7 (Medium); DAT-10 (Low).
 
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md), RFC 016 (the stable contract).
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md), RFC 016 (the stable contract).
 **Applicable requirements.** REQ-STATUS-*, REQ-MAIN-*, REQ-MCP-*, REQ-SEC-003.
 **Rules.** As 020h; evidence to `.git-exclude/evidence/020m/`.
 **Depends on.** 020k approved (it changed the tool description and the output schemas).

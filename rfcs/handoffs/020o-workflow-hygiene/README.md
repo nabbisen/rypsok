@@ -7,7 +7,7 @@ for owner decisions): the container image, platforms, Dependabot, branch
 rules, attestations, the book's publishing (D-12 to D-17), and the weekly
 mutation job (D-19).
 
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md).
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md).
 **Applicable requirements.** REQ-SEC-020, REQ-TEST-012, REQ-TEST-003.
 **Rules.** As 020g. A workflow change can only be verified on GitHub:
 you commit locally; **the architect pushes after reading your review request

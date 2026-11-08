@@ -7,7 +7,7 @@ made in the checksums job only) and **D-22** (`strip = "symbols"`, no LTO), all
 authorized on 2026-11-03. Findings DEP-1, DEP-2, DEP-15 and DEP-17 (the 020f review) and PRF-8 (the
 020e review).
 
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md), RFC 013 (distribution), RFC 019 D8 (the release workflow).
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md), RFC 013 (distribution), RFC 019 D8 (the release workflow).
 **Rules.** As 020w, including the per-change rule. Evidence goes to `.git-exclude/evidence/020p/`.
 **Depends on.** 020w: the release build is the composite action
 `.github/actions/build-release`, and the reproducibility check uses it too.

@@ -6,7 +6,7 @@ returned URL whose host has an empty label is invalid. The owner's words:
 "Sounds it should be treated as invalid. I want finally clean, safe and
 secure, and robust and sophisticated design."
 
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md).
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md).
 **Rules.** As 020w, including the per-change rule (`search/normalize.rs` reads
 untrusted input; its fuzz targets are `returned_url`, `engine_json` and
 `scrape_read`). Evidence goes to `.git-exclude/evidence/020y/`.

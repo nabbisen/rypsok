@@ -6,7 +6,7 @@ Owner decisions **D-8** and **D-10** (authorized 2026-11-03,
 DAT-9, DAT-15, DAT-16 (Low). The owner's principle: no silent alteration of
 visible text; what rypsok changes it reports.
 
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md), RFC 005 (content boundary), RFC 008 (URLs, deduplication, ranking), RFC 009 (privacy).
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md), RFC 005 (content boundary), RFC 008 (URLs, deduplication, ranking), RFC 009 (privacy).
 **Applicable requirements.** REQ-RANK-002, REQ-RANK-003, REQ-SEC-003, REQ-CTX-*, REQ-PRIV-002.
 **Rules.** As 020h; evidence to `.git-exclude/evidence/020n/`. Fuzz `clean_content` and `clean_decoded_text` and `returned_url` and `privacy_check` for 60 s each on the result and report.
 **Depends on.** Nothing.

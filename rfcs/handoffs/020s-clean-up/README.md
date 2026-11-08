@@ -5,7 +5,7 @@ Findings TST-8 to TST-13, TST-15 (Low); owner decision D-9 for the limits
 table rows. Clean code is part of the owner's philosophy: nothing in the tree
 that does nothing, no test that passes for the wrong reason.
 
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md).
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md).
 **Rules.** As 020q. Evidence to `.git-exclude/evidence/020s/`.
 **Depends on.** 020q and 020r approved (they touch the same test files).
 

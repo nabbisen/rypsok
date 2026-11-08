@@ -5,7 +5,7 @@
 **Task title.** Audit what the build depends on and trusts: crates, features,
 tools, base images, workflow permissions, schedules and the release path;
 report in the format of RFC 020 D1.
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md),
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md),
 D1 and D4.
 **Applicable requirements.** REQ-RUST-*, REQ-SEC-020 (supply chain),
 REQ-SEC-022, REQ-SEC-023, REQ-TEST-012, REQ-DEP-*. **Seeds.**

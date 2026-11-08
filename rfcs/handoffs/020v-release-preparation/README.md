@@ -4,7 +4,7 @@
 020x. As with 019d, the preparation of a release is a change of the tree
 and goes through implement → review.
 
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md).
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md).
 **Requirements.** REQ-MAIN-006 (every contract change announced), REQ-DEP-005.
 **Rules.** As 020w. Evidence goes to `.git-exclude/evidence/020v/`.
 **Depends on.**

@@ -6,7 +6,7 @@ decision **D-7** (authorized 2026-11-03) and the wording findings of audit
 NET-6 (Low). The owner's second principle: an answer must not leave a user
 confused or mistaken.
 
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md), RFC 003 (error object), RFC 010 (`engine_status`).
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md), RFC 003 (error object), RFC 010 (`engine_status`).
 **Applicable requirements.** REQ-ERR-*, REQ-CTX-*, REQ-STATUS-*, REQ-DOC-003.
 **Rules.** As 020h. Evidence to `.git-exclude/evidence/020k/`.
 **Depends on.** 020h approved (it changes what a redirect answers; the Reading page is edited by both).

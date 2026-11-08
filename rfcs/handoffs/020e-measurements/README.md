@@ -5,7 +5,7 @@
 **Task title.** Measure what the requirements say shall be measured, with a
 method another person can repeat, and compare each number with the limit it
 supports.
-**RFC.** [`../../accepted/020-project-audit.md`](../../accepted/020-project-audit.md),
+**RFC.** [`../../done/020-project-audit.md`](../../done/020-project-audit.md),
 D1 and D4.
 **Applicable requirements.** REQ-PERF-001 to REQ-PERF-005; the LIM rows
 whose basis says "to be measured"; `limits-and-defaults.md` header (values
