@@ -1,5 +1,10 @@
 # Handoff 022b — Release preparation for 0.10.0
 
+> **Amended 2026-11-11 after the first review:** items 11 to 14 are
+> added. They go in one more commit on top of the architect's two
+> commits (the audit report, and this amendment). Commits 1 and 2 stay as
+> they are.
+
 **Created 2026-11-11.** The owner authorized release 0.10.0 on 2026-11-11.
 It carries RFC 021 (handoff 021a) and RFC 022 (handoff 022a). As with
 020v, preparing a release is a change of the tree and goes through
@@ -79,6 +84,15 @@ Two commits, in this order, each through CI:
   update a user could notice. If there is none, name none.
 - **(f) The comparison links** at the foot: `[0.10.0]` for `0.9.0...0.10.0`,
   and `[Unreleased]` for `0.10.0...HEAD`.
+
+### Commit 3: after the first review
+
+| # | Work | Test or evidence |
+|---|---|---|
+| 11 | **The Unicode data is kept (`icu_*` 2.4).** The architect re-checked it: five of the newly accepted code points map to ASCII letters, not to an `xn--` label (U+209D, U+209E and U+209F to `w`, `y` and `z`; U+1D6A6 and U+1DF95 to `ss`). That is safe only because the egress policy judges the name **after** the mapping (`url.host()`). Nothing pins this yet, so add a test in `egress/policy/tests.rs`: mapped spellings of refused names are refused with `Denial::HostName`. Use at least fullwidth `ｌｏｃａｌｈｏｓｔ`, `a.ｉnternal`, `a.locaℓ` (U+2113) and `metadata.google.ｉnternal`, each built from escapes (`\u{…}`), plus one of the five new code points on a public name, which is admitted under the mapped ASCII name. Product code is unchanged, so no mutation run is needed (the release checks mutate `egress-policy`). Show the test failing first: point it at the raw input instead of `url.host()`, or explain why it cannot fail | the test; the failing-first run |
+| 12 | **The changelog, three lines.** (a) **Move the Unicode sentence** from `### Internal` to the "Other changes" of `### Changed`, because a user sees it. Say what a user sees: a `web_fetch` of such a URL is no longer refused as invalid. Check whether a `web_search` result with such a host is now shown where 0.9.0 dropped it as `url_invalid` (RFC 020, D-24), and say so if it is. Name the five code points that map to ASCII, and add that the egress policy judges the mapped name, so a refused name stays refused however it is written. The Internal dependency line keeps only a pointer. (b) **The `### Fixed` line:** 0.9.0 kept running "until its input closed **or its first message arrived**". (c) **The fuzz lock file** (item 13) gets a short clause in the Internal dependency line | the diff |
+| 13 | **The fuzz lock file agrees with the main one.** `fuzz/Cargo.lock` is resolved apart from `Cargo.lock`. Today 29 crates that both share are at older versions there (`toml 1.1.8` against `1.2.1`, `encoding_rs 0.8.42` against `0.8.44`, `url`'s neighbours and others), so the release-check fuzzing tests parsers that are not the ones we ship. (a) **Align it:** run `cargo update` with `--manifest-path fuzz/Cargo.toml`, then use `--precise` wherever its resolver picks a different version than the main lock. (b) **Add the gate `tools/check-fuzz-lock`** (Python, like `check-limits`). It fails when the fuzz lock holds a `name version` for a crate that the main lock also has, but not at that version. Crates only the fuzz workspace has (`libfuzzer-sys`, `arbitrary`…) are not compared. Run it in CI's `rules` job, next to the other `tools/` gates. (c) **`releasing.md`, step 1** names `fuzz/Cargo.lock` and the gate. The name `tools/check-fuzz-lock` is fixed: the audit report cites it | the gate failing on the old fuzz lock and passing on the new one |
+| 14 | **The review questions, answered** (no work): the `### Fixed` section, the intro paragraph and the THR-28/LIM-O3 line all stay. The release checks are the architect's to run, on the head after commit 3 | — |
 
 ## Explicit non-change scope
 
