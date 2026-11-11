@@ -39,7 +39,9 @@ _None yet._
 
 ## Accepted
 
-_None._
+| ID | Title | Milestone | Handoff |
+|----|-------|-----------|---------|
+| 021 | [Enforced call maxima, shown by `check`; every tool-definition change announced](./accepted/021-call-maxima-and-definition-changes.md) | next minor | [021a](./handoffs/021a-call-maxima-and-definition-changes/README.md) |
 
 Review records are not in the repository: the owner keeps review requests and reviewed packages under a private directory, which earlier handoffs name as `.git-exclude/reviews/`, today `.git-exclude/review-requests/` and `.git-exclude/reviewed/`.
 
