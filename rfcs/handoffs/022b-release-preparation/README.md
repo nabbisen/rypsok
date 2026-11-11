@@ -10,8 +10,8 @@ It carries RFC 021 (handoff 021a) and RFC 022 (handoff 022a). As with
 020v, preparing a release is a change of the tree and goes through
 implement → review.
 
-**RFCs.** [`../../accepted/021-call-maxima-and-definition-changes.md`](../../accepted/021-call-maxima-and-definition-changes.md),
-[`../../accepted/022-rmcp-advisories.md`](../../accepted/022-rmcp-advisories.md).
+**RFCs.** [`../../done/021-call-maxima-and-definition-changes.md`](../../done/021-call-maxima-and-definition-changes.md),
+[`../../done/022-rmcp-advisories.md`](../../done/022-rmcp-advisories.md).
 **Requirements.** REQ-MAIN-006 (every contract change announced), REQ-DEP-005.
 **Procedure.** `docs/src/maintainers/releasing.md`, steps 1 and 2. This
 handoff is those two steps. Step 3 and later steps belong to the architect

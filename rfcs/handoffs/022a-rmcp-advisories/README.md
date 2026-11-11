@@ -6,7 +6,7 @@
 > the 16 MiB stdio line bound becomes a row of the limits table with a
 > test.
 
-**Created 2026-11-11.** **RFC.** [`../../accepted/022-rmcp-advisories.md`](../../accepted/022-rmcp-advisories.md) (D1 to D3). **Priority: before anything else.** This is a security fix of released code (High).
+**Created 2026-11-11.** **RFC.** [`../../done/022-rmcp-advisories.md`](../../done/022-rmcp-advisories.md) (D1 to D3). **Priority: before anything else.** This is a security fix of released code (High).
 **Rules.** As 021a: tests first and shown failing; push only after approval; evidence goes to `.git-exclude/evidence/022a/`; relative `cd`. Also:
 - **The per-change rule:** `mcp/http.rs` is in its list, so run mutation testing and fuzz the `headers` target for 120 s.
 - **The tool-definition rule:** if a definition changes, it is announced, and you stop and ask first.

@@ -1,6 +1,6 @@
 # RFC 021 — Enforced call maxima, shown by `check`; every tool-definition change announced
 
-**Status.** Accepted (2026-11-11) by the owner, on two requests of the mimlys
+**Status.** Implemented (0.10.0, 2026-11-11); accepted (2026-11-11) by the owner, on two requests of the mimlys
 team, rypsok's first consumer (letter of 2026-11-11). The owner asked that
 both be checked against the project's principles first; this RFC is the
 result.

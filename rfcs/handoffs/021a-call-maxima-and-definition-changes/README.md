@@ -1,6 +1,6 @@
 # Handoff 021a — Enforced call maxima, shown by `check`; definition changes announced and checked
 
-**Created 2026-11-11.** **RFC.** [`../../accepted/021-call-maxima-and-definition-changes.md`](../../accepted/021-call-maxima-and-definition-changes.md) (D1 to D3).
+**Created 2026-11-11.** **RFC.** [`../../done/021-call-maxima-and-definition-changes.md`](../../done/021-call-maxima-and-definition-changes.md) (D1 to D3).
 **Rules.** As in the audit: tests first and shown failing; commit your own work; push only after approval; evidence goes to `.git-exclude/evidence/021a/`; relative `cd`. Two rules apply:
 - **The per-change rule** (`.git-exclude/rules/rypsok-checks-per-change.md`). Run mutation on every module you change, even outside its list.
 - **The new rule on tool-definition changes** (`.git-exclude/rules/rypsok-tool-definition-changes.md`).

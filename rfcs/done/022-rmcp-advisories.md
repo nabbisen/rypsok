@@ -1,6 +1,6 @@
 # RFC 022 — The rmcp advisories of November 2026 (RUSTSEC-2026-0461, -0457, -0462)
 
-**Status.** Accepted (2026-11-11) by the architect as a security fix of
+**Status.** Implemented (0.10.0, 2026-11-11); accepted (2026-11-11) by the architect as a security fix of
 released code. The fix is the architect's (a dependency step, RFC 020,
 D-14 as amended by D-23). The release that carries it, and any public
 advisory, are the owner's.
