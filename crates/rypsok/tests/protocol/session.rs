@@ -63,6 +63,7 @@ impl Session {
     /// Waits until a line of standard error contains `needle`; the lines
     /// read on the way are dropped. For a test that must act after the
     /// process has got as far as a known point, such as its signal handler.
+    #[cfg(unix)]
     pub fn wait_for_stderr(&mut self, needle: &str, within: Duration) {
         let deadline = Instant::now() + within;
         loop {
