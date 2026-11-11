@@ -28,11 +28,20 @@ PACKAGE = re.compile(r'^\[\[package\]\]\nname = "([^"]+)"\nversion = "([^"]+)"',
 
 
 def read(path: pathlib.Path) -> dict[str, set[str]]:
+    text = path.read_text(encoding="utf-8")
     versions: dict[str, set[str]] = {}
-    for m in PACKAGE.finditer(path.read_text(encoding="utf-8")):
+    read_count = 0
+    for m in PACKAGE.finditer(text):
         versions.setdefault(m.group(1), set()).add(m.group(2))
-    if not versions:
-        print(f"check-fuzz-lock: no packages read from {path}", file=sys.stderr)
+        read_count += 1
+    # Every package block must be read: a block in another layout would
+    # otherwise be skipped, and its crate never compared.
+    blocks = text.count("[[package]]")
+    if read_count == 0 or read_count != blocks:
+        print(
+            f"check-fuzz-lock: {path}: read {read_count} of {blocks} package blocks",
+            file=sys.stderr,
+        )
         sys.exit(2)
     return versions
 

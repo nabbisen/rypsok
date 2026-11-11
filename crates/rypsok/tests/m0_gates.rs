@@ -131,6 +131,26 @@ fn req_test_012_the_fuzz_lock_agrees_with_the_main_lock() {
         ],
     );
     assert_eq!(agreed.status.code(), Some(0), "{agreed:?}");
+    // A package block the gate cannot read is an error, not a crate skipped:
+    // a skipped crate would never be compared.
+    std::fs::write(dir.join("main.lock"), lock(&[("toml", "1.2.1")])).unwrap();
+    std::fs::write(
+        dir.join("fuzz.lock"),
+        format!(
+            "{}[[package]]\nversion = \"1.1.8\"\nname = \"toml\"\n",
+            lock(&[("libfuzzer-sys", "0.4.0")])
+        ),
+    )
+    .unwrap();
+    let unread = Command::new("python3")
+        .arg(&script)
+        .arg("--main")
+        .arg(dir.join("main.lock"))
+        .arg("--fuzz")
+        .arg(dir.join("fuzz.lock"))
+        .output()
+        .expect("python3 runs");
+    assert_eq!(unread.status.code(), Some(2), "{unread:?}");
     std::fs::remove_dir_all(&dir).ok();
     // The repository: the two real lock files agree.
     let real = Command::new("python3")
