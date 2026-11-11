@@ -4,9 +4,9 @@
 team, rypsok's first consumer (letter of 2026-11-11). The owner asked that
 both be checked against the project's principles first; this RFC is the
 result.
-**Tracks.** The next minor release. Requirements: REQ-AGG-003, REQ-PAGE-008,
+**Tracks.** 0.10.0 (the owner's decision of 2026-11-11). Requirements: REQ-AGG-003, REQ-PAGE-008,
 REQ-MAIN-006, REQ-OPS-001.
-**Handoffs.** [`021a`](../handoffs/021a-call-maxima-and-definition-changes/README.md).
+**Handoffs.** [`021a`](../handoffs/021a-call-maxima-and-definition-changes/README.md). Released in 0.10.0, prepared by [`022b`](../handoffs/022b-release-preparation/README.md).
 
 ## Problem
 

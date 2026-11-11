@@ -4,9 +4,9 @@
 released code. The fix is the architect's (a dependency step, RFC 020,
 D-14 as amended by D-23). The release that carries it, and any public
 advisory, are the owner's.
-**Tracks.** The next release. Requirements: REQ-SEC-018 (the HTTP gate),
+**Tracks.** 0.10.0 (the owner's decision of 2026-11-11). Requirements: REQ-SEC-018 (the HTTP gate),
 REQ-SEC-024 (bounded memory), REQ-DEP-002, REQ-MAIN-006.
-**Handoffs.** [`022a`](../handoffs/022a-rmcp-advisories/README.md).
+**Handoffs.** [`022a`](../handoffs/022a-rmcp-advisories/README.md); [`022b`](../handoffs/022b-release-preparation/README.md), the preparation of 0.10.0, which carries RFC 021 and this RFC.
 **Assessment.** The architect's assessment (private review folder), with
 the reproduction against the released 0.9.0 binary.
 
