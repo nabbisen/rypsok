@@ -102,3 +102,17 @@ rate-limits line:
 - **A rule without enforcement.** Rejected: a rule that rests on memory
   is forgotten exactly once, which is once too often for a host that pins
   definitions.
+
+## Amendment (2026-11-11, after implementation in 021a)
+
+The Problem section says that LIM-S7 was "promised but not enforced".
+**That is true of the code, not of the behavior.**
+- **The code.** Nothing named LIM-S7 bounded a call, and no test asserted
+  it.
+- **The behavior.** After the fan-out, the search pipeline does not await,
+  and its fan-out ends at LIM-S4 − LIM-S6, before LIM-S7. A fetch's inner
+  bounds end at or before LIM-F5. Both maxima therefore already held by
+  construction.
+- **What 021a added.** The outer bound (`deadline::within`) that keeps
+  them true if the pipelines change, and the tests that pin them.
+- **What it changes for hosts.** Nothing that a host could have observed.
