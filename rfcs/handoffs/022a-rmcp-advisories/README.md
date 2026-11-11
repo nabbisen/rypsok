@@ -1,5 +1,11 @@
 # Handoff 022a — rmcp 3.9.0, and unknown tool names refused at our gate
 
+> **Amended 2026-11-11 at the stop of item 3:** items 4 (the gate) and 5's
+> gate are withdrawn with RFC 022 D2. The rest follows the architect's
+> decisions in the 022a review: the wire differences are announced, and
+> the 16 MiB stdio line bound becomes a row of the limits table with a
+> test.
+
 **Created 2026-11-11.** **RFC.** [`../../accepted/022-rmcp-advisories.md`](../../accepted/022-rmcp-advisories.md) (D1 to D3). **Priority: before anything else.** This is a security fix of released code (High).
 **Rules.** As 021a: tests first and shown failing; push only after approval; evidence goes to `.git-exclude/evidence/022a/`; relative `cd`. Also:
 - **The per-change rule:** `mcp/http.rs` is in its list, so run mutation testing and fuzz the `headers` target for 120 s.

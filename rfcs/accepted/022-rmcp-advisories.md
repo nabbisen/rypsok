@@ -62,3 +62,31 @@ rule of RFC 021 applies, and its release-check job will hold us to it.
 - **3.6.0, the smallest fixing version.** It leaves -0457 and -0462 on the
   lock file, red in `cargo deny`, and a smaller step now means a larger one
   later. mimlys pins `=3.9.0` too.
+
+## Amendment (2026-11-11, at the stop of 022a item 3): D2 withdrawn
+
+- **What 022a found.** The upgrade alone removes the growth. With 4,000
+  distinct names the process stayed level with the control (24 → 27 MiB
+  both).
+- **What D2 would cost.** To answer exactly as the protocol library does,
+  the gate would have to:
+  - read and parse request bodies, which it never does;
+  - copy the library's matching of headers against the body;
+  - change which refusal some malformed requests get (a foreign `Host`
+    with an unknown tool would no longer be 403).
+
+  That is more parsing of untrusted input and less clarity, set against a
+  flaw removed at its source. **D2 is withdrawn.**
+- **The guard against a regression** is `cargo deny`, on every push and in
+  the release checks. That is how this advisory was found.
+- **What rmcp 3.9.0 changes on the wire, all announced:**
+  - unknown tool over HTTP is 200 with the same JSON-RPC error (was 400);
+  - a 2026-07-28 `tools/list` carries `cacheScope` and `ttlMs`, with the
+    tools unchanged;
+  - float and `null` ids;
+  - `Accept` quality values and case;
+  - a legacy session-less POST is 400 (was 422);
+  - the stdio first message without `_meta`;
+  - a stdio line bound of 16 MiB, which becomes a row of the limits table.
+
+  No tool definition changed.
