@@ -239,7 +239,7 @@ A test whose name starts with `req_` lives under `crates/`.
 
 | Item | What | Whose |
 |---|---|---|
-| The verification ledger | 41 requirements whose tests verify part of what they say ([ledger](./verification-ledger.md)) | closed before 1.0.0 (RFC 020, D-18) |
+| The verification ledger | 40 requirements whose tests verify part of what they say (41 at the release of 0.9.0; REQ-AGG-003 closed since, RFC 021) ([ledger](./verification-ledger.md)) | closed before 1.0.0 (RFC 020, D-18) |
 | DAT-22, RFC 020, D-11 | Which public items are frozen | the 1.0.0 preparation |
 | NET-18, RFC 020, D-5 | Confirmed on 2026-11-08: DuckDuckGo's no-results page marks itself with `span.no-results`, and the driver read `div.no-results`, so a search with no results counted as a parse failure toward the circuit | fixed before the release in handoff 020z |
 | DEP-13 | Several pinned actions are a major version behind | the dependency step at the start of the next cycle (RFC 020, D-14) |

@@ -15,6 +15,13 @@
 # file and require that nothing is missed.
 
 exclude_re = [
+    # The error code of the answer to a cancelled `web_search` or `web_fetch`:
+    # the protocol library drops the response of a cancelled request and
+    # sends nothing (REQ-MCP-007), so no client can observe the code.
+    # Reviewed 2026-11-11 (022a).
+    'mcp\.rs:190:60: delete - in <impl ServerHandler for Adapter>::call_tool',
+    'mcp\.rs:220:60: delete - in <impl ServerHandler for Adapter>::call_tool',
+
     # `(buffer << 6) | value`: the six low bits of `buffer << 6` are zero and
     # `value` is below 64, so `|`, `^` and `+` give the same number.
     'privacy\.rs:250:32: replace \| with \^ in decode_base64',
