@@ -323,11 +323,22 @@ rypsok: limits: outbound_in_flight=32 per_engine_in_flight=2 fetches_in_flight=4
 rypsok: memory: worst case about 122 MiB (base 13 + bodies 20 + parses 74 + sessions 15 + cache 0 MiB; an estimate for the musl build)
 ```
 
-(The `search`, rate-limit, engine and category lines come first. The last
-line names the build its figure is for: `an estimate for the glibc build` on a
+(The `search`, rate-limit, call-maxima, engine and category lines come first.
+The last line names the build its figure is for: `an estimate for the glibc build` on a
 glibc build, whose figure is higher, and `measured on Linux; not measured for
 this platform` elsewhere.) The format
 of the lines may change in a minor version; the exit code does not.
+
+The maxima line, `rypsok: tool call maxima in ms: web_search=2800
+web_fetch=11000; engine_status reads memory only`, gives the longest a call of
+each tool can last, for the configuration checked: a `web_search` call ends at
+LIM-S7 (the search deadline plus 300 ms) and a `web_fetch` call at LIM-F5 (the
+fetch deadline plus 1000 ms), measured from the start of the call, with the
+existing `unavailable` / `deadline` error. `engine_status` answers from
+memory and has no maximum. `check`'s text is for people and may change in a
+minor version; for a program, the stable source is its own configuration plus
+the two fixed margins, LIM-S7 and LIM-F5, in the
+[limits table](../maintainers/limits-and-defaults.md).
 
 ### Warnings
 

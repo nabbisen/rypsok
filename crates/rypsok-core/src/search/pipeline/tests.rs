@@ -947,6 +947,54 @@ async fn req_agg_003_overall_deadline_holds() {
     );
 }
 
+/// REQ-AGG-003 (RFC 021, D1): a `web_search` call never lasts longer than
+/// LIM-S7, over the engines that answer slowly, hang, hang and ignore the
+/// cancellation, or fail at once. (These end at LIM-S4, before LIM-S7: the
+/// test passes without the outer bound, which is the guarantee behind them.)
+#[tokio::test(start_paused = true)]
+async fn req_agg_003_a_search_call_never_lasts_longer_than_lim_s7() {
+    let dropped = Arc::new(std::sync::Mutex::new(None));
+    let cases: Vec<(&str, Vec<(&str, Script)>)> = vec![
+        ("all hang", vec![("a", Script::Hang), ("b", Script::Hang)]),
+        (
+            "one slow, one hangs",
+            vec![
+                ("a", Script::Slow(Duration::from_secs(60), A.to_vec())),
+                ("b", Script::Hang),
+            ],
+        ),
+        (
+            "hangs and ignores the cancellation",
+            vec![("a", Script::HangUntilDropped(Arc::clone(&dropped)))],
+        ),
+        (
+            "fails at once",
+            vec![("a", Script::Fail(EngineErrorClass::RequestFailure, None))],
+        ),
+    ];
+    for (name, engines) in cases {
+        let h = harness(engines);
+        let maximum = Duration::from_millis(h.limits.search_call_max_ms().into());
+        let started = Instant::now();
+        let _ = h.search(req(), CancellationToken::new()).await;
+        assert!(
+            started.elapsed() <= maximum,
+            "{name}: {:?} is longer than LIM-S7 {maximum:?}",
+            started.elapsed()
+        );
+    }
+}
+
+/// REQ-AGG-003 (RFC 021, D1): the end of a call that LIM-S7 cut off is
+/// counted as `unavailable` and is the search's existing deadline error.
+#[test]
+fn req_agg_003_a_call_cut_off_by_lim_s7_ends_with_the_search_deadline_error() {
+    let counters = Counters::new();
+    let error = call_expired(&counters, Instant::now());
+    assert_eq!(error, CallError::Tool(ToolError::deadline()));
+    assert_eq!(counters.calls_of("web_search", "unavailable"), 1);
+}
+
 /// REQ-AGG-005: outbound requests never exceed LIM-C1 for the process.
 #[tokio::test(start_paused = true)]
 async fn req_agg_005_process_wide_outbound_cap_is_enforced() {

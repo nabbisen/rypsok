@@ -319,3 +319,31 @@ fn req_mcp_011_tools_list_matches_the_fixture() {
         assert!(tool["outputSchema"].is_object(), "{tool}");
     }
 }
+
+/// REQ-MCP-006 and REQ-MCP-011 (RFC 021, D3): the server instructions are a
+/// committed fixture, like the tool definitions: a changed instruction cannot
+/// pass unnoticed, and the release checks compare this file with the last
+/// release's. Write it with `RYPSOK_UPDATE_FIXTURES=1` after reading the diff.
+#[test]
+fn req_mcp_006_the_instructions_match_the_fixture() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("fixtures")
+        .join("schemas")
+        .join("instructions.txt");
+    let rendered = format!("{INSTRUCTIONS}\n");
+    if std::env::var_os("RYPSOK_UPDATE_FIXTURES").is_some() {
+        std::fs::write(&path, &rendered).unwrap();
+    }
+    let expected = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!(
+            "{}: {e} (set RYPSOK_UPDATE_FIXTURES=1 to write it)",
+            path.display()
+        )
+    });
+    assert_eq!(
+        expected.replace("\r\n", "\n"),
+        rendered,
+        "{} changed; review it and set RYPSOK_UPDATE_FIXTURES=1 to accept",
+        path.display()
+    );
+}

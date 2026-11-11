@@ -12,7 +12,35 @@ it: what it lists as frozen changes only with a major version, additions
 arrive in minor versions, and every change of a default value is
 announced here with both values.
 
+A change to a tool's definition (its name, description, input schema, output
+schema or annotations, or the server instructions) is announced on a line of
+its own under `### Tool definitions`, first under the version, because a host
+that pins definitions needs to be told of each one (RFC 021).
+
 ## [Unreleased]
+
+### Changed
+
+- A `web_search` call ends at LIM-S7 and a `web_fetch` call at LIM-F5, measured
+  from its start, with the existing deadline error (`unavailable`, reason
+  `deadline`): the bounds were documented; they are now enforced over the whole
+  call (RFC 021, D1). Nothing changes for a call that ends in time, and no new
+  kind, reason or notice is added.
+
+### Added
+
+- `rypsok check` prints each tool's maximum call time on a line of its own,
+  `rypsok: tool call maxima in ms: web_search=2800 web_fetch=11000;
+  engine_status reads memory only`, with the effective values (RFC 021, D2).
+  The text of `check` is for people and may change in a minor version.
+
+### Internal
+
+- Every change of a tool definition (or of the server instructions) is announced
+  under `### Tool definitions`, and the release checks compare the pinned
+  definitions with the last release tag (RFC 021, D3). The server instructions
+  are now pinned in `crates/rypsok/fixtures/schemas/instructions.txt` beside
+  `tools_list.json`.
 
 ## [0.9.0] — 2026-11-08 — The audit (milestone M8)
 

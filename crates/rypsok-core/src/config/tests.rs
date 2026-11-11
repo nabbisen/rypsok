@@ -494,3 +494,25 @@ fn req_cfg_005_the_connect_timeout_and_the_shutdown_time_are_keys() {
     let config = Config::parse("config_version = 1\n[search]\nconnect_timeout_ms = 250\n").unwrap();
     assert_eq!(config.limits().engine_connect_timeout_ms, 250);
 }
+
+/// REQ-AGG-003 (RFC 021): LIM-S5 plus LIM-S6 may equal LIM-S4 and may not
+/// exceed it; a configuration that does is refused at startup, with the
+/// message that names both keys.
+#[test]
+fn req_agg_003_lim_s5_plus_lim_s6_above_lim_s4_is_refused_at_startup() {
+    let with = |engine_timeout: u32, reserve: u32| {
+        let text = format!(
+            "config_version = 1\n[search]\ndeadline_ms = 2500\nengine_timeout_ms = {engine_timeout}\nreserve_ms = {reserve}\n"
+        );
+        Config::parse(&text).and_then(|config| config.validate())
+    };
+    assert!(with(2300, 200).is_ok(), "equal to LIM-S4 is allowed");
+    let refused = with(2301, 200).unwrap_err();
+    assert_eq!(
+        refused.problems,
+        vec![
+            "search.engine_timeout_ms: must be between 100 and 2300 (search.deadline_ms 2500 minus search.reserve_ms 200)"
+        ]
+    );
+    assert!(with(2000, 501).is_err(), "a larger reserve is refused too");
+}

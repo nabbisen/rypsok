@@ -18,7 +18,13 @@ release workflow builds and attaches, and never creates a release.
    after the checks. CI keeps `stable` on purpose, to see new lints early; its
    1.88 job covers the floor. Between cycles nothing updates by itself.
 2. **The release commit.** The version bump and the changelog, through CI;
-   the gates are green on it.
+   the gates are green on it. When a tool definition changed since the last
+   release, the section has a `### Tool definitions` heading, first under the
+   version, with one line per change: the tool, the field (name, description,
+   input schema, output schema, annotations, or the server instructions) and
+   what changed (RFC 021, D3). The release checks compare the pinned
+   definitions with the last release tag and fail when they differ and the
+   heading is missing.
 3. **Run the release checks on the release commit.** Dispatch
    `release-checks.yml` from `main` at that commit (Actions, Release checks,
    Run workflow). Every job must be green or explained as

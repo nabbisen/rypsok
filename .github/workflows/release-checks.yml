@@ -5,6 +5,8 @@ name: Release checks
 #
 #   reproducible, reproducible-compare  two builds of every release target (four)
 #                                       and the comparison of their binaries
+#   tool-definitions                    the pinned tool definitions against the
+#                                       last release tag (RFC 021, D3)
 #   fuzz                                every fuzz target, 300 s each
 #   mutants                             mutation testing of the six security
 #                                       modules against .cargo/mutants.toml
@@ -110,6 +112,76 @@ jobs:
             echo "$target: $hash_a $hash_b $same"
           done
           exit "$failed"
+
+  tool-definitions:
+    name: Tool definitions against the last release
+    # After the comparison of the builds, so that it never adds to the peak
+    # of the matrices (the cap at the top of this file).
+    needs: reproducible-compare
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # The tags are needed to find the last release.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      # RFC 021, D3: a host that pins the tool definitions must be told of
+      # every change of one. The two files pin them as committed (the
+      # definitions without the server version, which changes with every
+      # release). When either differs from the latest release tag, the newest
+      # section of the changelog must have a `### Tool definitions` heading.
+      # A tag older than a fixture has no such file: that counts as a change.
+      - name: Compare the pinned definitions with the last release tag
+        run: |
+          set -euo pipefail
+          tag="$(git describe --tags --abbrev=0 --match '[0-9]*.[0-9]*.[0-9]*' HEAD)"
+          echo "latest release tag reachable from HEAD: $tag"
+          changed=""
+          for file in crates/rypsok/fixtures/schemas/tools_list.json crates/rypsok/fixtures/schemas/instructions.txt; do
+            if git cat-file -e "$tag:$file" 2>/dev/null; then
+              if ! git diff --quiet "$tag" HEAD -- "$file"; then
+                changed="$changed $file"
+              fi
+            elif [ "${file##*/}" = instructions.txt ]; then
+              # The first release that pins the instructions as a file: the
+              # tag before it has them in the source only, so compare with
+              # that text. Once a release holds the file, this is not used.
+              old="$(git show "$tag:crates/rypsok/src/mcp/tools.rs" | sed -n 's/^pub const INSTRUCTIONS: &str = "\(.*\)";$/\1/p')"
+              if [ -z "$old" ] || [ "$old" != "$(cat "$file")" ]; then
+                changed="$changed $file (not in $tag, and not the text of its source)"
+              fi
+            else
+              changed="$changed $file (not in $tag)"
+            fi
+          done
+          {
+            echo "### Tool definitions against $tag"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$changed" ]; then
+            echo "The pinned definitions are the same as in $tag."
+            echo "The pinned definitions are the same as in $tag; nothing to announce." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # The newest section of the changelog; an empty [Unreleased] above
+          # a version section is not the newest.
+          newest="$(awk '
+            /^## \[/ { if (started && content > 0) exit; started = 1; section = ""; content = 0 }
+            started { section = section $0 "\n"; if ($0 !~ /^## \[/ && $0 !~ /^[[:space:]]*$/) content++ }
+            END { printf "%s", section }
+          ' CHANGELOG.md)"
+          echo "Changed since $tag:$changed"
+          echo "The newest changelog section is: $(printf '%s' "$newest" | head -n 1)"
+          if printf '%s\n' "$newest" | grep -qx '### Tool definitions'; then
+            echo "The section has a '### Tool definitions' heading."
+            echo "Changed since $tag:$changed. The newest changelog section announces them under \`### Tool definitions\`." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "::error::the tool definitions changed since $tag ($changed ) and the newest section of CHANGELOG.md has no '### Tool definitions' heading"
+          echo "Changed since $tag:$changed. **The newest changelog section has no \`### Tool definitions\` heading.**" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
 
   fuzz:
     name: Fuzz ${{ matrix.target }}

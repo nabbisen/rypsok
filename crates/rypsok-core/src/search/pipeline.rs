@@ -94,7 +94,33 @@ pub async fn run(
     // Every event of the call, those of the engines' tasks included, carries
     // the request id and the caller (RFC 020, TST-2).
     let span = crate::telemetry::call_span("web_search", p.caller);
-    run_call(p, search, cancel).instrument(span).await
+    // The whole call lasts at most LIM-S7 (RFC 021, D1): the outer guarantee.
+    // The pipeline's own deadlines decide the normal answer and end earlier.
+    let start = Instant::now();
+    let bound = start + Duration::from_millis(u64::from(p.limits.search_call_max_ms()));
+    let call = run_call(p, search, cancel).instrument(span.clone());
+    crate::deadline::within(
+        bound,
+        || span.in_scope(|| call_expired(p.counters, start)),
+        call,
+    )
+    .await
+}
+
+/// The end of a call that LIM-S7 cut off: counted and logged like any call
+/// that ends `unavailable`, and answered with the search's deadline error
+/// (RFC 021, D1). No new kind, reason or notice.
+pub(crate) fn call_expired(counters: &Counters, start: Instant) -> CallError {
+    counters.call("web_search", "unavailable");
+    tracing::info!(
+        event = "call",
+        tool = "web_search",
+        outcome = "unavailable",
+        reason = "deadline",
+        latency_ms = start.elapsed().as_millis() as u64,
+        "call ended at its maximum"
+    );
+    ToolError::deadline().into()
 }
 
 async fn run_call(

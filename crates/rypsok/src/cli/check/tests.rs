@@ -578,3 +578,38 @@ fn req_perf_003_the_command_uses_the_basis_of_its_own_build() {
         "{line}"
     );
 }
+
+/// REQ-OPS-001 and REQ-AGG-003 (RFC 021, D2): `check` prints each tool's
+/// maximum call time on a line of its own, after the rate-limits line, with
+/// the effective values: LIM-S7 (the search deadline plus 300 ms) and LIM-F5
+/// (the fetch deadline plus 1000 ms). `engine_status` has no maximum and the
+/// line says it reads memory only.
+#[test]
+fn req_ops_001_check_prints_the_call_maxima() {
+    let line_of = |text: &str| -> (usize, usize, String) {
+        let report = report_of(text).unwrap();
+        let at = report
+            .lines
+            .iter()
+            .position(|l| l.starts_with("rypsok: tool call maxima in ms:"))
+            .unwrap_or_else(|| panic!("no maxima line in\n{}", all_lines(&report)));
+        let rates = report
+            .lines
+            .iter()
+            .position(|l| l.starts_with("rypsok: tool rate limits per minute:"))
+            .unwrap();
+        (rates, at, report.lines[at].clone())
+    };
+    let (rates, at, line) = line_of("config_version = 1\n");
+    assert_eq!(at, rates + 1, "right after the rate-limits line");
+    assert_eq!(
+        line,
+        "rypsok: tool call maxima in ms: web_search=2800 web_fetch=11000; engine_status reads memory only"
+    );
+    let (_, _, changed) =
+        line_of("config_version = 1\n[search]\ndeadline_ms = 4000\n[fetch]\ndeadline_ms = 20000\n");
+    assert_eq!(
+        changed,
+        "rypsok: tool call maxima in ms: web_search=4300 web_fetch=21000; engine_status reads memory only"
+    );
+}

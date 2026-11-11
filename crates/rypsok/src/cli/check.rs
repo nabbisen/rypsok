@@ -81,6 +81,14 @@ pub(super) fn build_for(
         config.status.enabled,
         config.service.structured_content,
     ));
+    // The maxima of a call (RFC 021, D2): the effective LIM-S7 and LIM-F5,
+    // which the core enforces over the whole call. `engine_status` answers
+    // from memory and has none.
+    lines.push(format!(
+        "rypsok: tool call maxima in ms: web_search={} web_fetch={}; engine_status reads memory only",
+        limits.search_call_max_ms(),
+        limits.fetch_call_max_ms(),
+    ));
     lines.push(format!(
         "rypsok: service: shutdown_ms={}",
         config.service.shutdown_ms

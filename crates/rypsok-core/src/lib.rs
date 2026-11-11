@@ -36,6 +36,7 @@
 pub mod boundary;
 pub mod cache;
 pub mod config;
+mod deadline;
 pub mod egress;
 pub mod engine;
 pub mod fetch;

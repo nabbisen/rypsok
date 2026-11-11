@@ -1689,3 +1689,81 @@ async fn req_sec_014_a_panic_in_extraction_is_contained_and_logged() {
     assert_eq!(error.kind, ErrorKind::Unavailable);
     assert_eq!(error.message, ToolError::fetch_deadline().message);
 }
+
+/// REQ-PAGE-008 (RFC 021, D1): a `web_fetch` call never lasts longer than
+/// LIM-F5 from its start. With paused time the durations are exact: here the
+/// permit is held by another call, and the call ends `busy` at LIM-F4.
+/// (It ends before LIM-F5 and passes without the outer bound, which is the
+/// guarantee behind it.)
+#[tokio::test(start_paused = true)]
+async fn req_page_008_a_fetch_call_never_lasts_longer_than_lim_f5() {
+    let h = harness_with(Limits {
+        fetches_in_flight: 1,
+        ..Limits::default()
+    })
+    .await;
+    let maximum = Duration::from_millis(h.limits.fetch_call_max_ms().into());
+    let held = Arc::clone(&h.service.global).acquire_owned().await.unwrap();
+    let started = Instant::now();
+    let error = h.fetch(&h.url("/held")).await.unwrap_err();
+    assert_eq!(error.detail.reason, Some(DetailReason::Busy));
+    assert_eq!(
+        started.elapsed(),
+        Duration::from_millis(h.limits.fetch_deadline_ms.into()),
+        "the call waited for the permit until LIM-F4"
+    );
+    assert!(started.elapsed() <= maximum);
+    drop(held);
+}
+
+/// REQ-PAGE-008 (RFC 021, D1): the same bound with a real server, in real
+/// time with short limits (paused time would jump over the socket's wait):
+/// the parse permit held by another call, and a server that answers after
+/// the deadline, each end at LIM-F5 or before it with the existing errors.
+/// Real time has a scheduling latency (the first case ends at LIM-F5 itself,
+/// and was seen 2 ms over), so these two assertions allow 250 ms; the exact
+/// bound is the paused-time test above and the unit test of `within`.
+#[tokio::test]
+async fn req_page_008_a_fetch_over_a_socket_never_lasts_longer_than_lim_f5() {
+    let h = harness_with(Limits {
+        fetch_deadline_ms: 400,
+        parsing_in_flight: 1,
+        ..Limits::default()
+    })
+    .await;
+    let maximum =
+        Duration::from_millis(h.limits.fetch_call_max_ms().into()) + Duration::from_millis(250);
+    Mock::given(method("GET"))
+        .and(path("/p"))
+        .respond_with(page(ARTICLE))
+        .mount(&h.server)
+        .await;
+    let held = Arc::clone(&h.service.parsing)
+        .acquire_owned()
+        .await
+        .unwrap();
+    let started = std::time::Instant::now();
+    let error = h.fetch(&h.url("/p")).await.unwrap_err();
+    assert!(started.elapsed() <= maximum, "{:?}", started.elapsed());
+    assert_eq!(error.detail.reason, Some(DetailReason::Busy));
+    drop(held);
+    Mock::given(method("GET"))
+        .and(path("/slow"))
+        .respond_with(page(ARTICLE).set_delay(Duration::from_secs(5)))
+        .mount(&h.server)
+        .await;
+    let started = std::time::Instant::now();
+    let error = h.fetch(&h.url("/slow")).await.unwrap_err();
+    assert!(started.elapsed() <= maximum, "{:?}", started.elapsed());
+    assert_eq!(error.detail.reason, Some(DetailReason::Deadline));
+}
+
+/// REQ-PAGE-008 (RFC 021, D1): the end of a call that LIM-F5 cut off is
+/// counted as `unavailable` and is the existing `fetch_deadline` error.
+#[test]
+fn req_page_008_a_call_cut_off_by_lim_f5_ends_with_the_fetch_deadline_error() {
+    let counters = Counters::new();
+    let error = call_expired(&counters, Instant::now());
+    assert_eq!(error, CallError::Tool(ToolError::fetch_deadline()));
+    assert_eq!(counters.calls_of("web_fetch", "unavailable"), 1);
+}

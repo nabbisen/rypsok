@@ -25,7 +25,7 @@ day, with these tests:
 | `REQ-RANK-003` | `req_rank_003_returned_url_table`: queries with no tracking parameter come back unchanged (`?a=1&b`) |
 | `REQ-CTX-006` | `req_err_004_every_error_constructor_has_a_bounded_message_without_external_text` (messages); notices carry codes and counts, not text |
 | `REQ-PAGE-006` | `req_page_006_a_document_at_the_depth_bound_parses_in_full`, `req_page_006_a_million_nested_divs_stop_at_the_bound_plus_one_chunk` |
-| `REQ-PAGE-008` | `req_sec_014_a_panic_in_extraction_is_contained_and_logged` (the work runs off the thread of the call and ends at the call's deadline), `req_page_008_parsing_permit_bounds_parsing` |
+| `REQ-PAGE-008` | `req_sec_014_a_panic_in_extraction_is_contained_and_logged` (the work runs off the thread of the call and ends at the call's deadline), `req_page_008_parsing_permit_bounds_parsing`, and since RFC 021 `req_page_008_a_fetch_call_never_lasts_longer_than_lim_f5` (no call of `web_fetch` lasts longer than LIM-F5) |
 | `REQ-SEC-006` | `req_sec_006_every_special_purpose_block_is_refused` (read from the IANA registry, not from the table under test) |
 | `REQ-SEC-014` | `req_sec_014_a_panic_in_extraction_is_contained_and_logged` |
 | `REQ-SEC-022` | `req_sec_022_an_http2_stream_beyond_max_streams_is_refused` |
@@ -36,7 +36,10 @@ day, with these tests:
 Handoff 020q also closed `REQ-FETCH-007`, `REQ-FETCH-010`, `REQ-ENG-002`,
 `REQ-PAGE-005`, `REQ-SEC-001`, `REQ-SEC-005`, `REQ-SEC-007`, `REQ-SEC-009`,
 `REQ-SEC-011`, `REQ-SEC-016`, `REQ-PRIV-003`, `REQ-PRIV-004`, `REQ-ERR-004` and
-`REQ-RES-008`; handoff 020r `REQ-OBS-005`; handoff 020m `REQ-MCP-008`. Five
+`REQ-RES-008`; handoff 020r `REQ-OBS-005`; handoff 020m `REQ-MCP-008`; handoff 021a
+`REQ-AGG-003` (`req_agg_003_a_search_call_never_lasts_longer_than_lim_s7`,
+`req_agg_003_lim_s5_plus_lim_s6_above_lim_s4_is_refused_at_startup` and the
+unit tests of `within`). Five
 rows were narrowed to what is still missing.
 
 | Requirement | Verdict | What is missing |
@@ -52,7 +55,6 @@ rows were narrowed to what is still missing.
 | `REQ-ENG-014` No browser imitation by scraping drivers | partial | standard User-Agent, Accept: text/html only, no other headers asserted; "never worked around" (403, 429, 503, challenge) is asserted under the REQ-ENG-015 tests |
 | `REQ-ENG-015` Bounded scraping | partial | no-results page empty, challenge and 403 blocked, 429/503 rate_limited, redirects not followed, byte and node bounds; not asserted: the depth bound (NET-5) and parsing under LIM-C5 |
 | `REQ-AGG-001` Concurrent requests | partial | three 120 ms engines finish < 300 ms (a real-time window); the per-engine cap LIM-C2 is not asserted here |
-| `REQ-AGG-003` Overall deadline | partial | the call returns < 600 ms in the harness; not asserted here: LIM-S7 as the ceiling of a call and the startup refusal of LIM-S5 + LIM-S6 > LIM-S4 (configuration test names another id) |
 | `REQ-AGG-005` Bounded concurrency | partial | process-wide cap of 1 serializes two 100 ms engines (>= 200 ms); per-engine LIM-C2 not asserted under this id |
 | `REQ-AGG-006` Cancellation of useless work | partial | cancelled call ends as cancelled within 300 ms and no new request starts (calls == 1); that the engine future is dropped (aborted, not detached) is not asserted |
 | `REQ-AGG-007` Failure isolation | partial | malformed response and network failure in one engine keep the other's results; a panic in a driver is not exercised under this id |

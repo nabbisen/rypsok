@@ -256,7 +256,34 @@ pub async fn run(
     // Every event of the call carries the request id and the caller (RFC
     // 020, TST-2).
     let span = crate::telemetry::call_span("web_fetch", p.caller);
-    run_call(p, req, cancel).instrument(span).await
+    // The whole call lasts at most LIM-F5, from its start to its answer (RFC
+    // 021, D1). The network phase keeps LIM-F4 and the parse step its own
+    // bound, and end earlier.
+    let start = Instant::now();
+    let bound = start + Duration::from_millis(u64::from(p.limits.fetch_call_max_ms()));
+    let call = run_call(p, req, cancel).instrument(span.clone());
+    crate::deadline::within(
+        bound,
+        || span.in_scope(|| call_expired(p.counters, start)),
+        call,
+    )
+    .await
+}
+
+/// The end of a call that LIM-F5 cut off: counted and logged like any call
+/// that ends `unavailable`, and answered with the existing `fetch_deadline`
+/// error (RFC 021, D1).
+pub(crate) fn call_expired(counters: &Counters, start: Instant) -> CallError {
+    counters.call("web_fetch", "unavailable");
+    tracing::info!(
+        event = "call",
+        tool = "web_fetch",
+        outcome = "unavailable",
+        reason = "deadline",
+        latency_ms = start.elapsed().as_millis() as u64,
+        "call ended at its maximum"
+    );
+    CallError::Tool(ToolError::fetch_deadline())
 }
 
 async fn run_call(
@@ -316,18 +343,20 @@ async fn contained<T: Send + 'static>(
         let _call = call.enter();
         work()
     });
-    match tokio::time::timeout_at(deadline, task).await {
-        Ok(Ok(done)) => Ok(done),
-        Ok(Err(join_error)) => {
-            tracing::error!(
-                event = "extraction_panic",
-                panicked = join_error.is_panic(),
-                "extraction failed; the call ends"
-            );
-            Err(ToolError::extraction_failed())
+    crate::deadline::within(deadline, ToolError::fetch_deadline, async {
+        match task.await {
+            Ok(done) => Ok(done),
+            Err(join_error) => {
+                tracing::error!(
+                    event = "extraction_panic",
+                    panicked = join_error.is_panic(),
+                    "extraction failed; the call ends"
+                );
+                Err(ToolError::extraction_failed())
+            }
         }
-        Err(_) => Err(ToolError::fetch_deadline()),
-    }
+    })
+    .await
 }
 
 async fn run_inner(

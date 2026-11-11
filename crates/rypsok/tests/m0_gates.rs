@@ -437,6 +437,7 @@ fn req_test_019_the_release_checks_are_manual_independent_and_bounded() {
         [
             "reproducible",
             "reproducible-compare",
+            "tool-definitions",
             "fuzz",
             "mutants",
             "external"
@@ -448,6 +449,14 @@ fn req_test_019_the_release_checks_are_manual_independent_and_bounded() {
                 body.get("needs").and_then(Yaml::scalar),
                 Some("reproducible"),
                 "the comparison waits for the builds"
+            );
+        } else if id == "tool-definitions" {
+            // It starts when the builds are done, so it never adds to the
+            // peak of the matrices (the cap test below).
+            assert_eq!(
+                body.get("needs").and_then(Yaml::scalar),
+                Some("reproducible-compare"),
+                "the definitions check waits for the comparison"
             );
         } else {
             assert!(body.get("needs").is_none(), "job `{id}` waits for no other");
@@ -732,6 +741,91 @@ fn req_test_019_the_release_checks_leave_room_for_ci() {
             );
         }
     }
+}
+
+/// REQ-MAIN-006 (RFC 021, D3): the release checks compare the pinned tool
+/// definitions (`tools_list.json` and the instructions) at the release commit
+/// with those at the latest release tag, and fail when they differ and the
+/// newest changelog section has no `### Tool definitions` heading. The job
+/// reads, has a time limit, and waits for the comparison of the builds so
+/// that the cap of twelve jobs holds.
+#[test]
+fn req_main_006_the_release_checks_compare_the_tool_definitions() {
+    let file = release_checks();
+    let job = file
+        .at(&["jobs", "tool-definitions"])
+        .expect("a job `tool-definitions`");
+    assert_eq!(
+        job.at(&["permissions", "contents"]).and_then(Yaml::scalar),
+        Some("read")
+    );
+    assert_eq!(job.at(&["permissions"]).unwrap().entries().len(), 1);
+    assert!(job.get("timeout-minutes").is_some(), "a time limit");
+    assert_eq!(
+        job.get("needs").and_then(Yaml::scalar),
+        Some("reproducible-compare")
+    );
+    let checkout = job
+        .get("steps")
+        .unwrap()
+        .items()
+        .iter()
+        .find(|step| {
+            step.get("uses")
+                .and_then(Yaml::scalar)
+                .is_some_and(|uses| uses.starts_with("actions/checkout@"))
+        })
+        .expect("a checkout");
+    assert_eq!(
+        checkout.at(&["with", "fetch-depth"]).and_then(Yaml::scalar),
+        Some("0"),
+        "the tags are needed"
+    );
+    let script = run_lines(job).join("\n");
+    for needle in [
+        "git describe --tags --abbrev=0 --match '[0-9]*.[0-9]*.[0-9]*'",
+        "crates/rypsok/fixtures/schemas/tools_list.json",
+        "crates/rypsok/fixtures/schemas/instructions.txt",
+        "### Tool definitions",
+        "CHANGELOG.md",
+        "exit 1",
+    ] {
+        assert!(script.contains(needle), "the script has `{needle}`");
+    }
+    // The cap: the job runs after the builds, so the peak is still the
+    // matrices' `max-parallel` and the called workflow's jobs.
+    let before = file.at(&["jobs", "reproducible-compare", "needs"]);
+    assert_eq!(before.and_then(Yaml::scalar), Some("reproducible"));
+}
+
+/// REQ-MAIN-006 (RFC 021, D3): the rule that every tool-definition change is
+/// announced is said where a releaser and a reader look: the releasing page
+/// (step 2, the release commit) and the preamble of the changelog.
+#[test]
+fn req_main_006_the_tool_definitions_rule_is_in_the_documents() {
+    // Sentences wrap in the files: compare the words, not the line breaks.
+    let words = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let releasing = words(&read("docs/src/maintainers/releasing.md"));
+    let changelog = read("CHANGELOG.md");
+    let preamble = words(changelog.split("\n## [").next().unwrap());
+    for (name, text) in [
+        ("releasing.md", releasing.as_str()),
+        ("CHANGELOG.md", preamble.as_str()),
+    ] {
+        assert!(text.contains("### Tool definitions"), "{name}");
+    }
+    assert!(
+        releasing.contains("first under the version"),
+        "releasing.md: the heading comes first"
+    );
+    assert!(
+        releasing.contains("the server instructions"),
+        "releasing.md: the instructions count"
+    );
+    assert!(
+        read("docs/src/maintainers/checks.md").contains("`tool-definitions`"),
+        "checks.md names the job"
+    );
 }
 
 /// REQ-TEST-019: both builds of every release target are built by the same

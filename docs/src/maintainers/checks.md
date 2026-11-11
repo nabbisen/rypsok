@@ -25,6 +25,7 @@ is not queued behind them (a runner pool is shared). What each job proves:
 |---|---|
 | `reproducible` (3 targets × builds `a` and `b`) | The release builds run, with the compiler the release names (the local action `.github/actions/build-release`), on every release target |
 | `reproducible-compare` | The two builds of each target give the same `rypsok` binary: the SHA-256 of the unpacked binary, not of the archive (archives carry their own timestamps). A table is written to the run summary |
+| `tool-definitions` | The pinned tool definitions (`tools_list.json` and the server instructions) are compared with those at the latest release tag. When they differ, the newest changelog section must have a `### Tool definitions` heading (RFC 021, D3). It starts after the comparison of the builds, so it adds nothing to the peak |
 | `fuzz` (one job per fuzz target, 300 s each, from the target's corpus) | No parser of untrusted input panics, runs out of memory or hangs on what the fuzzer finds in five minutes |
 | `mutants` (the six security modules: `egress-policy`, `privacy`, `boundary`, `robots`, `http`, `sessions`) | Every mutant of those modules is caught by a test, except those listed with a reason in `.cargo/mutants.toml`. Timeouts count as caught and are listed in the summary |
 | `external` | The live checks and the advisory check below |
