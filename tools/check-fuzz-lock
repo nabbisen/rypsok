@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""Fuzz lock gate (022b, item 13; audit report A-3).
+
+`fuzz/Cargo.lock` belongs to a workspace of its own and is resolved apart
+from `Cargo.lock`. A crate that both lock files hold must be at a version
+that the main lock holds too, or the fuzz targets test a parser that is not
+the one rypsok ships. This gate fails when the fuzz lock has a `name version`
+for a crate that the main lock also has, but not at that version. Crates only
+the fuzz workspace has (`libfuzzer-sys`, `arbitrary`, ...) are not compared;
+a crate the main lock holds at several versions (`syn` 2 and 3) is satisfied
+by any of them.
+
+    tools/check-fuzz-lock [--main PATH] [--fuzz PATH]
+
+To align the fuzz lock: `cargo update --manifest-path fuzz/Cargo.toml`, then
+`cargo update --manifest-path fuzz/Cargo.toml -p NAME --precise VERSION` for
+each crate this gate names.
+"""
+from __future__ import annotations
+
+import argparse
+import pathlib
+import re
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+PACKAGE = re.compile(r'^\[\[package\]\]\nname = "([^"]+)"\nversion = "([^"]+)"', re.MULTILINE)
+
+
+def read(path: pathlib.Path) -> dict[str, set[str]]:
+    versions: dict[str, set[str]] = {}
+    for m in PACKAGE.finditer(path.read_text(encoding="utf-8")):
+        versions.setdefault(m.group(1), set()).add(m.group(2))
+    if not versions:
+        print(f"check-fuzz-lock: no packages read from {path}", file=sys.stderr)
+        sys.exit(2)
+    return versions
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--main", type=pathlib.Path, default=ROOT / "Cargo.lock")
+    parser.add_argument("--fuzz", type=pathlib.Path, default=ROOT / "fuzz" / "Cargo.lock")
+    args = parser.parse_args()
+    shipped = read(args.main)
+    fuzzed = read(args.fuzz)
+    problems = []
+    compared = 0
+    for name in sorted(set(shipped) & set(fuzzed)):
+        compared += 1
+        for version in sorted(fuzzed[name] - shipped[name]):
+            problems.append(
+                f"{name}: the fuzz lock has {version}, the main lock has {', '.join(sorted(shipped[name]))}"
+            )
+    if problems:
+        print("check-fuzz-lock: FAIL — the fuzz lock resolves crates apart from the main lock", file=sys.stderr)
+        for p in problems:
+            print(f"  {p}", file=sys.stderr)
+        print("  align it: cargo update --manifest-path fuzz/Cargo.toml -p NAME --precise VERSION", file=sys.stderr)
+        return 1
+    print(f"check-fuzz-lock: OK — {compared} shared crates are at shipped versions in the fuzz lock")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

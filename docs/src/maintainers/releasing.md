@@ -10,7 +10,12 @@ release workflow builds and attaches, and never creates a release.
    (RFC 020, D-14 as amended by D-23), and not on a timer: `cargo update`;
    the pinned actions (the latest release of each, by commit SHA with its
    version as a comment);
-   the base image digest in the `Dockerfile`; and the release compiler, the
+   the base image digest in the `Dockerfile`; the fuzz workspace's own lock
+   file, `fuzz/Cargo.lock` (`cargo update --manifest-path fuzz/Cargo.toml`,
+   then `--precise` for any crate whose version differs from `Cargo.lock`:
+   `tools/check-fuzz-lock` fails in CI when a crate both files hold is at
+   another version, so that the fuzz targets test the parsers that ship);
+   and the release compiler, the
    `toolchain:` line of `.github/actions/build-release/action.yml`, the one
    place that names it (set it to the current stable: `rustup update stable`,
    `rustc --version`). One commit, through CI. The compiler is a deliberate

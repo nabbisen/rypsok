@@ -21,6 +21,60 @@ fn name(host: &str) -> Host {
     Host::Name(host.to_owned())
 }
 
+/// REQ-SEC-006 and REQ-SEC-009 (022b, item 11): the policy judges the name
+/// **after** the mapping of `url` (UTS 46), so a refused name stays refused
+/// however it is written. Fullwidth letters, a compatibility letter and a
+/// mapped letter in the host all land on the ASCII name the rules know. The
+/// property holds for every code point the Unicode data maps, old or new
+/// (`icu_*` 2.4 added 13,007; five of them map to ASCII letters), and nothing
+/// else pinned it. Every spelling is built from escapes, so that no editor
+/// or formatter can normalize the test away.
+#[test]
+fn req_sec_006_a_mapped_spelling_of_a_refused_name_is_refused() {
+    let p = policy();
+    for (written, mapped) in [
+        // U+FF4C U+FF4F U+FF43 U+FF41 U+FF4C U+FF48 U+FF4F U+FF53 U+FF54
+        (
+            "\u{FF4C}\u{FF4F}\u{FF43}\u{FF41}\u{FF4C}\u{FF48}\u{FF4F}\u{FF53}\u{FF54}",
+            "localhost",
+        ),
+        // U+FF49 FULLWIDTH LATIN SMALL LETTER I
+        ("a.\u{FF49}nternal", "a.internal"),
+        // U+2113 SCRIPT SMALL L
+        ("a.loca\u{2113}", "a.local"),
+        // the metadata name of a cloud, with the fullwidth i
+        (
+            "metadata.google.\u{FF49}nternal",
+            "metadata.google.internal",
+        ),
+        // a fullwidth full stop (U+FF0E) between labels
+        ("a\u{FF0E}localhost", "a.localhost"),
+    ] {
+        let url = Url::parse(&format!("https://{written}/")).unwrap();
+        assert_eq!(
+            url.host_str(),
+            Some(mapped),
+            "{written:?} must map to {mapped}"
+        );
+        assert_eq!(p.judge_url(&url), Err(Denial::HostName), "{written:?}");
+    }
+    // The newly assigned code points that map to ASCII letters (U+209D, U+209E
+    // and U+209F to w, y, z; U+1D6A6 and U+1DF95 to ss) are admitted on a
+    // public name, under the mapped ASCII name; they spell no refused name.
+    for (written, mapped) in [
+        ("a\u{209D}b.example", "awb.example"),
+        ("a\u{209E}b.example", "ayb.example"),
+        ("a\u{209F}b.example", "azb.example"),
+        ("\u{1D6A6}.example", "ss.example"),
+        ("\u{1DF95}.example", "ss.example"),
+    ] {
+        let url = Url::parse(&format!("https://{written}/")).unwrap();
+        assert_eq!(url.host_str(), Some(mapped), "{written:?}");
+        let target = p.judge_url(&url).unwrap();
+        assert_eq!(target.host, name(mapped), "{written:?}");
+    }
+}
+
 /// REQ-SEC-006 and REQ-TEST-005: every refused range, in both families,
 /// refuses an address inside it; well-known public addresses are admitted.
 #[test]

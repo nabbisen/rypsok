@@ -79,6 +79,68 @@ fn req_arch_005_dependency_rule_script_passes() {
     }
 }
 
+/// REQ-TEST-012 and REQ-DEP-005 (022b, item 13; audit report A-3): the fuzz
+/// workspace is locked apart from the main one, so `tools/check-fuzz-lock`
+/// fails when a crate both lock files hold is at a version the main lock does
+/// not hold, passes when they agree, and passes on the repository as it is.
+#[cfg(unix)]
+#[test]
+fn req_test_012_the_fuzz_lock_agrees_with_the_main_lock() {
+    let script = repository_root().join("tools").join("check-fuzz-lock");
+    assert!(script.is_file(), "tools/check-fuzz-lock is missing");
+    let dir = std::env::temp_dir().join(format!("rypsok-fuzz-lock-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let lock = |packages: &[(&str, &str)]| {
+        let mut text = String::from("version = 4\n\n");
+        for (name, version) in packages {
+            text.push_str(&format!(
+                "[[package]]\nname = \"{name}\"\nversion = \"{version}\"\n\n"
+            ));
+        }
+        text
+    };
+    let run = |main: &[(&str, &str)], fuzz: &[(&str, &str)]| {
+        std::fs::write(dir.join("main.lock"), lock(main)).unwrap();
+        std::fs::write(dir.join("fuzz.lock"), lock(fuzz)).unwrap();
+        Command::new("python3")
+            .arg(&script)
+            .arg("--main")
+            .arg(dir.join("main.lock"))
+            .arg("--fuzz")
+            .arg(dir.join("fuzz.lock"))
+            .output()
+            .expect("python3 runs")
+    };
+    // Drift: a shared crate at another version fails and is named.
+    let drifted = run(
+        &[("toml", "1.2.1"), ("syn", "2.0.1"), ("syn", "3.0.2")],
+        &[("toml", "1.1.8"), ("libfuzzer-sys", "0.4.0")],
+    );
+    assert_eq!(drifted.status.code(), Some(1), "{drifted:?}");
+    let stderr = String::from_utf8_lossy(&drifted.stderr);
+    assert!(stderr.contains("toml: the fuzz lock has 1.1.8"), "{stderr}");
+    assert!(!stderr.contains("libfuzzer-sys"), "{stderr}");
+    // Agreement passes: the same versions, a crate only the fuzz lock has, and
+    // a crate the main lock holds at two versions (either one satisfies).
+    let agreed = run(
+        &[("toml", "1.2.1"), ("syn", "2.0.1"), ("syn", "3.0.2")],
+        &[
+            ("toml", "1.2.1"),
+            ("syn", "2.0.1"),
+            ("libfuzzer-sys", "0.4.0"),
+        ],
+    );
+    assert_eq!(agreed.status.code(), Some(0), "{agreed:?}");
+    std::fs::remove_dir_all(&dir).ok();
+    // The repository: the two real lock files agree.
+    let real = Command::new("python3")
+        .arg(&script)
+        .current_dir(repository_root())
+        .output()
+        .expect("python3 runs");
+    assert_eq!(real.status.code(), Some(0), "{real:?}");
+}
+
 /// REQ-SEC-020: the supply-chain policy exists with the allowed licenses, CI
 /// runs it, and project code forbids `unsafe`.
 #[test]
@@ -162,6 +224,7 @@ fn req_test_012_ci_workflow_lists_every_gate() {
         "tools/check-core-dependencies",
         "tools/check-requirements-coverage",
         "tools/check-limits",
+        "tools/check-fuzz-lock",
         "cargo deny check advisories bans licenses sources",
         "cargo doc --workspace --no-deps --locked",
         "mdbook build docs",

@@ -10,7 +10,7 @@ which is the change and the release (RFC 020, D-23).
 
 | When | What | Who waits |
 |---|---|---|
-| Every push | CI (`ci.yml`): format, lints, tests on three platforms and the 1.88 floor, each feature alone, the dependency rule, requirement coverage, the limits table, supply chain, the book | nobody |
+| Every push | CI (`ci.yml`): format, lints, tests on three platforms and the 1.88 floor, each feature alone, the dependency rule, requirement coverage, the limits table, the fuzz lock file, supply chain, the book | nobody |
 | Every handoff that changes a parser, the egress policy, the boundary, the privacy check, robots.txt or the HTTP listener | The developer's own mutation testing and fuzzing of the changed modules, reported in the review request (a rule of the process, not a workflow) | nobody |
 | Before every release, on the commit to be tagged | The **release checks** (`release-checks.yml`), dispatched by hand, everything below | only the release |
 | On demand | The **external checks** (`external-checks.yml`): the live driver checks and the advisory check, when a user reports a broken engine or an advisory is published | nobody |

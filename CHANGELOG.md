@@ -81,6 +81,17 @@ Other changes:
   tests, so that they stay true if a pipeline changes (RFC 021, D1). Nothing
   changes for a call that ends in time, and no new kind, reason or notice is
   added.
+- A host name with a character that Unicode assigned recently is no longer
+  refused as invalid. The Unicode data behind host-name handling is newer
+  (`icu_*` 2.4, through `url` and `idna`), and 13,007 more code points are
+  accepted in an internationalized host name. A `web_fetch` of such a URL goes
+  on to resolution, where 0.9.0 answered `invalid_request`, and a `web_search`
+  result with such a host is shown, where 0.9.0 dropped it as `url_invalid`
+  (RFC 020, D-24). No name that was accepted before changes its result. Five of
+  the new code points map to ASCII letters (U+209D, U+209E and U+209F to `w`,
+  `y` and `z`; U+1D6A6 and U+1DF95 to `ss`); the egress policy judges the name
+  after the mapping, so a refused name stays refused however it is written, and
+  a test pins that.
 
 ### Added
 
@@ -95,7 +106,8 @@ Other changes:
 
 - `SIGTERM` is heard before the client has sent its first message. In 0.9.0 the
   server waited for that message before it listened for the signal, so a server
-  that had been started and not yet used kept running until its input closed;
+  that had been started and not yet used kept running until its input closed
+  or its first message arrived;
   it now exits with code 0 within LIM-O1. An end of input after a
   `server/discover` and nothing else is still a clean end (exit code 0), and
   an end of input before any message is still an error exit, as in 0.9.0.
@@ -108,13 +120,12 @@ Other changes:
   are now pinned in `crates/rypsok/fixtures/schemas/instructions.txt` beside
   `tools_list.json`.
 - Dependencies updated for the cycle: the whole lock file (48 packages, one
-  crate added, `utf_types`, under `utf8_iter`), the pinned actions of the
-  workflows to the latest release of each, and the base image digest and the
-  release compiler (1.99.1) re-read and unchanged. One update a user could
-  notice: the Unicode data behind host-name handling (`icu_*` 2.4, through
-  `url` and `idna`) is newer. 13,007 code points assigned since the old data
-  are now accepted in an internationalized host name, where `web_fetch` refused
-  the whole URL as invalid; no name accepted before changes its result.
+  crate added, `utf_types`, under `utf8_iter`), the fuzz workspace's own lock
+  file aligned with it (a gate, `tools/check-fuzz-lock`, now holds that, so the
+  fuzz targets test the parsers that ship), the pinned actions of the workflows
+  at the latest release of each, and the base image digest and the release
+  compiler (1.99.1) re-read and unchanged. The one update a user could notice,
+  the Unicode data of host-name handling, is under Changed.
 - The threat register has THR-28 (an unbounded cache in the protocol library),
   and the limits table has LIM-O3.
 
