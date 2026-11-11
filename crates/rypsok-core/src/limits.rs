@@ -108,6 +108,11 @@ pub mod defaults {
     pub const SHUTDOWN_MAX_MS: u32 = 3000; // LIM-O1
     /// Time until a cancelled call has aborted its outbound requests.
     pub const CANCEL_MAX_MS: u32 = 500; // LIM-O2
+    /// Largest line of the stdio transport, newline included, in bytes. The
+    /// bound is the protocol library's (rmcp 3.6.0), not ours; a test in
+    /// `mcp/stdio.rs` ties this constant to the library's default and a
+    /// protocol test pins the behavior (022a).
+    pub const STDIO_MAX_LINE_BYTES: u32 = 16_777_216; // LIM-O3
 
     /// HTTP connections accepted at once (RFC 013).
     pub const HTTP_MAX_CONNECTIONS: u32 = 64; // LIM-H1

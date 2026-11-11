@@ -1,6 +1,6 @@
 # Threat Register
 
-**Status:** Baseline 1.0 (2026-09-30), revised 2026-10-27 (RFC 018; read with the [threat model](./threat-model.md)). A living document: it is reviewed at
+**Status:** Baseline 1.0 (2026-09-30), revised 2026-11-11 (RFC 022; earlier RFC 018; read with the [threat model](./threat-model.md)). A living document: it is reviewed at
 every milestone and whenever a data flow, an external integration or an
 authentication mechanism changes (project rule "Release Deliverables").
 
@@ -36,6 +36,7 @@ controls as requirements and the tests that verify them.
 | THR-25 | A scraping driver runs against a provider's terms, or imitates a browser to get through | B2 | The operator's exposure; the project's honesty | REQ-ENG-013, REQ-ENG-014, REQ-CMP-004 | REQ-TEST-018 |
 | THR-26 | A slow or stream-flooding HTTP client exhausts the listener: a body sent a byte at a time, or one HTTP/2 connection opening many streams | B6 | Loss of service for other callers | REQ-SEC-018, REQ-SEC-022 | REQ-TEST-014 |
 | THR-27 | Session exhaustion by legacy handshakes: one client opens handshakes until memory is gone | B6 | Loss of service for other callers | REQ-SEC-018, REQ-SEC-024 | REQ-TEST-014 |
+| THR-28 | The protocol library keeps state keyed by request content without a bound: from rmcp 3.0.0 to 3.5.x, `StreamableHttpService` cached every `tools/call` tool name, so that distinct names grew the process until it failed (RUSTSEC-2026-0461; rypsok 0.4.0 to 0.9.0 over HTTP) | B6 | Loss of service for other callers; for any local process when no callers are configured, otherwise for an authenticated caller | REQ-SEC-020 (the library no longer caches per request, since 3.6.0; advisories are checked by `cargo deny` on every push and before every release) | REQ-TEST-012 |
 
 ## Residual risks, accepted
 
@@ -65,3 +66,4 @@ controls as requirements and the tests that verify them.
 | 2026-10-27 | M7 | Revision against the delivered system (RFC 018): THR-22 extended to CI actions, THR-26 added, two residual risks recorded, the threat model page added |
 | 2026-10-29 | RFC 019 | THR-27 added (session exhaustion by legacy handshakes) with REQ-SEC-024 and LIM-H6; three residual risks recorded (slot exhaustion, SDK error lines, SDK warning with the caller's Host or Origin) |
 | 2026-11-03 | RFC 020 (handoff 020h) | THR-05: the built-in refusal table completed against the IANA special-purpose registries (six blocks added, `special_purpose.csv` as independent test data); THR-07: the target of every redirect hop is checked against robots.txt, the same host included |
+| 2026-11-11 | RFC 022 (022a) | THR-28 added (an unbounded cache in the protocol library, RUSTSEC-2026-0461); rmcp 3.9.0. A gate check for unknown tool names was considered and withdrawn: it would have meant parsing request bodies and copying the library's matching, against a flaw removed at its source; the guard against a regression is `cargo deny` |

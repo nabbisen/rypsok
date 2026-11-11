@@ -39,7 +39,7 @@ which flows.
 | F5 Page in | B3 | Bytes of any size and shape; redirects | Byte bound while streaming; node and depth bounds; iterative parsing off the runtime; redirects judged and reported; media type checked | THR-01, THR-03, THR-11, THR-12 |
 | F6 Response out | B4 | One structured object | External data only in named fields; fixed vocabularies for everything rypsok says; no provider text | THR-01, THR-02, THR-04, THR-24 |
 | F7 Operator in | B5 | Configuration, secrets by reference, the command line | Validation that names the key; secrets never inline; `Secret` redacts; logs never carry a secret, a query or a path | THR-16 |
-| F8 Network in (HTTP) | B6 | Connections, headers, bodies, streams | `Host` and `Origin` checks; bearer tokens in constant time; a path, a body bound, a connection cap, an idle timeout, a request time bound, a stream bound | THR-18, THR-19, THR-26 |
+| F8 Network in (HTTP) | B6 | Connections, headers, bodies, streams | `Host` and `Origin` checks; bearer tokens in constant time; a path, a body bound, a connection cap, an idle timeout, a request time bound, a stream bound; the protocol library's state is not keyed by request content (rmcp 3.6.0 and later; `cargo deny`) | THR-18, THR-19, THR-26, THR-28 |
 
 Flows that do not exist, and are therefore not threats: rypsok never
 calls a language model; never runs a script from a page; never writes to

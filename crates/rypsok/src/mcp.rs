@@ -14,11 +14,12 @@ pub mod tools;
 
 use std::borrow::Cow;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
-    ListToolsResult, PaginatedRequestParams, ProtocolVersion, ServerCapabilities, ServerConfig,
-    Tool,
+    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, DiscoverResult,
+    Implementation, ListToolsResult, PaginatedRequestParams, ProtocolVersion, ServerCapabilities,
+    ServerConfig, Tool,
 };
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData as McpError, RoleServer, ServerHandler};
@@ -41,6 +42,11 @@ pub struct Adapter {
     /// Whether the handshake-based revisions are advertised and served;
     /// off only over HTTP with `legacy_revisions = false` (RFC 013).
     legacy_revisions: bool,
+    /// Whether a `server/discover` has been answered. The SDK stays open
+    /// after one, waiting for the first call or an `initialize`; the stdio
+    /// transport reads this to tell an end of input after a discover (a
+    /// client that only looked) from an end of input before anything.
+    discovered: Arc<AtomicBool>,
 }
 
 impl Adapter {
@@ -74,7 +80,13 @@ impl Adapter {
             limiters: Arc::new(CallerLimiters::new(limits)),
             service,
             legacy_revisions: true,
+            discovered: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Whether a `server/discover` has been answered by this adapter.
+    pub(crate) fn has_been_discovered(&self) -> bool {
+        self.discovered.load(Ordering::Relaxed)
     }
 
     /// A successful response: structured content plus the same JSON as
@@ -113,6 +125,18 @@ impl ServerHandler for Adapter {
         } else {
             Cow::Borrowed(&[ProtocolVersion::V_2026_07_28])
         }
+    }
+
+    async fn discover(
+        &self,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<DiscoverResult, McpError> {
+        self.discovered.store(true, Ordering::Relaxed);
+        // The SDK's own default answer.
+        Ok(DiscoverResult::from_server_info(
+            self.supported_protocol_versions().into_owned(),
+            self.get_info(),
+        ))
     }
 
     async fn list_tools(

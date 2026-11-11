@@ -461,6 +461,75 @@ fn req_ops_002_sigterm_shuts_down_within_limit() {
     assert!(stderr.contains("\"event\":\"signal\""), "{stderr}");
 }
 
+/// REQ-OPS-002: `SIGTERM` before the client has sent anything also ends the
+/// process within LIM-O1 with code 0. (The SDK of 022a stays open after a
+/// `server/discover` as well, waiting for the first call or `initialize`;
+/// the shutdown must not wait for it.)
+#[cfg(unix)]
+#[test]
+fn req_ops_002_sigterm_before_any_message_shuts_down_within_limit() {
+    let mut s = Session::start(None);
+    // The handler is installed before the tool list is built; the pause
+    // covers the task that installs it being scheduled.
+    s.wait_for_stderr("tool definitions built", std::time::Duration::from_secs(10));
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    let status = std::process::Command::new("kill")
+        .arg("-TERM")
+        .arg(s.pid().to_string())
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let (exit, _, _) = s.wait_without_closing(std::time::Duration::from_millis(3000));
+    assert!(exit.success(), "{exit:?}");
+}
+
+/// REQ-MCP-002 (022a): end of input after a `server/discover` and nothing
+/// else is a clean end (exit 0), and end of input before the client has said
+/// anything is not: the server was never used and says so, as before.
+#[test]
+fn req_mcp_002_end_of_input_is_clean_after_a_discover_and_an_error_before_any_message() {
+    let mut used = Session::start(None);
+    used.discover();
+    used.finish();
+
+    let silent = Session::start(None);
+    let (exit, _, stderr) = silent.close_and_wait(std::time::Duration::from_millis(3000));
+    assert!(!exit.success(), "{exit:?}");
+    assert!(stderr.contains("\"event\":\"serve_failed\""), "{stderr}");
+}
+
+/// A `tools/list` request line of exactly `content` bytes (the newline
+/// not counted), padded inside `params`.
+fn tools_list_line_of(id: u64, content: usize) -> String {
+    let head = format!(
+        r#"{{"jsonrpc":"2.0","id":{id},"method":"tools/list","params":{{"_meta":{{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{{"name":"t","version":"0"}},"io.modelcontextprotocol/clientCapabilities":{{}}}},"pad":""#
+    );
+    let tail = r#""}}"#;
+    let pad = content - head.len() - tail.len();
+    format!("{head}{}{tail}", "x".repeat(pad))
+}
+
+/// REQ-MCP-002 (LIM-O3, 022a): a stdio line, its newline included, is read
+/// up to 16 MiB. A longer one is dropped without an answer and the server
+/// goes on with the next message. (The bound is the protocol library's, since
+/// rmcp 3.6.0; 0.9.0 had none.)
+#[test]
+fn req_mcp_002_a_stdio_line_over_lim_o3_is_dropped_and_the_next_one_answered() {
+    let bound = rypsok_core::limits::defaults::STDIO_MAX_LINE_BYTES as usize;
+    let mut s = Session::start(None);
+    s.discover();
+    // The newline counts: a line of bound - 1 bytes is the largest read.
+    let largest = s.raw_line_response(&tools_list_line_of(1000, bound - 1), 1000);
+    assert!(largest["result"]["tools"].is_array(), "{largest}");
+    // One byte more is dropped: no answer, however long one waits for it.
+    s.send_line(&tools_list_line_of(1001, bound));
+    assert!(s.no_response_for(1001, std::time::Duration::from_millis(1500)));
+    // And the server is still there.
+    let after = s.discover();
+    assert!(after["supportedVersions"].is_array(), "{after}");
+    s.finish();
+}
+
 /// REQ-OPS-002: end of file on stdin shuts down within LIM-O1 on every
 /// platform.
 #[cfg(not(unix))]

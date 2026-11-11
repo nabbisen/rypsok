@@ -27,7 +27,9 @@ This page is for the author of an agent runtime that embeds rypsok.
 
 - Exactly one outcome per call: `ok`, `partial`, `empty`, or a tool
   execution error (`isError: true`) with one error object. Protocol
-  errors occur only for an unknown tool or a malformed message.
+  errors occur only for an unknown tool or a malformed message. (Over HTTP
+  an unknown tool is HTTP 200 with the JSON-RPC error `-32602`, `unknown
+  tool`, in the answer.)
 - Errors say what the caller can change; `invalid_request` names the
   parameter and the accepted range or values. A model can act on them.
 - Results are bounded and complete: at most `max_results`, no pagination.

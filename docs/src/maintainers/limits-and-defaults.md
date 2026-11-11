@@ -119,6 +119,7 @@ by a key is "fixed").
 |---|---|---:|---|---|
 | LIM-O1 | Time to exit after end of file on stdin or `SIGTERM` (`service.shutdown_ms`) | 3000 ms | 500–10000 | REQ-OPS-002 |
 | LIM-O2 | Time until a cancelled call has aborted its outbound requests | 500 ms | fixed | REQ-MCP-007 |
+| LIM-O3 | Largest line of the stdio transport, newline included; a longer line is dropped without an answer and the server reads on | 16 MiB | fixed | 022a; the protocol library's bound (rmcp 3.6.0), not ours; 0.9.0 had none |
 
 ## Privacy and logging
 

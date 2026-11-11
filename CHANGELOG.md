@@ -19,8 +19,49 @@ that pins definitions needs to be told of each one (RFC 021).
 
 ## [Unreleased]
 
+### Security
+
+- The protocol library `rmcp` is upgraded from 3.5.0 to 3.9.0 (RUSTSEC-2026-0461,
+  RUSTSEC-2026-0457, RUSTSEC-2026-0462; RFC 022). In HTTP mode, every release
+  from 0.4.0 to 0.9.0 let a client that reaches the endpoint grow the process's
+  memory without bound, by sending `tools/call` requests with distinct tool
+  names, until it failed: any local process when no callers are configured, or
+  any authenticated caller. Unauthenticated clients were refused first when
+  callers are configured, and stdio was not affected. rypsok now uses rmcp 3.9.0,
+  which no longer keeps the names (RUSTSEC-2026-0461 was fixed in 3.6.0).
+  Measured on release builds (0.9.0's is the published musl binary, this tree's
+  the glibc build): 4,000 requests with distinct 8 KB names took
+  0.9.0 from 11 to 44 MiB, and this build from 11 to 14 MiB, the same as 4,000
+  requests with one repeated name; 20,000 distinct names leave this build at the
+  same level. If you cannot upgrade at once, configure callers or use stdio.
+  RUSTSEC-2026-0457 and RUSTSEC-2026-0462 concern client code that rypsok does
+  not use.
+
 ### Changed
 
+- Over HTTP, a 2026-07-28 `tools/call` for a tool rypsok does not serve is
+  answered with HTTP 200 and the JSON-RPC error `-32602` `unknown tool`, as the
+  protocol library now answers. It was HTTP 400 with the same body.
+- A 2026-07-28 `tools/list` answer, over stdio and over HTTP, now carries
+  `"cacheScope": "private"` and `"ttlMs": 0` (the library's default cache
+  hints: do not share or keep the list; `server/discover` already carried
+  `cacheScope`). The `tools` array is unchanged.
+- The protocol library's other changes, as they show on the wire (rmcp 3.5.1 to
+  3.9.0):
+  - over HTTP, a request id written as a float (`7.0`) is read as that integer
+    and answered (it was taken for a notification and answered 202 with no
+    body), and an id of `null` is refused with 415 (it was 202);
+  - over HTTP, `Accept` is read by its media types and quality values: a type
+    with `q=0` no longer counts as accepted (406), and the types are matched
+    without regard to case;
+  - over HTTP, a POST of the handshake-based revisions that is not `initialize`
+    and has no session is answered 400 `Session ID is required` (it was 422);
+  - over stdio, a first message that is neither `initialize` nor
+    `server/discover` and lacks `_meta` is answered with an error and the
+    server stays open (it ended the process with exit code 1); a message with
+    both `result` and `error` is answered `-32600`;
+  - over stdio, a line longer than 16 MiB (LIM-O3, a bound of the library that
+    0.9.0 did not have) is dropped without an answer and the server reads on.
 - A `web_search` call ends at LIM-S7 and a `web_fetch` call at LIM-F5, measured
   from its start, with the existing deadline error (`unavailable`, reason
   `deadline`): the bounds were documented; they are now enforced over the whole

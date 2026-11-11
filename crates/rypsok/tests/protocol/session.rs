@@ -60,6 +60,21 @@ impl Session {
         Self::spawn(Some(config), env)
     }
 
+    /// Waits until a line of standard error contains `needle`; the lines
+    /// read on the way are dropped. For a test that must act after the
+    /// process has got as far as a known point, such as its signal handler.
+    pub fn wait_for_stderr(&mut self, needle: &str, within: Duration) {
+        let deadline = Instant::now() + within;
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            match self.stderr.recv_timeout(remaining) {
+                Ok(line) if line.contains(needle) => return,
+                Ok(_) => {}
+                Err(_) => panic!("no line with {needle:?} on standard error within {within:?}"),
+            }
+        }
+    }
+
     /// The process identifier.
     #[cfg(unix)]
     pub fn pid(&self) -> u32 {
@@ -175,6 +190,21 @@ impl Session {
         self.next_id += 1;
         self.send(json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }));
         id
+    }
+
+    /// Writes one line as it is (a test of the transport's own bounds),
+    /// and waits for the response to `id`.
+    pub fn raw_line_response(&mut self, line: &str, id: u64) -> Value {
+        self.send_line(line);
+        self.read_response(id)
+    }
+
+    /// Writes one line as it is, and does not wait.
+    pub fn send_line(&mut self, line: &str) {
+        let stdin = self.stdin.as_mut().expect("stdin open");
+        stdin.write_all(line.as_bytes()).unwrap();
+        stdin.write_all(b"\n").unwrap();
+        stdin.flush().unwrap();
     }
 
     /// Whether no response for `id` arrives within `within`.
