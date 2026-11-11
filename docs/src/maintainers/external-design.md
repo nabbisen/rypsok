@@ -96,13 +96,15 @@ The statuses, by the party that answers:
 
 | Status | Meaning | Answered by | Logged as `http_refused` |
 |---|---|---|---|
-| 400 | A protocol header is missing | The pinned SDK | No; counted (`sdk_bad_request`) |
+| 200 | A `tools/call` for a tool that is not served: the JSON-RPC error `-32602` `unknown tool` in the body (HTTP 400 before 0.10.0) | The pinned SDK | No; not a refusal of the listener |
+| 400 | A protocol header is missing or disagrees with the body; a POST of a handshake-based revision that is not `initialize` has no session (HTTP 422 before 0.10.0) | The pinned SDK | No; counted (`sdk_bad_request`) |
 | 401 | Token missing or wrong | The gate | `unauthorized` |
 | 403 | `Host` or `Origin` not allowed | The pinned SDK | `sdk_forbidden` |
 | 404 | Another path | The gate | No |
 | 406 | `Accept` lacks one of the two media types | The pinned SDK | No; counted (`sdk_not_acceptable`) |
 | 408 | The request outlived LIM-H5 | The gate | `request_timeout` |
 | 413 | The body exceeds LIM-H2 | The gate (declared), the SDK (streamed) | `body_too_large` (declared) |
+| 415 | The `Content-Type` is not `application/json`, or the body is not a JSON-RPC message (for example an `id` of `null`) | The pinned SDK | No; not counted |
 | 431 | The request line and headers exceed LIM-H7 (16 KiB) | hyper, before the gate | No; not counted |
 | 503 | A legacy handshake while LIM-H6 sessions are open; `Retry-After: 30` | The gate | `session_limit` |
 

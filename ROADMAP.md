@@ -61,9 +61,14 @@ RFC numbers are assigned when each file is created (RFC 000).
 | 18 | Threat model revision and hardening | M7 |
 | 19 | Corrections from the first independent review | M7.1 |
 | 20 | Project audit: data models, networking, tests, measurements | M8 |
+| 21 | Call maxima and tool-definition changes (requests of the first consumer) | 0.10.0 |
+| 22 | The rmcp advisories of November 2026 | 0.10.0 |
 
 ## Release cycle
 
 One minor release per milestone. Patch releases carry fixes only. A release
 is cut from `main` after the exit criteria are met and the changelog is
 updated.
+
+0.10.0 is a release outside the milestones, decided by the owner on 2026-11-11;
+it carries RFC 021 and RFC 022.

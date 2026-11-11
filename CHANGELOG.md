@@ -19,6 +19,13 @@ that pins definitions needs to be told of each one (RFC 021).
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-11-11 — The rmcp security fix; call maxima; tool-definition changes announced
+
+RFC 021 and RFC 022. A security fix of the HTTP transport, an upgrade of the
+protocol library with the changes it shows on the wire, the call maxima shown
+by `check`, and the rule that every change of a tool definition is announced
+on a line of its own. No tool definition changed in this release.
+
 ### Security
 
 - The protocol library `rmcp` is upgraded from 3.5.0 to 3.9.0 (RUSTSEC-2026-0461,
@@ -27,17 +34,21 @@ that pins definitions needs to be told of each one (RFC 021).
   memory without bound, by sending `tools/call` requests with distinct tool
   names, until it failed: any local process when no callers are configured, or
   any authenticated caller. Unauthenticated clients were refused first when
-  callers are configured, and stdio was not affected. rypsok now uses rmcp 3.9.0,
+  callers are configured, and stdio was not affected. 0.10.0 uses rmcp 3.9.0,
   which no longer keeps the names (RUSTSEC-2026-0461 was fixed in 3.6.0).
-  Measured on release builds (0.9.0's is the published musl binary, this tree's
-  the glibc build): 4,000 requests with distinct 8 KB names took
-  0.9.0 from 11 to 44 MiB, and this build from 11 to 14 MiB, the same as 4,000
-  requests with one repeated name; 20,000 distinct names leave this build at the
+  Measured on release builds: 4,000 requests with distinct 8 KB names took
+  0.9.0 (the published musl binary) from 11 to 44 MiB, and 0.10.0 (measured on
+  a glibc build of the release tree) from 11 to 14 MiB, the same as 4,000
+  requests with one repeated name; 20,000 distinct names leave 0.10.0 at the
   same level. If you cannot upgrade at once, configure callers or use stdio.
   RUSTSEC-2026-0457 and RUSTSEC-2026-0462 concern client code that rypsok does
   not use.
 
 ### Changed
+
+**Contract changes** (announced as REQ-MAIN-006 requires; they are why this is
+a minor release). They come with rmcp 3.9.0 and show on the wire; no tool
+definition is among them:
 
 - Over HTTP, a 2026-07-28 `tools/call` for a tool rypsok does not serve is
   answered with HTTP 200 and the JSON-RPC error `-32602` `unknown tool`, as the
@@ -46,27 +57,30 @@ that pins definitions needs to be told of each one (RFC 021).
   `"cacheScope": "private"` and `"ttlMs": 0` (the library's default cache
   hints: do not share or keep the list; `server/discover` already carried
   `cacheScope`). The `tools` array is unchanged.
-- The protocol library's other changes, as they show on the wire (rmcp 3.5.1 to
-  3.9.0):
-  - over HTTP, a request id written as a float (`7.0`) is read as that integer
-    and answered (it was taken for a notification and answered 202 with no
-    body), and an id of `null` is refused with 415 (it was 202);
-  - over HTTP, `Accept` is read by its media types and quality values: a type
-    with `q=0` no longer counts as accepted (406), and the types are matched
-    without regard to case;
-  - over HTTP, a POST of the handshake-based revisions that is not `initialize`
-    and has no session is answered 400 `Session ID is required` (it was 422);
-  - over stdio, a first message that is neither `initialize` nor
-    `server/discover` and lacks `_meta` is answered with an error and the
-    server stays open (it ended the process with exit code 1); a message with
-    both `result` and `error` is answered `-32600`;
-  - over stdio, a line longer than 16 MiB (LIM-O3, a bound of the library that
-    0.9.0 did not have) is dropped without an answer and the server reads on.
-- A `web_search` call ends at LIM-S7 and a `web_fetch` call at LIM-F5, measured
-  from its start, with the existing deadline error (`unavailable`, reason
-  `deadline`): the bounds were documented; they are now enforced over the whole
-  call (RFC 021, D1). Nothing changes for a call that ends in time, and no new
-  kind, reason or notice is added.
+- Over HTTP, a request id written as a float (`7.0`) is read as that integer
+  and answered; it was taken for a notification and answered 202 with no body.
+- Over HTTP, a request id of `null` is refused with 415; it was answered 202.
+- Over HTTP, `Accept` is read by its media types and quality values: a type
+  with `q=0` no longer counts as accepted (406), and the types are matched
+  without regard to case.
+- Over HTTP, a POST of the handshake-based revisions that is not `initialize`
+  and has no session is answered 400 `Session ID is required`; it was 422.
+- Over stdio, a first message that is neither `initialize` nor
+  `server/discover` and lacks `_meta` is answered with an error and the server
+  stays open; it ended the process with exit code 1.
+- Over stdio, a message with both `result` and `error` is answered `-32600`.
+- Over stdio, a line longer than 16 MiB (LIM-O3, a bound of the library that
+  0.9.0 did not have) is dropped without an answer and the server reads on.
+
+Other changes:
+
+- A `web_search` call lasts at most LIM-S7 and a `web_fetch` call at most
+  LIM-F5, measured from its start. Both bounds already held in 0.9.0, by the way
+  each pipeline is built; they are now also enforced by one outer bound, with
+  the existing deadline error (`unavailable`, reason `deadline`), and pinned by
+  tests, so that they stay true if a pipeline changes (RFC 021, D1). Nothing
+  changes for a call that ends in time, and no new kind, reason or notice is
+  added.
 
 ### Added
 
@@ -74,6 +88,17 @@ that pins definitions needs to be told of each one (RFC 021).
   `rypsok: tool call maxima in ms: web_search=2800 web_fetch=11000;
   engine_status reads memory only`, with the effective values (RFC 021, D2).
   The text of `check` is for people and may change in a minor version.
+- `rypsok-core` gains the constant `limits::defaults::STDIO_MAX_LINE_BYTES`
+  (LIM-O3, 16 MiB), the documented value of the stdio line bound above.
+
+### Fixed
+
+- `SIGTERM` is heard before the client has sent its first message. In 0.9.0 the
+  server waited for that message before it listened for the signal, so a server
+  that had been started and not yet used kept running until its input closed;
+  it now exits with code 0 within LIM-O1. An end of input after a
+  `server/discover` and nothing else is still a clean end (exit code 0), and
+  an end of input before any message is still an error exit, as in 0.9.0.
 
 ### Internal
 
@@ -82,6 +107,16 @@ that pins definitions needs to be told of each one (RFC 021).
   definitions with the last release tag (RFC 021, D3). The server instructions
   are now pinned in `crates/rypsok/fixtures/schemas/instructions.txt` beside
   `tools_list.json`.
+- Dependencies updated for the cycle: the whole lock file (48 packages, one
+  crate added, `utf_types`, under `utf8_iter`), the pinned actions of the
+  workflows to the latest release of each, and the base image digest and the
+  release compiler (1.99.1) re-read and unchanged. One update a user could
+  notice: the Unicode data behind host-name handling (`icu_*` 2.4, through
+  `url` and `idna`) is newer. 13,007 code points assigned since the old data
+  are now accepted in an internationalized host name, where `web_fetch` refused
+  the whole URL as invalid; no name accepted before changes its result.
+- The threat register has THR-28 (an unbounded cache in the protocol library),
+  and the limits table has LIM-O3.
 
 ## [0.9.0] — 2026-11-08 — The audit (milestone M8)
 
@@ -692,7 +727,8 @@ Search deadline 2500 ms, engine timeout 2000 ms, reserve 200 ms, up to 8
 engines per request, 10 results per engine, snippets 300 and titles 150
 characters, query 400 characters, 60 `web_search` calls per minute.
 
-[Unreleased]: https://github.com/nabbisen/rypsok/compare/0.9.0...HEAD
+[Unreleased]: https://github.com/nabbisen/rypsok/compare/0.10.0...HEAD
+[0.10.0]: https://github.com/nabbisen/rypsok/compare/0.9.0...0.10.0
 [0.9.0]: https://github.com/nabbisen/rypsok/compare/0.8.0...0.9.0
 [0.8.0]: https://github.com/nabbisen/rypsok/releases/tag/0.8.0
 [0.7.0]: https://github.com/nabbisen/rypsok/releases/tag/0.7.0

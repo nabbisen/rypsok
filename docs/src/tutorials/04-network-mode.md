@@ -63,9 +63,10 @@ means: 401 the token is missing or wrong; 403 a `Host` not in the list, or
 an `Origin` that is not allowed (browsers never call rypsok, so none is
 allowed unless listed); 404 a path other than `/mcp`; 413 a body above the
 limit; 400 a missing protocol header; 406 an `Accept` that does not list
-both media types; 408 a request that took longer than `request_timeout_s`;
+both media types; 415 a body that is not a JSON-RPC message; 408 a request that took longer than `request_timeout_s`;
 503 (with `Retry-After`) a legacy handshake while `max_sessions` sessions
-are open. [Troubleshooting](../troubleshooting.md) lists them with their
+are open. An unknown tool is not an HTTP error: the answer is 200 with the
+JSON-RPC error `unknown tool` in its body. [Troubleshooting](../troubleshooting.md) lists them with their
 fixes.
 
 ## 4. Connect a runtime

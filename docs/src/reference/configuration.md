@@ -297,7 +297,7 @@ reads no token.
 
 It then prints, on standard error, one line for each part of the
 configuration, with the values that are in effect (a default is shown as a
-default): `search`, the tool rate limits, each engine and its credential's
+default): `search`, the tool rate limits, the call maxima, each engine and its credential's
 state, the categories served, `service.http` (the bind, the number of
 callers, `legacy_revisions` and LIM-H1 to LIM-H6), `fetch`, `egress` (the
 number of allow and deny rules, `allow_http`, strict mode, whether a proxy is

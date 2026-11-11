@@ -57,13 +57,15 @@ ever goes to standard output except protocol messages.
 
 | Status | Cause | Fix |
 |---|---|---|
-| 400 | A protocol header (`MCP-Protocol-Version`, `Mcp-Method`, `Mcp-Name`) is missing (answered by the SDK; counted, not logged per request) | Send the headers ([Tutorial 4](./tutorials/04-network-mode.md)) |
+| 200 with a JSON-RPC error `-32602`, `unknown tool` | A `tools/call` for a tool rypsok does not serve: the error is in the answer, not in the HTTP status (HTTP 400 before 0.10.0). `engine_status` is not served when `[status] enabled = false` | Use a name from `tools/list` |
+| 400 | A protocol header (`MCP-Protocol-Version`, `Mcp-Method`, `Mcp-Name`) is missing or does not agree with the body, or a POST of a handshake-based revision that is not `initialize` carries no session (`Session ID is required`; HTTP 422 before 0.10.0) (answered by the SDK; counted, not logged per request) | Send the headers ([Tutorial 4](./tutorials/04-network-mode.md)); for a handshake revision, `initialize` first and the session id after |
 | 401 | The bearer token is missing or wrong (the gate) | The token of a configured caller, at least 32 bytes |
 | 403 | The `Host` header is not in `allowed_hosts`, or the request carried an `Origin` that is not allowed (answered by the SDK; logged as `sdk_forbidden`) | List the host in `allowed_hosts`. Browsers never call rypsok; if yours must, list the origin in `allowed_origins` |
 | 404 | A path other than `/mcp` (the gate) | `/mcp` |
-| 406 | `Accept` does not list both `application/json` and `text/event-stream`; the protocol requires a client to list both (answered by the SDK; counted, not logged per request) | Send `Accept: application/json, text/event-stream` |
+| 406 | `Accept` does not list both `application/json` and `text/event-stream` (a type with `q=0` does not count; the types are matched without regard to case); the protocol requires a client to list both (answered by the SDK; counted, not logged per request) | Send `Accept: application/json, text/event-stream` |
 | 408 | A request was still running after `request_timeout_s` (the gate) | A slow client or proxy: raise `request_timeout_s`, or fix the link |
 | 413 | The body is above `max_request_bytes` (the gate, or the SDK for a streamed body) | A tool call is small; check what the client sends |
+| 415 | The `Content-Type` is not `application/json`, or the body is not a JSON-RPC message, for example a request with an `id` of `null` (answered by the SDK) | Send a JSON-RPC request with an integer or string `id` |
 | 431 | The request line and headers together are above 16 KiB (LIM-H7; answered by hyper before the gate, so neither logged nor counted; over HTTP/2 the connection is closed) | Send fewer or shorter headers; a token is at most a few hundred bytes |
 | 503 with `Retry-After: 30` | The handshake-based revisions hold `max_sessions` live sessions already (the gate); the 30 s is a hint, sessions expire after 300 s without traffic | Retry later, use the 2026-07-28 revision (it keeps no session), or raise `max_sessions` |
 | JSON-RPC error `-32022` on `initialize` | `legacy_revisions = false` and the client uses the handshake-based revisions | Use the current revision, or set `legacy_revisions = true` |
