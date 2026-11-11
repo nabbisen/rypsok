@@ -148,6 +148,7 @@ A test whose name starts with `req_` lives under `crates/`.
 | DEP-7, 8 | Medium, Low | Scheduled checks could fail without failing; fuzzing ran two minutes a week | 020o, then 020w: the release checks, with no timer (RFC 020, D-23) | REQ-TEST-019 | `req_test_019_no_workflow_runs_on_a_timer`, `req_test_019_the_release_checks_fuzz_every_target_for_300_s` |
 | DEP-9, 10, 14 | Low | CI did not use `--locked`; an unused dependency; floating tools and base images | 020o | REQ-TEST-012, REQ-SEC-020 | `req_test_012_cargo_commands_of_the_workflows_are_locked`, `req_sec_020_tools_and_the_release_compiler_are_pinned` |
 | DEP-17 | Note | No proof of where a release file was built | RFC 020, D-16; 020p: provenance attestations, made by a job that runs no build code | REQ-SEC-020 | `req_sec_020_only_the_checksums_job_signs_and_runs_no_build_code` |
+| DEP-13 | Low | Several pinned actions were a major version behind, and nobody was told of a new release | RFC 020, D-14 as amended by D-23: the dependency step at the start of each cycle; first done for 0.10.0 (022b), every action at its latest release | REQ-SEC-020 | the release procedure, step 1 |
 | DEP-18 | Low | The book was published on every push and described unreleased code | RFC 020, D-17; 020t: published from the release tag, and the first page names the release | REQ-DOC-002 | `req_doc_002_the_book_is_published_from_the_release_tag` |
 
 ### Found while fixing
@@ -161,6 +162,17 @@ A test whose name starts with `req_` lives under `crates/`.
 | N1 | Note | No page said which certificates outbound fetches trust | 020t | documents |
 | N2 | Note | A result whose host had an empty label (such as a leading dot) was shown, although `web_fetch` refuses it | RFC 020, D-24; 020y: dropped and counted as `url_invalid` | `req_rank_003_a_host_web_fetch_would_refuse_is_invalid` |
 | — | — | A property test could generate an address as a host name | 020q (tests only) | `req_sec_006_an_address_deny_rule_is_a_network_rule_not_a_host_rule` |
+
+### Found after the release
+
+Found after 0.9.0 was released, and fixed in 0.10.0. The audit did not
+find them, and the report keeps them here so that it stays true.
+
+| Id | Sev. | Before | Done | Requirement | Pinned by |
+|---|---|---|---|---|---|
+| A-1 | High | In HTTP mode, `rmcp 3.5.0` kept every `tools/call` tool name in a map with no bound (RUSTSEC-2026-0461, published after the release); 0.4.0 to 0.9.0 were affected, and stdio was not | RFC 022; 022a: `rmcp 3.9.0` | REQ-SEC-018, REQ-SEC-024 | the advisory check (`cargo deny`), on every push and in the release checks |
+| A-2 | Low | `SIGTERM` before the client's first message was not heard until that message arrived or the input closed; the ledger did not list REQ-OPS-002 as partly verified | 022a | REQ-OPS-002 | `req_ops_002_sigterm_before_any_message_shuts_down_within_limit` |
+| A-3 | Low | The fuzz workspace has its own lock file, and it was never updated with the main one: 29 crates shared by both, `toml` and `encoding_rs` among them, were fuzzed at older versions than those released | 022b: the two lock files agree, and a gate holds them to it | REQ-TEST-019 | `tools/check-fuzz-lock` |
 
 ## The decisions (RFC 020)
 
@@ -242,7 +254,6 @@ A test whose name starts with `req_` lives under `crates/`.
 | The verification ledger | 40 requirements whose tests verify part of what they say (41 at the release of 0.9.0; REQ-AGG-003 closed since, RFC 021) ([ledger](./verification-ledger.md)) | closed before 1.0.0 (RFC 020, D-18) |
 | DAT-22, RFC 020, D-11 | Which public items are frozen | the 1.0.0 preparation |
 | NET-18, RFC 020, D-5 | Confirmed on 2026-11-08: DuckDuckGo's no-results page marks itself with `span.no-results`, and the driver read `div.no-results`, so a search with no results counted as a parse failure toward the circuit | fixed before the release in handoff 020z |
-| DEP-13 | Several pinned actions are a major version behind | the dependency step at the start of the next cycle (RFC 020, D-14) |
 | DEP-16, RFC 020, D-15 | `main` and the release tags have no protection rule | the owner (a repository setting) |
 | First runs | The provenance attestations, the attach of the images, and the book from a tag run for the first time on the 0.9.0 tag | read in that run, as the release procedure says |
 
